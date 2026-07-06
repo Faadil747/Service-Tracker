@@ -194,6 +194,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [scheduledAt, setScheduledAt] = useState('');
     const [predictedReach, setPredictedReach] = useState<any>(null);
     const [savingPost, setSavingPost] = useState(false);
+    const [hoveredCell, setHoveredCell] = useState<{ day: string; hour: number; engagement: number; x: number; y: number } | null>(null);
 
     // Task completion
     const [completingTask, setCompletingTask] = useState<string | null>(null);
@@ -353,6 +354,41 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     // Heatmap rendering
     const maxEngagement = Math.max(...heatmap.map(c => c.engagement), 1);
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    const handleHeatmapCellClick = (dayName: string, hour: number) => {
+        const dayIndex = days.indexOf(dayName);
+        if (dayIndex === -1) return;
+
+        // Mon is index 0, Sun is index 6. JS Sunday is 0, Monday is 1... Saturday is 6
+        const targetJsDay = dayIndex === 6 ? 0 : dayIndex + 1;
+
+        const now = new Date();
+        const resultDate = new Date(now);
+        const currentJsDay = now.getDay();
+
+        let daysToAdd = targetJsDay - currentJsDay;
+        if (daysToAdd < 0) {
+            daysToAdd += 7;
+        } else if (daysToAdd === 0 && now.getHours() >= hour) {
+            daysToAdd = 7;
+        }
+
+        resultDate.setDate(now.getDate() + daysToAdd);
+        resultDate.setHours(hour);
+        resultDate.setMinutes(0);
+        resultDate.setSeconds(0);
+        resultDate.setMilliseconds(0);
+
+        const year = resultDate.getFullYear();
+        const month = String(resultDate.getMonth() + 1).padStart(2, '0');
+        const date = String(resultDate.getDate()).padStart(2, '0');
+        const hoursStr = String(resultDate.getHours()).padStart(2, '0');
+        const minutesStr = String(resultDate.getMinutes()).padStart(2, '0');
+
+        const formatted = `${year}-${month}-${date}T${hoursStr}:${minutesStr}`;
+        setScheduledAt(formatted);
+        toast.success(`Selected slot: ${dayName} ${hour}:00. Post schedule set to ${month}/${date} ${hoursStr}:00.`);
+    };
 
     const TAB_STYLE = (active: boolean) => ({
         padding: '8px 16px',
@@ -732,12 +768,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
                             <LinkedInPreview content={previewContent} hashtags={hashtags} />
 
-                            {/* Best time heatmap preview */}
                             {heatmap.length > 0 && (
-                                <div className="chart-container">
+                                <div className="chart-container" style={{ position: 'relative' }}>
                                     <div className="chart-title">⏰ Best Time to Post ({region})</div>
-                                    <div style={{ overflowX: 'auto' }}>
-                                        <div style={{ display: 'grid', gridTemplateColumns: `32px repeat(24, 1fr)`, gap: 2, minWidth: 500 }}>
+                                    <div style={{ overflowX: 'auto', padding: '10px 0' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: `32px repeat(24, 1fr)`, gap: 2, minWidth: 500, position: 'relative' }}>
                                             <div />
                                             {Array.from({ length: 24 }, (_, h) => (
                                                 <div key={h} style={{ fontSize: '0.6rem', textAlign: 'center', color: 'var(--text-muted)' }}>{h}</div>
@@ -748,14 +783,91 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                     {Array.from({ length: 24 }, (_, h) => {
                                                         const cell = heatmap.find(c => c.day === day && c.hour === h);
                                                         const intensity = cell ? cell.engagement / maxEngagement : 0;
+                                                        const isHovered = hoveredCell?.day === day && hoveredCell?.hour === h;
                                                         return (
-                                                            <div key={h} className="heatmap-cell" title={`${day} ${h}:00 — ${cell?.engagement || 0} engagement`} style={{ background: `rgba(0, 198, 167, ${intensity * 0.9 + 0.05})`, aspectRatio: '1' }} />
+                                                            <div
+                                                                key={h}
+                                                                className="heatmap-cell"
+                                                                onMouseEnter={(e) => {
+                                                                    const cellEl = e.currentTarget;
+                                                                    const containerEl = cellEl.closest('.chart-container');
+                                                                    if (containerEl) {
+                                                                        const cellRect = cellEl.getBoundingClientRect();
+                                                                        const containerRect = containerEl.getBoundingClientRect();
+                                                                        setHoveredCell({
+                                                                            day,
+                                                                            hour: h,
+                                                                            engagement: cell?.engagement || 0,
+                                                                            x: cellRect.left - containerRect.left + cellRect.width / 2,
+                                                                            y: cellRect.top - containerRect.top
+                                                                        });
+                                                                    }
+                                                                }}
+                                                                onMouseLeave={() => setHoveredCell(null)}
+                                                                onClick={() => handleHeatmapCellClick(day, h)}
+                                                                style={{
+                                                                    background: `rgba(0, 198, 167, ${intensity * 0.9 + 0.05})`,
+                                                                    aspectRatio: '1',
+                                                                    borderRadius: '3px',
+                                                                    cursor: 'pointer',
+                                                                    transition: 'all 0.15s ease',
+                                                                    transform: isHovered ? 'scale(1.25)' : 'scale(1)',
+                                                                    boxShadow: isHovered ? '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)' : 'none',
+                                                                    border: isHovered ? '2px solid #fff' : '1px solid rgba(255,255,255,0.05)',
+                                                                    zIndex: isHovered ? 10 : 1,
+                                                                    position: 'relative'
+                                                                }}
+                                                            />
                                                         );
                                                     })}
                                                 </React.Fragment>
                                             ))}
                                         </div>
                                     </div>
+                                    {hoveredCell && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            left: hoveredCell.x,
+                                            top: hoveredCell.y,
+                                            transform: 'translate(-50%, -125%)',
+                                            background: '#0f172a',
+                                            color: '#fff',
+                                            padding: '8px 12px',
+                                            borderRadius: '8px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            pointerEvents: 'none',
+                                            whiteSpace: 'nowrap',
+                                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5)',
+                                            zIndex: 9999,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                            border: '1px solid rgba(255,255,255,0.1)'
+                                        }}>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                                                📅 {hoveredCell.day} at {hoveredCell.hour}:00
+                                            </div>
+                                            <div style={{ color: '#2dd4bf', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                🔥 {hoveredCell.engagement} engagement
+                                            </div>
+                                            <div style={{ color: '#94a3b8', fontSize: '0.62rem', fontWeight: 400, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4, marginTop: 2 }}>
+                                                ⚡ Click to schedule post
+                                            </div>
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: '100%',
+                                                left: '50%',
+                                                transform: 'translateX(-50%)',
+                                                width: 0,
+                                                height: 0,
+                                                borderLeft: '6px solid transparent',
+                                                borderRight: '6px solid transparent',
+                                                borderTop: '6px solid #0f172a',
+                                            }} />
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

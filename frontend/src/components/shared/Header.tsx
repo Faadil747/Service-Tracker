@@ -156,24 +156,6 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
 
                 {/* Right side */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 12, flexShrink: 0 }}>
-                    {/* Region pill selector */}
-                    <div className="region-selector" style={{
-                        display: 'flex', gap: 1, background: 'var(--bg-tertiary)',
-                        padding: '3px', borderRadius: 6, border: '1px solid var(--border)',
-                    }}>
-                        {REGIONS.map(r => (
-                            <button key={r} onClick={() => onRegionChange(r)} style={{
-                                padding: '4px 9px', border: 'none', borderRadius: 4,
-                                background: region === r ? '#fff' : 'transparent',
-                                color: region === r ? 'var(--accent)' : 'var(--text-muted)',
-                                fontSize: '0.72rem', fontWeight: region === r ? 700 : 400,
-                                boxShadow: region === r ? 'var(--shadow-xs)' : 'none',
-                                cursor: 'pointer', transition: 'all 0.12s',
-                            }}>
-                                {r}
-                            </button>
-                        ))}
-                    </div>
 
                     {/* Notification Bell */}
                     <div id="notif-dropdown" style={{ position: 'relative' }}>

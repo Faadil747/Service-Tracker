@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, delete
+from sqlalchemy import select, func, and_, delete, cast, Date
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import Task, TaskAssignment, TaskCompletion, TaskApproval, Notification, ActivityLog, User, TaskStatus, Comment
@@ -221,7 +221,7 @@ async def accountability_report(
     today = datetime.utcnow().date()
     q = select(Task).where(
         Task.status.in_([TaskStatus.active, TaskStatus.in_progress]),
-        func.date(Task.due_date) <= today,
+        cast(Task.due_date, Date) <= today,
     )
     if region and region != "Global":
         q = q.where(Task.region == region)

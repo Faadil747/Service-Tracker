@@ -53,32 +53,55 @@ Ensure you have the following installed on your machine:
 - **Python** (v3.10 or higher)
 - **Git** (for version control)
 
-### Backend Configuration
-1. Navigate to the backend directory:
+### Backend Configuration & Database Setup
+
+1. **Install SQL Server & ODBC Driver**:
+   Ensure you have **Microsoft SQL Server** (express, developer, or standard local instance) and the **ODBC Driver for SQL Server** installed (e.g. ODBC Driver 17 or 18).
+   
+2. **Create the Database**:
+   Create a database named `service_tracker` on your local SQL Server instance. You can do this via SQL Server Management Studio (SSMS) or using the command prompt/PowerShell:
+   ```powershell
+   sqlcmd -S "localhost\MSSQLSERVER01" -E -Q "CREATE DATABASE service_tracker"
+   ```
+   *(Replace `localhost\MSSQLSERVER01` with your active instance name).*
+
+3. **Install Python Packages**:
+   Navigate to the backend directory and set up virtual environment:
    ```bash
    cd backend
-   ```
-2. Create and activate a Python virtual environment:
-   ```bash
-   # Windows PowerShell
    python -m venv venv
+   # Activate on Windows:
    .\venv\Scripts\Activate.ps1
-
-   # macOS/Linux
-   python3 -m venv venv
+   # Activate on macOS/Linux:
    source venv/bin/activate
-   ```
-3. Install required Python packages:
-   ```bash
+
    pip install -r requirements.txt
    ```
-4. Create a `.env` database configuration file in the `backend/` root directory:
+   *Note: `aioodbc` is included to support asynchronous connections to SQL Server.*
+
+4. **Configure Environment Variables (`.env`)**:
+   Create a `.env` file in the `backend/` root directory. To connect to a local named SQL Server instance (especially when TCP/IP protocol is disabled), format your database URL using the **Shared Memory protocol** connection attributes.
+   
+   Define your `DATABASE_URL` in `.env` as:
    ```env
-   DATABASE_URL=sqlite:///./app.db
+   DATABASE_URL=mssql+aioodbc:///?odbc_connect=DRIVER%3D%7BODBC+Driver+17+for+SQL+Server%7D%3BSERVER%3D%28local%29%5CMSSQLSERVER01%3BDATABASE%3Dservice_tracker%3BTrusted_Connection%3Dyes%3BTrustServerCertificate%3Dyes
    SECRET_KEY=your_development_auth_secret_key_change_in_production
    DEEPSEEK_API_KEY=your_openai_or_deepseek_secret_key
    ```
-5. Run database seeds or launch the development server to auto-generate schemas:
+   
+   > [!TIP]
+   > - `SERVER=(local)\MSSQLSERVER01` uses Shared Memory protocol, which is highly recommended for local connections on Windows loopback.
+   > - `Trusted_Connection=yes` enables Windows Integrated Authentication (no username/password login required).
+   > - `TrustServerCertificate=yes` is required if your local SQL Server instance certificate is self-signed.
+   
+5. **Initialize Database Tables & Seed Data**:
+   Ensure your fastAPI server can communicate and seed mock accounts:
+   ```bash
+   python -m app.seed.seed_data
+   ```
+   This will auto-generate all SQL Server schemas/tables under `service_tracker` database and load initial admin, agent, and post data.
+
+6. **Launch Development API Server**:
    ```bash
    uvicorn app.main:app --reload --port 8000
    ```

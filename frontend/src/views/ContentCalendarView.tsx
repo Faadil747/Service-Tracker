@@ -14,6 +14,39 @@ import { useAuthStore } from '../store/authStore';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
+// Safe date parsing to prevent RangeError from invalid, SQL Server formatted, or empty strings
+const safeParseDate = (dateVal: any): Date => {
+    if (!dateVal) return new Date();
+    if (dateVal instanceof Date) {
+        return isNaN(dateVal.getTime()) ? new Date() : dateVal;
+    }
+    if (typeof dateVal === 'string') {
+        let cleanStr = dateVal.trim();
+        // Replace space in SQL Server formatted datetimes (YYYY-MM-DD HH:MM:SS) to match ISO 8601
+        if (cleanStr.includes(' ') && !cleanStr.includes('T')) {
+            cleanStr = cleanStr.replace(' ', 'T');
+        }
+        try {
+            const parsed = parseISO(cleanStr);
+            if (!isNaN(parsed.getTime())) return parsed;
+        } catch { }
+        try {
+            const parsed = new Date(cleanStr);
+            if (!isNaN(parsed.getTime())) return parsed;
+        } catch { }
+    }
+    return new Date();
+};
+
+const safeFormat = (dateVal: any, formatString: string): string => {
+    try {
+        const dateObj = safeParseDate(dateVal);
+        return format(dateObj, formatString);
+    } catch {
+        return '—';
+    }
+};
+
 interface Props { region: string; }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -234,12 +267,12 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
     const getPostsForDay = (day: Date) => filteredPosts.filter(p => {
         const dateStr = p.scheduled_at || p.created_at;
         if (!dateStr) return false;
-        try { return isSameDay(parseISO(dateStr), day); } catch { return false; }
+        try { return isSameDay(safeParseDate(dateStr), day); } catch { return false; }
     });
 
     const getTasksForDay = (day: Date) => tasks.filter(t => {
         if (!t.due_date) return false;
-        try { return isSameDay(parseISO(t.due_date), day); } catch { return false; }
+        try { return isSameDay(safeParseDate(t.due_date), day); } catch { return false; }
     });
 
     const handleCreatePost = async () => {
@@ -313,7 +346,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
         const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
         const totalScheduled = filteredPosts.filter(p => {
-            try { return isSameMonth(parseISO(p.scheduled_at || p.created_at || new Date().toISOString()), currentDate); }
+            try { return isSameMonth(safeParseDate(p.scheduled_at || p.created_at), currentDate); }
             catch { return false; }
         }).length;
 
@@ -518,7 +551,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                                 <div className="truncate" style={{ marginBottom: 2 }}>{p.content?.slice(0, 40) || 'Post'}</div>
                                                 {p.scheduled_at && (
                                                     <div style={{ fontSize: '0.65rem', opacity: 0.8, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                                        <Clock style={{ width: 10, height: 10 }} /> {format(parseISO(p.scheduled_at), 'HH:mm')}
+                                                        <Clock style={{ width: 10, height: 10 }} /> {safeFormat(p.scheduled_at, 'HH:mm')}
                                                     </div>
                                                 )}
                                             </div>
@@ -582,8 +615,8 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                 <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
                                     {dateStr ? (
                                         <>
-                                            <div style={{ fontWeight: 600 }}>{format(parseISO(dateStr), 'MMM d, yyyy')}</div>
-                                            <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{format(parseISO(dateStr), 'HH:mm')}</div>
+                                            <div style={{ fontWeight: 600 }}>{safeFormat(dateStr, 'MMM d, yyyy')}</div>
+                                            <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{safeFormat(dateStr, 'HH:mm')}</div>
                                         </>
                                     ) : '—'}
                                 </td>
@@ -800,7 +833,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                             </div>
                                             {p.scheduled_at && (
                                                 <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                                    <Clock size={9} /> {format(parseISO(p.scheduled_at), 'HH:mm')}
+                                                    <Clock size={9} /> {safeFormat(p.scheduled_at, 'HH:mm')}
                                                 </div>
                                             )}
                                         </div>
@@ -923,13 +956,13 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                             <div>
                                                 <div className="form-label">Scheduled At</div>
                                                 <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: 4 }}>
-                                                    {selectedPost.scheduled_at ? format(parseISO(selectedPost.scheduled_at), 'MMM d, yyyy HH:mm') : 'Not scheduled'}
+                                                    {selectedPost.scheduled_at ? safeFormat(selectedPost.scheduled_at, 'MMM d, yyyy HH:mm') : 'Not scheduled'}
                                                 </div>
                                             </div>
                                             <div>
                                                 <div className="form-label">Created</div>
                                                 <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: 4 }}>
-                                                    {selectedPost.created_at ? format(parseISO(selectedPost.created_at), 'MMM d, yyyy') : '—'}
+                                                    {selectedPost.created_at ? safeFormat(selectedPost.created_at, 'MMM d, yyyy') : '—'}
                                                 </div>
                                             </div>
                                         </div>

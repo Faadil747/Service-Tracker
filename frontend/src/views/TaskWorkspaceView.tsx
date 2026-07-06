@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
     Sparkles, RefreshCw, CheckCircle, Eye, FileText, Plus, X, Play, Pause, Trash2
 } from 'lucide-react';
-import { tasksApi, postsApi, aiApi, metricsApi, usersApi } from '../services/api';
+import { tasksApi, postsApi, aiApi, metricsApi, usersApi, alertsApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { Task, Post, KanbanBoard, User } from '../types';
+import { Task, Post, KanbanBoard, User, Alert } from '../types';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -55,6 +55,9 @@ const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void }> =
         { key: 'scheduled', label: '📅 Scheduled', color: 'var(--accent)' },
     ];
 
+    const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+    const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+
     const movePost = async (postId: string, newStatus: string) => {
         try {
             await postsApi.moveKanban(postId, newStatus);
@@ -63,37 +66,93 @@ const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void }> =
         } catch { toast.error('Failed to move post'); }
     };
 
+    const onDragStart = (e: React.DragEvent, postId: string) => {
+        setDraggingCardId(postId);
+        e.dataTransfer.setData('text/plain', postId);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const onDragEnd = () => {
+        setDraggingCardId(null);
+        setDragOverCol(null);
+    };
+
+    const onDragOver = (e: React.DragEvent, colKey: string) => {
+        e.preventDefault();
+        if (dragOverCol !== colKey) {
+            setDragOverCol(colKey);
+        }
+    };
+
+    const onDragLeave = (e: React.DragEvent) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
+        if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+            setDragOverCol(null);
+        }
+    };
+
+    const onDrop = async (e: React.DragEvent, colKey: string) => {
+        e.preventDefault();
+        setDragOverCol(null);
+        const postId = e.dataTransfer.getData('text/plain');
+        if (postId) {
+            await movePost(postId, colKey);
+        }
+    };
+
     return (
         <div className="kanban-board">
-            {COLUMNS.map(col => (
-                <div key={col.key} className="kanban-col">
-                    <div className="kanban-col-header" style={{ color: col.color }}>
-                        {col.label}
-                        <span className="badge badge-muted" style={{ marginLeft: 'auto' }}>{board[col.key]?.length || 0}</span>
+            {COLUMNS.map(col => {
+                const isActiveDrop = dragOverCol === col.key;
+                return (
+                    <div
+                        key={col.key}
+                        className={`kanban-col ${isActiveDrop ? 'drag-over' : ''}`}
+                        onDragOver={(e) => onDragOver(e, col.key)}
+                        onDragLeave={onDragLeave}
+                        onDrop={(e) => onDrop(e, col.key)}
+                    >
+                        <div className="kanban-col-header" style={{ color: col.color }}>
+                            {col.label}
+                            <span className="badge badge-muted" style={{ marginLeft: 'auto' }}>{board[col.key]?.length || 0}</span>
+                        </div>
+                        {(board[col.key] || []).map(post => {
+                            const isDragging = draggingCardId === post.id;
+                            return (
+                                <div
+                                    key={post.id}
+                                    className={`kanban-card ${isDragging ? 'dragging' : ''}`}
+                                    draggable
+                                    onDragStart={(e) => onDragStart(e, post.id)}
+                                    onDragEnd={onDragEnd}
+                                >
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 6 }} className="truncate" title={post.title || post.content}>
+                                        {post.title || post.content.slice(0, 60) + '...'}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                                        <span className="badge badge-muted">{post.region}</span>
+                                        <span className="badge badge-muted">{post.post_type.replace('_', ' ')}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                        {COLUMNS.filter(c => c.key !== col.key).map(c => (
+                                            <button key={c.key} className="btn btn-ghost" style={{ fontSize: '0.65rem', padding: '3px 8px' }} onClick={() => movePost(post.id, c.key)}>
+                                                → {c.key}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {(board[col.key]?.length || 0) === 0 && (
+                            <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', borderRadius: 8, border: '2px dashed var(--border)' }}>
+                                Drop posts here
+                            </div>
+                        )}
                     </div>
-                    {(board[col.key] || []).map(post => (
-                        <div key={post.id} className="kanban-card">
-                            <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 6 }} className="truncate">{post.title || post.content.slice(0, 60) + '...'}</div>
-                            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                                <span className="badge badge-muted">{post.region}</span>
-                                <span className="badge badge-muted">{post.post_type.replace('_', ' ')}</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                {COLUMNS.filter(c => c.key !== col.key).map(c => (
-                                    <button key={c.key} className="btn btn-ghost" style={{ fontSize: '0.65rem', padding: '3px 8px' }} onClick={() => movePost(post.id, c.key)}>
-                                        → {c.key}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                    {(board[col.key]?.length || 0) === 0 && (
-                        <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', borderRadius: 8, border: '2px dashed var(--border)' }}>
-                            Drop posts here
-                        </div>
-                    )}
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 };
@@ -107,14 +166,22 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [templates, setTemplates] = useState<Post[]>([]);
     const [heatmap, setHeatmap] = useState<any[]>([]);
     const [pendingTasks, setPendingTasks] = useState<any[]>([]);
-    const [tab, setTab] = useState<'tasks' | 'composer' | 'kanban' | 'library'>('tasks');
+    const [tab, setTab] = useState<'tasks' | 'composer' | 'kanban' | 'library' | 'alerts'>('tasks');
 
     const [searchParams] = useSearchParams();
     const taskIdParam = searchParams.get('taskId');
+    const tabParam = searchParams.get('tab');
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [agents, setAgents] = useState<User[]>([]);
     const [showAddTask, setShowAddTask] = useState(false);
     const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_id: '' });
+
+    // Alerts state
+    const [alerts, setAlerts] = useState<Alert[]>([]);
+    const [alertTitle, setAlertTitle] = useState('');
+    const [alertBody, setAlertBody] = useState('');
+    const [alertPriority, setAlertPriority] = useState<'high' | 'critical'>('high');
+    const [showNewAlert, setShowNewAlert] = useState(false);
 
     // AI Composer state
     const [prompt, setPrompt] = useState('');
@@ -138,21 +205,25 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         if (taskIdParam) {
             setTab('tasks');
             setSelectedTaskId(taskIdParam);
+        } else if (tabParam === 'alerts') {
+            setTab('alerts');
         }
-    }, [taskIdParam]);
+    }, [taskIdParam, tabParam]);
 
     const loadAll = async () => {
         try {
-            const [tRes, bRes, tmplRes, hmRes] = await Promise.all([
+            const [tRes, bRes, tmplRes, hmRes, aRes] = await Promise.all([
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
                 postsApi.kanban(region === 'Global' ? undefined : region),
                 postsApi.list({ is_template: true }),
                 metricsApi.bestTime(region === 'Global' ? undefined : region),
+                alertsApi.list({ status: 'open' }),
             ]);
             setTasks(tRes.data);
             setBoard(bRes.data);
             setTemplates(tmplRes.data);
             setHeatmap(hmRes.data.heatmap);
+            setAlerts(aRes.data);
 
             if (isAdmin) {
                 const [paRes, agRes] = await Promise.all([
@@ -261,6 +332,24 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         } catch { toast.error('Action failed'); }
     };
 
+    const handleRaiseAlert = async () => {
+        try {
+            await alertsApi.create({ title: alertTitle, body: alertBody, priority: alertPriority, region: user?.region || 'Global' });
+            toast.success('Alert raised!');
+            setShowNewAlert(false);
+            setAlertTitle(''); setAlertBody('');
+            loadAll();
+        } catch { toast.error('Failed to raise alert'); }
+    };
+
+    const handleResolveAlert = async (id: string) => {
+        try {
+            await alertsApi.resolve(id);
+            toast.success('Alert resolved!');
+            loadAll();
+        } catch { }
+    };
+
     // Heatmap rendering
     const maxEngagement = Math.max(...heatmap.map(c => c.engagement), 1);
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -286,6 +375,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                     { id: 'composer', label: '✨ AI Composer' },
                     { id: 'kanban', label: '🗂 Kanban' },
                     { id: 'library', label: '📚 Library' },
+                    { id: 'alerts', label: '🚨 Alerts' }
                 ].map(t => (
                     <button key={t.id} style={TAB_STYLE(tab === t.id)} onClick={() => setTab(t.id as any)}>
                         {t.label}
@@ -722,6 +812,69 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Alerts Tab ─────────────────────────────────────────────────── */}
+            {tab === 'alerts' && (
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                        <div>
+                            <h4>Workspace Alerts 🚨</h4>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Flag and trace regional issues or system warnings</p>
+                        </div>
+                        <button className="btn btn-primary btn-sm" onClick={() => setShowNewAlert(true)}>
+                            <Plus size={14} /> Raise Alert
+                        </button>
+                    </div>
+
+                    {showNewAlert && (
+                        <div className="glass-card" style={{ padding: 20, marginBottom: 16 }}>
+                            <h4 style={{ marginBottom: 14 }}>New Alert</h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <input className="input" placeholder="Alert title" value={alertTitle} onChange={e => setAlertTitle(e.target.value)} />
+                                <textarea className="textarea" placeholder="Describe the issue..." value={alertBody} onChange={e => setAlertBody(e.target.value)} style={{ minHeight: 80 }} />
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    {(['high', 'critical'] as const).map(p => (
+                                        <button
+                                            key={p}
+                                            className="btn btn-sm"
+                                            onClick={() => setAlertPriority(p)}
+                                            style={{
+                                                background: alertPriority === p ? (p === 'critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)') : 'var(--surface)',
+                                                color: alertPriority === p ? (p === 'critical' ? 'var(--danger)' : 'var(--warning)') : 'var(--text-secondary)',
+                                                border: `1px solid ${alertPriority === p ? 'currentColor' : 'var(--border)'}`
+                                            }}
+                                        >
+                                            {p === 'critical' ? '🔴 Critical' : '🟡 High'}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                                    <button className="btn btn-primary btn-sm" onClick={handleRaiseAlert}>Raise Alert</button>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setShowNewAlert(false)}>Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {alerts.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No open alerts 🎉</div>}
+                        {alerts.map(a => (
+                            <div key={a.id} className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'} style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 700, marginBottom: 4 }}>{a.title}</div>
+                                    {a.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{a.body}</div>}
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 6 }}>{a.region} · {new Date(a.created_at).toLocaleDateString()}</div>
+                                </div>
+                                {isAdmin && (
+                                    <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', whiteSpace: 'nowrap' }} onClick={() => handleResolveAlert(a.id)}>
+                                        ✓ Resolve
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>

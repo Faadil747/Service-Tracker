@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Eye, EyeOff } from 'lucide-react';
-import { settingsApi, usersApi, alertsApi, linksApi } from '../services/api';
+import { settingsApi, usersApi, linksApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { Alert, User as UserType, LinkTracking } from '../types';
+import { User as UserType, LinkTracking } from '../types';
 import toast from 'react-hot-toast';
 
 interface SettingsData {
@@ -16,9 +16,8 @@ interface SettingsData {
 export const SettingsView: React.FC = () => {
     const { user } = useAuthStore();
     const isAdmin = user?.role === 'admin';
-    const [tab, setTab] = useState<'profile' | 'api' | 'team' | 'alerts' | 'links'>('profile');
+    const [tab, setTab] = useState<'profile' | 'api' | 'team' | 'links'>('profile');
     const [settings, setSettings] = useState<SettingsData | null>(null);
-    const [alerts, setAlerts] = useState<Alert[]>([]);
     const [links, setLinks] = useState<LinkTracking[]>([]);
     const [teamUsers, setTeamUsers] = useState<UserType[]>([]);
     const [showAddUser, setShowAddUser] = useState(false);
@@ -30,10 +29,6 @@ export const SettingsView: React.FC = () => {
     const [linkedinKey, setLinkedinKey] = useState('');
     const [newUser, setNewUser] = useState({ email: '', full_name: '', role: 'agent', region: 'India', password: '' });
     const [newLink, setNewLink] = useState({ original_url: '', utm_campaign: '', utm_source: 'linkedin', utm_medium: 'social', region: 'Global' });
-    const [alertTitle, setAlertTitle] = useState('');
-    const [alertBody, setAlertBody] = useState('');
-    const [alertPriority, setAlertPriority] = useState<'high' | 'critical'>('high');
-    const [newAlert, setShowNewAlert] = useState(false);
 
     useEffect(() => { loadAll(); }, [tab]);
 
@@ -46,10 +41,6 @@ export const SettingsView: React.FC = () => {
             if (tab === 'team' && isAdmin) {
                 const res = await usersApi.list();
                 setTeamUsers(res.data);
-            }
-            if (tab === 'alerts') {
-                const res = await alertsApi.list({ status: 'open' });
-                setAlerts(res.data);
             }
             if (tab === 'links') {
                 const res = await linksApi.list();
@@ -94,23 +85,7 @@ export const SettingsView: React.FC = () => {
         } catch { toast.error('Failed to create link'); }
     };
 
-    const handleRaiseAlert = async () => {
-        try {
-            await alertsApi.create({ title: alertTitle, body: alertBody, priority: alertPriority, region: user?.region || 'Global' });
-            toast.success('Alert raised!');
-            setShowNewAlert(false);
-            setAlertTitle(''); setAlertBody('');
-            loadAll();
-        } catch { toast.error('Failed to raise alert'); }
-    };
 
-    const handleResolveAlert = async (id: string) => {
-        try {
-            await alertsApi.resolve(id);
-            toast.success('Alert resolved!');
-            loadAll();
-        } catch { }
-    };
 
     const TAB_STYLE = (active: boolean) => ({
         padding: '8px 16px', borderRadius: 8, cursor: 'pointer', border: 'none',
@@ -126,7 +101,6 @@ export const SettingsView: React.FC = () => {
             <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: 'var(--surface)', padding: 4, borderRadius: 12, width: 'fit-content', flexWrap: 'wrap' }}>
                 {[
                     { id: 'profile', label: '👤 Profile' },
-                    { id: 'alerts', label: '🚨 Alerts' },
                     { id: 'links', label: '🔗 Link Tracking' },
                     ...(isAdmin ? [{ id: 'api', label: '🔑 API Keys' }, { id: 'team', label: '👥 Team' }] : []),
                 ].map(t => (
@@ -287,54 +261,7 @@ export const SettingsView: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Alerts Tab ─────────────────────────────────────────────────── */}
-            {tab === 'alerts' && (
-                <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                        <div><h4>Raise a Flag 🚩</h4><p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Flag issues for admin attention</p></div>
-                        <button className="btn btn-primary btn-sm" onClick={() => setShowNewAlert(true)}><Plus size={14} /> Raise Alert</button>
-                    </div>
 
-                    {newAlert && (
-                        <div className="glass-card" style={{ padding: 20, marginBottom: 16 }}>
-                            <h4 style={{ marginBottom: 14 }}>New Alert</h4>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                <input className="input" placeholder="Alert title" value={alertTitle} onChange={e => setAlertTitle(e.target.value)} />
-                                <textarea className="textarea" placeholder="Describe the issue..." value={alertBody} onChange={e => setAlertBody(e.target.value)} />
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                    {(['high', 'critical'] as const).map(p => (
-                                        <button key={p} className="btn btn-sm" onClick={() => setAlertPriority(p)} style={{ background: alertPriority === p ? (p === 'critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)') : 'var(--surface)', color: alertPriority === p ? (p === 'critical' ? 'var(--danger)' : 'var(--warning)') : 'var(--text-secondary)', border: `1px solid ${alertPriority === p ? 'currentColor' : 'var(--border)'}` }}>
-                                            {p === 'critical' ? '🔴 Critical' : '🟡 High'}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <button className="btn btn-primary btn-sm" onClick={handleRaiseAlert}>Raise Alert</button>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => setShowNewAlert(false)}>Cancel</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {alerts.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No open alerts 🎉</div>}
-                        {alerts.map(a => (
-                            <div key={a.id} className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'} style={{ padding: '14px 16px' }}>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontWeight: 700, marginBottom: 4 }}>{a.title}</div>
-                                    {a.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{a.body}</div>}
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 6 }}>{a.region} · {new Date(a.created_at).toLocaleDateString()}</div>
-                                </div>
-                                {isAdmin && (
-                                    <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => handleResolveAlert(a.id)}>
-                                        ✓ Resolve
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
 
             {/* ── Link Tracking Tab ────────────────────────────────────────── */}
             {tab === 'links' && (

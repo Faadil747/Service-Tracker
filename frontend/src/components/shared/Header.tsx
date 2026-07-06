@@ -22,7 +22,6 @@ const getNavItems = (role: string) => [
     { to: '/links', icon: Link2, label: 'Link Analytics', roles: ['admin', 'developer', 'ceo'] },
     { to: '/progress', icon: TrendingUp, label: 'Agent Progress', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/accountability', icon: Users, label: 'Accountability', roles: ['admin', 'ceo'] },
-    { to: '/chat', icon: MessageSquare, label: 'Messages', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/settings', icon: Settings, label: 'Settings', roles: ['admin', 'developer', 'ceo'] },
 ].filter(item => item.roles.includes(role));
 
@@ -49,6 +48,10 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
             navigate(`/workspace?taskId=${n.reference_id}`);
         } else if (n.reference_type === 'post') {
             navigate(`/calendar?postId=${n.reference_id}`);
+        } else if (n.reference_type === 'alert') {
+            navigate(`/workspace?tab=alerts`);
+        } else if (n.reference_type === 'chat' || n.reference_type === 'message') {
+            navigate(`?chatWith=${n.reference_id}`);
         }
     };
     const [showNotifs, setShowNotifs] = useState(false);

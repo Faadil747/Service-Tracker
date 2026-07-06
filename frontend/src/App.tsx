@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
 import { Header } from './components/shared/Header';
+import { ChatWidget } from './components/shared/ChatWidget';
 import { LoginPage } from './views/LoginPage';
 import { DashboardView } from './views/DashboardView';
 import { TaskWorkspaceView } from './views/TaskWorkspaceView';
@@ -11,7 +12,6 @@ import { SettingsView } from './views/SettingsView';
 import { ContentCalendarView } from './views/ContentCalendarView';
 import { LinkAnalyticsView } from './views/LinkAnalyticsView';
 import { AccountabilityView } from './views/AccountabilityView';
-import { ChatView } from './views/ChatView';
 import './styles/globals.css';
 
 const ProtectedLayout: React.FC<{ children: (region: string) => React.ReactNode }> = ({ children }) => {
@@ -26,6 +26,7 @@ const ProtectedLayout: React.FC<{ children: (region: string) => React.ReactNode 
             <div className="main-content">
                 {children(region)}
             </div>
+            <ChatWidget />
         </div>
     );
 };
@@ -76,7 +77,7 @@ const App: React.FC = () => {
                     <ProtectedLayout>{(r) => <AccountabilityView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/chat" element={
-                    <ProtectedLayout>{(r) => <ChatView region={r} />}</ProtectedLayout>
+                    <ProtectedLayout>{() => <Navigate to="/dashboard" replace />}</ProtectedLayout>
                 } />
                 <Route path="/settings" element={
                     <ProtectedLayout>{() => <SettingsView />}</ProtectedLayout>

@@ -1289,3 +1289,69 @@ a {
   align-items: center;
   justify-content: center;
 }
+
+/* ── Kanban Board Redesign ── */
+.kanban-board {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+  min-height: 550px;
+}
+
+.kanban-col {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 500px;
+  background-clip: padding-box;
+  transition: all var(--transition-normal);
+}
+
+.kanban-col.drag-over {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px rgba(37, 99, 235, 0.08);
+}
+
+.kanban-col-header {
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.kanban-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  cursor: grab;
+  transition: all var(--transition-normal);
+  box-shadow: var(--shadow-sm);
+  will-change: transform, box-shadow;
+}
+
+.kanban-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
+}
+
+.kanban-card:active {
+  cursor: grabbing;
+}
+
+.kanban-card.dragging {
+  opacity: 0.45;
+  transform: scale(0.96);
+  border: 2px dashed var(--accent);
+}

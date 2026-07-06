@@ -262,8 +262,7 @@ export const AgentProgressView: React.FC<{ region: string }> = ({ region }) => {
     const myStats = statsMap[user?.id || ''];
 
     return (
-        <div className="page-content animate-fade" style={{ position: 'relative' }}>
-
+        <>
             {/* Agent Profile Drawer */}
             {selectedAgent && statsMap[selectedAgent.id] && (
                 <>
@@ -276,187 +275,189 @@ export const AgentProgressView: React.FC<{ region: string }> = ({ region }) => {
                         stats={statsMap[selectedAgent.id]}
                         tasks={tasks}
                         onClose={() => setSelectedAgent(null)}
-                        onMessage={(id) => { setSelectedAgent(null); navigate(`/chat?userId=${id}`); }}
+                        onMessage={(id) => { setSelectedAgent(null); navigate(`/dashboard?chatWith=${id}`); }}
                     />
                 </>
             )}
 
-            {/* ── Myself (agent view) ── */}
-            {!isAdmin && myStats && (
-                <div>
-                    <h2 style={{ marginBottom: 20 }}>My Performance 📊</h2>
-                    <div className="grid-4" style={{ marginBottom: 20 }}>
-                        {[
-                            { label: 'Tasks Completed', value: myStats.tasks_completed, icon: CheckCircle, color: 'var(--success)' },
-                            { label: 'Active Tasks', value: myStats.tasks_active, icon: Clock, color: 'var(--accent)' },
-                            { label: 'Overdue', value: myStats.tasks_overdue, icon: AlertTriangle, color: 'var(--danger)' },
-                            { label: 'Performance Score', value: myStats.score, icon: Award, color: 'var(--warning)' },
-                        ].map(({ label, value, icon: Icon, color }) => (
-                            <div key={label} className="glass-card glass-card-hover" style={{ padding: 20 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `${color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Icon size={18} color={color} />
+            <div className="page-content animate-fade" style={{ position: 'relative' }}>
+                {/* ── Myself (agent view) ── */}
+                {!isAdmin && myStats && (
+                    <div>
+                        <h2 style={{ marginBottom: 20 }}>My Performance 📊</h2>
+                        <div className="grid-4" style={{ marginBottom: 20 }}>
+                            {[
+                                { label: 'Tasks Completed', value: myStats.tasks_completed, icon: CheckCircle, color: 'var(--success)' },
+                                { label: 'Active Tasks', value: myStats.tasks_active, icon: Clock, color: 'var(--accent)' },
+                                { label: 'Overdue', value: myStats.tasks_overdue, icon: AlertTriangle, color: 'var(--danger)' },
+                                { label: 'Performance Score', value: myStats.score, icon: Award, color: 'var(--warning)' },
+                            ].map(({ label, value, icon: Icon, color }) => (
+                                <div key={label} className="glass-card glass-card-hover" style={{ padding: 20 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                                        <div style={{ width: 36, height: 36, borderRadius: 10, background: `${color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Icon size={18} color={color} />
+                                        </div>
+                                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{label}</span>
                                     </div>
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{label}</span>
-                                </div>
-                                <div style={{ fontSize: '2rem', fontWeight: 800, color }}>{value}</div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* My recent tasks */}
-                    <div className="chart-container" style={{ marginBottom: 20 }}>
-                        <div className="chart-title">📋 My Recent Tasks</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflowY: 'auto' }}>
-                            {tasks.filter(t => t.assignments?.some(as => as.agent_id === user?.id)).slice(0, 10).map(t => (
-                                <div key={t.id} className="glass-card" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: t.status === 'completed' ? 'var(--success)' : t.status === 'active' ? 'var(--accent)' : 'var(--danger)', flexShrink: 0 }} />
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontSize: '0.8rem', fontWeight: 500 }}>{t.title}</div>
-                                        {t.due_date && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Due: {new Date(t.due_date).toLocaleDateString()}</div>}
-                                    </div>
-                                    <span className={`badge ${t.status === 'completed' ? 'badge-success' : t.status === 'active' ? 'badge-accent' : 'badge-danger'}`}>
-                                        {t.status.replace('_', ' ')}
-                                    </span>
+                                    <div style={{ fontSize: '2rem', fontWeight: 800, color }}>{value}</div>
                                 </div>
                             ))}
-                            {tasks.filter(t => t.assignments?.some(as => as.agent_id === user?.id)).length === 0 && (
-                                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>No tasks assigned to you yet</div>
-                            )}
                         </div>
-                    </div>
 
-                    <div className="chart-container">
-                        <div className="chart-title">🏅 Your Badge</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 8 }}>
-                            <div style={{ fontSize: '2.5rem' }}>{getBadge(myStats.score).label.split(' ')[0]}</div>
-                            <div>
-                                <div style={{ fontWeight: 700, fontSize: '1.1rem', color: getBadge(myStats.score).color }}>{getBadge(myStats.score).label}</div>
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Score: {myStats.score} pts</div>
+                        {/* My recent tasks */}
+                        <div className="chart-container" style={{ marginBottom: 20 }}>
+                            <div className="chart-title">📋 My Recent Tasks</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflowY: 'auto' }}>
+                                {tasks.filter(t => t.assignments?.some(as => as.agent_id === user?.id)).slice(0, 10).map(t => (
+                                    <div key={t.id} className="glass-card" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: t.status === 'completed' ? 'var(--success)' : t.status === 'active' ? 'var(--accent)' : 'var(--danger)', flexShrink: 0 }} />
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 500 }}>{t.title}</div>
+                                            {t.due_date && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Due: {new Date(t.due_date).toLocaleDateString()}</div>}
+                                        </div>
+                                        <span className={`badge ${t.status === 'completed' ? 'badge-success' : t.status === 'active' ? 'badge-accent' : 'badge-danger'}`}>
+                                            {t.status.replace('_', ' ')}
+                                        </span>
+                                    </div>
+                                ))}
+                                {tasks.filter(t => t.assignments?.some(as => as.agent_id === user?.id)).length === 0 && (
+                                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>No tasks assigned to you yet</div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="chart-container">
+                            <div className="chart-title">🏅 Your Badge</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 8 }}>
+                                <div style={{ fontSize: '2.5rem' }}>{getBadge(myStats.score).label.split(' ')[0]}</div>
+                                <div>
+                                    <div style={{ fontWeight: 700, fontSize: '1.1rem', color: getBadge(myStats.score).color }}>{getBadge(myStats.score).label}</div>
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Score: {myStats.score} pts</div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* ── Admin: Leaderboard + Charts ── */}
-            {isAdmin && (
-                <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                        <h2>Agent Leaderboard 🏆</h2>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span className="badge badge-muted">{leaderboard.length} agents · {region}</span>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Click an agent to view profile</span>
+                {/* ── Admin: Leaderboard + Charts ── */}
+                {isAdmin && (
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                            <h2>Agent Leaderboard 🏆</h2>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span className="badge badge-muted">{leaderboard.length} agents · {region}</span>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Click an agent to view profile</span>
+                            </div>
+                        </div>
+
+                        {/* Leaderboard table */}
+                        <div className="chart-container" style={{ marginBottom: 20 }}>
+                            <div className="chart-title">🥇 Performance Ranking</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {leaderboard.map((a, i) => {
+                                    const badge = getBadge(a.score || 0);
+                                    const completionRate = a.tasks_completed + a.tasks_active > 0
+                                        ? Math.round((a.tasks_completed / (a.tasks_completed + a.tasks_active + (a.tasks_overdue || 0))) * 100)
+                                        : 0;
+                                    const isSelected = selectedAgent?.id === a.id;
+                                    return (
+                                        <div
+                                            key={a.id}
+                                            className="glass-card"
+                                            style={{
+                                                padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14,
+                                                cursor: 'pointer', transition: 'all 0.15s',
+                                                background: isSelected ? 'var(--accent-glow)' : undefined,
+                                                border: isSelected ? '1px solid rgba(37,99,235,0.3)' : undefined,
+                                                transform: isSelected ? 'translateY(-1px)' : undefined,
+                                            }}
+                                            onClick={() => setSelectedAgent(isSelected ? null : a)}
+                                        >
+                                            {/* Rank */}
+                                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: i < 3 ? 'var(--accent-glow)' : 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem', color: i < 3 ? 'var(--accent)' : 'var(--text-secondary)', flexShrink: 0 }}>
+                                                {i + 1}
+                                            </div>
+
+                                            {/* Avatar */}
+                                            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>
+                                                {a.full_name.charAt(0)}
+                                            </div>
+
+                                            {/* Info */}
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{a.full_name}</div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{a.region} · {a.email}</div>
+                                            </div>
+
+                                            {/* Stats */}
+                                            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                                                <div style={{ textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--success)' }}>{a.tasks_completed || 0}</div>
+                                                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Done</div>
+                                                </div>
+                                                <div style={{ textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--danger)' }}>{a.tasks_overdue || 0}</div>
+                                                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Overdue</div>
+                                                </div>
+                                                <div style={{ textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: badge.color }}>{a.score || 0}</div>
+                                                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Score</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Badge + Progress */}
+                                            <div style={{ textAlign: 'right', minWidth: 80 }}>
+                                                <div style={{ marginBottom: 4 }}><span className="badge" style={{ background: `${badge.color}22`, color: badge.color }}>{badge.label}</span></div>
+                                                <div style={{ height: 6, background: 'var(--bg-tertiary)', borderRadius: 99, overflow: 'hidden', width: 80 }}>
+                                                    <div style={{ height: '100%', width: `${completionRate}%`, background: 'var(--accent)' }} />
+                                                </div>
+                                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>{completionRate}% completion</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {leaderboard.length === 0 && (
+                                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>No agents found for this region</div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Charts row */}
+                        <div className="grid-2" style={{ marginBottom: 20 }}>
+                            <div className="chart-container">
+                                <div className="chart-title">📅 Weekly Task Progress</div>
+                                <ResponsiveContainer width="100%" height={200}>
+                                    <BarChart data={weeklyData}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                                        <XAxis dataKey="week" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                                        <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                                        <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                                        <Bar dataKey="completed" name="Completed" fill="var(--success)" radius={[4, 4, 0, 0]} />
+                                        <Bar dataKey="active" name="Active" fill="var(--accent)" radius={[4, 4, 0, 0]} />
+                                        <Bar dataKey="overdue" name="Overdue" fill="var(--danger)" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+
+                            <div className="chart-container">
+                                <div className="chart-title">🌍 Regional Engagement</div>
+                                <ResponsiveContainer width="100%" height={200}>
+                                    <RadarChart data={regionData}>
+                                        <PolarGrid stroke="var(--border)" />
+                                        <PolarAngleAxis dataKey="region" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                                        <PolarRadiusAxis tick={{ fill: 'var(--text-muted)', fontSize: 9 }} />
+                                        <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                                        <Radar dataKey="engagement" name="Engagement" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.2} />
+                                        <Radar dataKey="followers" name="Followers" stroke="var(--purple)" fill="var(--purple)" fillOpacity={0.2} />
+                                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                                    </RadarChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
                     </div>
-
-                    {/* Leaderboard table */}
-                    <div className="chart-container" style={{ marginBottom: 20 }}>
-                        <div className="chart-title">🥇 Performance Ranking</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {leaderboard.map((a, i) => {
-                                const badge = getBadge(a.score || 0);
-                                const completionRate = a.tasks_completed + a.tasks_active > 0
-                                    ? Math.round((a.tasks_completed / (a.tasks_completed + a.tasks_active + (a.tasks_overdue || 0))) * 100)
-                                    : 0;
-                                const isSelected = selectedAgent?.id === a.id;
-                                return (
-                                    <div
-                                        key={a.id}
-                                        className="glass-card"
-                                        style={{
-                                            padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14,
-                                            cursor: 'pointer', transition: 'all 0.15s',
-                                            background: isSelected ? 'var(--accent-glow)' : undefined,
-                                            border: isSelected ? '1px solid rgba(37,99,235,0.3)' : undefined,
-                                            transform: isSelected ? 'translateY(-1px)' : undefined,
-                                        }}
-                                        onClick={() => setSelectedAgent(isSelected ? null : a)}
-                                    >
-                                        {/* Rank */}
-                                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: i < 3 ? 'var(--accent-glow)' : 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem', color: i < 3 ? 'var(--accent)' : 'var(--text-secondary)', flexShrink: 0 }}>
-                                            {i + 1}
-                                        </div>
-
-                                        {/* Avatar */}
-                                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>
-                                            {a.full_name.charAt(0)}
-                                        </div>
-
-                                        {/* Info */}
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{a.full_name}</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{a.region} · {a.email}</div>
-                                        </div>
-
-                                        {/* Stats */}
-                                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--success)' }}>{a.tasks_completed || 0}</div>
-                                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Done</div>
-                                            </div>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--danger)' }}>{a.tasks_overdue || 0}</div>
-                                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Overdue</div>
-                                            </div>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{ fontSize: '1rem', fontWeight: 700, color: badge.color }}>{a.score || 0}</div>
-                                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Score</div>
-                                            </div>
-                                        </div>
-
-                                        {/* Badge + Progress */}
-                                        <div style={{ textAlign: 'right', minWidth: 80 }}>
-                                            <div style={{ marginBottom: 4 }}><span className="badge" style={{ background: `${badge.color}22`, color: badge.color }}>{badge.label}</span></div>
-                                            <div style={{ height: 6, background: 'var(--bg-tertiary)', borderRadius: 99, overflow: 'hidden', width: 80 }}>
-                                                <div style={{ height: '100%', width: `${completionRate}%`, background: 'var(--accent)' }} />
-                                            </div>
-                                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>{completionRate}% completion</div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {leaderboard.length === 0 && (
-                                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>No agents found for this region</div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Charts row */}
-                    <div className="grid-2" style={{ marginBottom: 20 }}>
-                        <div className="chart-container">
-                            <div className="chart-title">📅 Weekly Task Progress</div>
-                            <ResponsiveContainer width="100%" height={200}>
-                                <BarChart data={weeklyData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                                    <XAxis dataKey="week" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                                    <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                                    <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                                    <Bar dataKey="completed" name="Completed" fill="var(--success)" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="active" name="Active" fill="var(--accent)" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="overdue" name="Overdue" fill="var(--danger)" radius={[4, 4, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-
-                        <div className="chart-container">
-                            <div className="chart-title">🌍 Regional Engagement</div>
-                            <ResponsiveContainer width="100%" height={200}>
-                                <RadarChart data={regionData}>
-                                    <PolarGrid stroke="var(--border)" />
-                                    <PolarAngleAxis dataKey="region" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                                    <PolarRadiusAxis tick={{ fill: 'var(--text-muted)', fontSize: 9 }} />
-                                    <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                                    <Radar dataKey="engagement" name="Engagement" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.2} />
-                                    <Radar dataKey="followers" name="Followers" stroke="var(--purple)" fill="var(--purple)" fillOpacity={0.2} />
-                                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                                </RadarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
+                )}
+            </div>
+        </>
     );
 };

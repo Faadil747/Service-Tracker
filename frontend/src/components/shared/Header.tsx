@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     Bell, LogOut, Zap, CheckSquare, LayoutDashboard, TrendingUp,
-    Settings, Calendar, Link2, Users, ChevronDown, MessageSquare, Menu, X
+    Settings, Calendar, Link2, Users, ChevronDown, MessageSquare, Menu, X,
+    AlertTriangle
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useNotificationStore } from '../../store/notificationStore';
-import { chatApi } from '../../services/api';
+import { chatApi, alertsApi } from '../../services/api';
 
 interface HeaderProps {
     region: string;
@@ -58,6 +59,9 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
     const [showProfile, setShowProfile] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [chatUnread, setChatUnread] = useState(0);
+    const [alerts, setAlerts] = useState<any[]>([]);
+    const [showAlertsSidebar, setShowAlertsSidebar] = useState(false);
+    const alertsLoaded = useRef(false);
 
     const navItems = user ? getNavItems(user.role) : [];
     const roleColor = user ? (ROLE_COLORS[user.role] || '#2563eb') : '#2563eb';
@@ -87,6 +91,25 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, []);
+
+    useEffect(() => {
+        const fetchAlerts = async () => {
+            try {
+                const res = await alertsApi.list({ status: 'open' });
+                setAlerts(res.data);
+            } catch {}
+        };
+        fetchAlerts();
+        const interval = setInterval(fetchAlerts, 30000);
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        if (alerts.length > 0 && !alertsLoaded.current) {
+            alertsLoaded.current = true;
+            setShowAlertsSidebar(true);
+        }
+    }, [alerts]);
 
     const handleBellClick = () => {
         if (!showNotifs) { fetchNotifications(); fetchCount(); }
@@ -156,6 +179,32 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
 
                 {/* Right side */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 12, flexShrink: 0 }}>
+
+                    {/* Alerts Button */}
+                    {alerts.length > 0 && (
+                        <button 
+                            onClick={() => { setShowAlertsSidebar(p => !p); setShowNotifs(false); setShowProfile(false); }} 
+                            className="btn btn-ghost btn-icon" 
+                            style={{
+                                position: 'relative', padding: 7,
+                                background: showAlertsSidebar ? 'var(--danger-glow)' : 'transparent',
+                                borderRadius: 8,
+                                color: 'var(--danger)',
+                            }}
+                        >
+                            <AlertTriangle size={16} />
+                            <span 
+                                className="notif-badge" 
+                                style={{ 
+                                    background: 'var(--danger)', 
+                                    color: '#fff',
+                                    animation: 'pulse-dot 2s infinite'
+                                }}
+                            >
+                                {alerts.length}
+                            </span>
+                        </button>
+                    )}
 
                     {/* Notification Bell */}
                     <div id="notif-dropdown" style={{ position: 'relative' }}>
@@ -347,6 +396,41 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                     ))}
                 </div>
             )}
+            {/* Alerts Drawer Sidebar */}
+            <div className={`alerts-sidebar-overlay ${showAlertsSidebar ? 'open' : ''}`} onClick={() => setShowAlertsSidebar(false)} />
+            <div className={`alerts-sidebar ${showAlertsSidebar ? 'open' : ''}`}>
+                <div className="alerts-sidebar-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <AlertTriangle size={18} color="var(--danger)" />
+                        <h4 style={{ margin: 0 }}>Active Alerts</h4>
+                    </div>
+                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowAlertsSidebar(false)}>
+                        <X size={16} />
+                    </button>
+                </div>
+                <div className="alerts-sidebar-content">
+                    {alerts.map(a => (
+                        <div 
+                            key={a.id} 
+                            className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'} 
+                            style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{a.title}</span>
+                                <span className={`badge ${a.priority === 'critical' ? 'badge-danger' : 'badge-warning'}`}>
+                                    {a.priority.toUpperCase()}
+                                </span>
+                            </div>
+                            {a.body && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{a.body}</div>}
+                            {a.region && (
+                                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                                    <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{a.region}</span>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
         </>
     );
 };

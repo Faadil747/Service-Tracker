@@ -23,7 +23,10 @@ api.interceptors.response.use(
         if (err.response?.status === 401) {
             localStorage.removeItem('access_token');
             localStorage.removeItem('user');
-            window.location.href = '/login';
+            localStorage.removeItem('auth-storage');
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(err);
     }

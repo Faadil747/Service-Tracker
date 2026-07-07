@@ -21,6 +21,7 @@ class CreateTaskRequest(BaseModel):
     recurrence: str = "none"
     assigned_to: Optional[str] = None
     assigned_to_id: Optional[str] = None
+    assigned_agent_ids: Optional[List[str]] = None
     campaign_id: Optional[str] = None
 
 
@@ -79,15 +80,26 @@ async def create_task(
     db.add(task)
     await db.flush()
 
-    # Assign to agent
-    target_agent = req.assigned_to_id or req.assigned_to
-    if target_agent:
-        assignment = TaskAssignment(id=str(uuid.uuid4()), task_id=task.id, agent_id=target_agent)
+    # Assign to agent(s)
+    agent_ids = []
+    if req.assigned_agent_ids:
+        agent_ids = req.assigned_agent_ids
+    elif req.assigned_to_id or req.assigned_to:
+        agent_ids = [req.assigned_to_id or req.assigned_to]
+
+    for agent_id in agent_ids:
+        assignment = TaskAssignment(
+            id=str(uuid.uuid4()),
+            task_id=task.id,
+            agent_id=agent_id,
+            accepted=False,
+            status="assigned"
+        )
         db.add(assignment)
         # Notify assigned agent
         notif = Notification(
             id=str(uuid.uuid4()),
-            user_id=target_agent,
+            user_id=agent_id,
             type="task_assigned",
             title=f"New task assigned: {req.title}",
             body=req.description or "",
@@ -196,6 +208,14 @@ async def complete_task(
     task.status = TaskStatus.completed
     task.completed_at = datetime.utcnow()
 
+    # Update assignment status
+    assignment_result = await db.execute(
+        select(TaskAssignment).where(TaskAssignment.task_id == task.id, TaskAssignment.agent_id == current_user.id)
+    )
+    assignment = assignment_result.scalar_one_or_none()
+    if assignment:
+        assignment.status = "waiting_for_approval"
+
     db.add(TaskCompletion(
         id=str(uuid.uuid4()),
         task_id=task.id,
@@ -225,6 +245,36 @@ async def complete_task(
 
     await db.commit()
     return {"message": "Task completed", "completed_at": task.completed_at.isoformat()}
+
+
+@router.post("/{task_id}/accept")
+async def accept_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(TaskAssignment).where(TaskAssignment.task_id == task_id, TaskAssignment.agent_id == current_user.id)
+    )
+    assignment = result.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Task assignment not found")
+
+    assignment.accepted = True
+    assignment.status = "working"
+
+    # Remove all other assignments for this task
+    await db.execute(
+        delete(TaskAssignment).where(TaskAssignment.task_id == task_id, TaskAssignment.agent_id != current_user.id)
+    )
+    
+    # Retrieve updated task
+    task_res = await db.execute(select(Task).where(Task.id == task_id))
+    task = task_res.scalar_one_or_none()
+    await db.commit()
+    if task:
+        return await _task_dict(task, db)
+    return {"message": "Task accepted", "status": assignment.status}
 
 
 @router.get("/accountability")
@@ -344,7 +394,15 @@ async def update_task_status(
 
 async def _task_dict(task: Task, db: AsyncSession) -> dict:
     assignments = await db.execute(select(TaskAssignment).where(TaskAssignment.task_id == task.id))
-    assign_list = [{"agent_id": a.agent_id} for a in assignments.scalars()]
+    assign_list = []
+    for a in assignments.scalars():
+        agent_user = await db.get(User, a.agent_id)
+        assign_list.append({
+            "agent_id": a.agent_id,
+            "agent_name": agent_user.full_name if agent_user else "Unknown Agent",
+            "accepted": a.accepted,
+            "status": a.status
+        })
     return {
         "id": task.id,
         "title": task.title,

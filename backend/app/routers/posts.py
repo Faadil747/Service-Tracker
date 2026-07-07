@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
 from pydantic import BaseModel
 from app.database import get_db
-from app.models import Post, PostDraft, PostStatus, Notification, ActivityLog, User, PostMetric, Comment, LinkTracking
+from app.models import Post, PostDraft, PostStatus, Notification, ActivityLog, User, PostMetric, Comment, LinkTracking, Task, TaskStatus, TaskCompletion
 from app.services.auth_service import get_current_user, require_role
 
 class UpdateLinkRequest(BaseModel):
@@ -30,6 +30,7 @@ class CreatePostRequest(BaseModel):
     campaign_id: Optional[str] = None
     is_template: bool = False
     status: Optional[str] = None
+    task_id: Optional[str] = None
 
 
 class ApprovePostRequest(BaseModel):
@@ -91,6 +92,7 @@ async def create_post(
         is_template=req.is_template,
         created_by_id=current_user.id,
         status=final_status,
+        task_id=req.task_id,
     )
     db.add(post)
     await db.flush()
@@ -116,6 +118,16 @@ async def create_post(
                 reference_id=post.id,
                 reference_type="post",
             ))
+        # Notify the agent themselves
+        db.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            type="post_submitted",
+            title=f"Post submitted for review: {req.title or req.content[:60]}",
+            body="Your post has been successfully submitted for review.",
+            reference_id=post.id,
+            reference_type="post",
+        ))
 
     db.add(ActivityLog(
         id=str(uuid.uuid4()),
@@ -125,6 +137,21 @@ async def create_post(
         entity_id=post.id,
     ))
     await db.commit()
+    return _post_dict(post)
+
+
+@router.get("/{post_id}")
+async def get_post(
+    post_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Post).where(Post.id == post_id))
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if current_user.role == "agent" and post.created_by_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return _post_dict(post)
 
 
@@ -140,7 +167,36 @@ async def approve_post(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    post.status = PostStatus.approved if req.status == "approved" else PostStatus.rejected
+    if req.status == "approved":
+        post.status = PostStatus.approved
+        if post.task_id:
+            # Update task assignment status to approved
+            assignment_result = await db.execute(
+                select(TaskAssignment).where(TaskAssignment.task_id == post.task_id, TaskAssignment.agent_id == post.created_by_id)
+            )
+            assignment = assignment_result.scalar_one_or_none()
+            if assignment:
+                assignment.status = "approved"
+    else:
+        post.status = PostStatus.rejected
+        if post.task_id:
+            # Reactivate associated task
+            task_result = await db.execute(select(Task).where(Task.id == post.task_id))
+            task = task_result.scalar_one_or_none()
+            if task:
+                task.status = TaskStatus.active
+                task.completed_at = None
+                # Clean up TaskCompletion record
+                await db.execute(delete(TaskCompletion).where(TaskCompletion.task_id == post.task_id))
+            # Update task assignment status to working
+            assignment_result = await db.execute(
+                select(TaskAssignment).where(TaskAssignment.task_id == post.task_id, TaskAssignment.agent_id == post.created_by_id)
+            )
+            assignment = assignment_result.scalar_one_or_none()
+            if assignment:
+                assignment.status = "working"
+                assignment.accepted = True
+
     post.approved_by_id = current_user.id
     post.review_comment = req.comment or ""
 
@@ -175,6 +231,15 @@ async def publish_post(
     post.linkedin_post_id = linkedin_url
     post.status = PostStatus.published
     post.published_at = datetime.utcnow()
+    
+    if post.task_id:
+        # Update task assignment status to posted
+        assignment_result = await db.execute(
+            select(TaskAssignment).where(TaskAssignment.task_id == post.task_id, TaskAssignment.agent_id == post.created_by_id)
+        )
+        assignment = assignment_result.scalar_one_or_none()
+        if assignment:
+            assignment.status = "posted"
     
     # 2. Automagically create a tracking link for this published post
     short_code = "".join(random.choices(string.ascii_letters + string.digits, k=8))
@@ -406,6 +471,7 @@ def _post_dict(p: Post) -> dict:
         "created_by_id": p.created_by_id,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "campaign_id": p.campaign_id,
+        "task_id": p.task_id,
         "predicted_reach": p.predicted_reach,
         "review_comment": p.review_comment,
         "linkedin_post_id": p.linkedin_post_id,

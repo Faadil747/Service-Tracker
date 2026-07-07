@@ -211,6 +211,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
     });
     const [newTask, setNewTask] = useState({ title: '', due_date: '', priority: 'medium' });
     const [showTaskForm, setShowTaskForm] = useState(false);
+    const [reviewComment, setReviewComment] = useState('');
     const initialLoaded = useRef(false);
     const isAdmin = user?.role === 'admin';
 
@@ -249,12 +250,22 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
     }, [filterRegion]);
 
     useEffect(() => {
-        if (postIdParam && posts.length > 0) {
-            const post = posts.find(p => p.id === postIdParam);
-            if (post) {
-                setSelectedPost(post);
+        const fetchAndSelectPost = async () => {
+            if (postIdParam) {
+                const post = posts.find(p => p.id === postIdParam);
+                if (post) {
+                    setSelectedPost(post);
+                } else {
+                    try {
+                        const res = await postsApi.get(postIdParam);
+                        setSelectedPost(res.data);
+                    } catch (e) {
+                        toast.error("Failed to load post details");
+                    }
+                }
             }
-        }
+        };
+        fetchAndSelectPost();
     }, [postIdParam, posts]);
 
     // Filter posts
@@ -316,6 +327,29 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
             toast.success('Task removed');
             load(false);
         } catch { toast.error('Failed to delete task'); }
+    };
+
+    const handleReviewPost = async (postId: string, status: string) => {
+        try {
+            await postsApi.approve(postId, { status, comment: reviewComment });
+            toast.success(status === 'approved' ? 'Post approved successfully!' : 'Feedback sent to agent to redo.');
+            setReviewComment('');
+            setSelectedPost(null);
+            load(false);
+        } catch {
+            toast.error('Failed to submit review');
+        }
+    };
+
+    const handlePublishNow = async (postId: string) => {
+        try {
+            await postsApi.publish(postId);
+            toast.success("Post successfully published to LinkedIn!");
+            setSelectedPost(null);
+            load(false);
+        } catch {
+            toast.error("Failed to publish post");
+        }
     };
 
     const handleDeletePost = async (postId: string) => {
@@ -947,6 +981,12 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                         <div style={{ background: 'var(--bg-tertiary)', borderRadius: 8, padding: '14px', fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
                                             {selectedPost.content}
                                         </div>
+                                        {selectedPost.review_comment && (
+                                            <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 8, padding: 12 }}>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--danger)', marginBottom: 4 }}>MANAGER FEEDBACK</div>
+                                                <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>{selectedPost.review_comment}</div>
+                                            </div>
+                                        )}
                                         {selectedPost.hashtags?.length > 0 && (
                                             <div style={{ fontSize: '0.82rem', color: 'var(--accent)', fontWeight: 600 }}>
                                                 {selectedPost.hashtags.join(' ')}
@@ -974,6 +1014,45 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                                 </div>
                                             ))}
                                         </div>
+
+                                        {isAdmin && selectedPost.status === 'in_review' && (
+                                            <div style={{ background: 'var(--bg-secondary)', padding: 12, borderRadius: 8, marginTop: 12, border: '1px solid var(--border)' }}>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>REVIEW FEEDBACK</div>
+                                                <textarea
+                                                    className="textarea"
+                                                    placeholder="Add feedback/comment for the agent (optional)..."
+                                                    value={reviewComment}
+                                                    onChange={e => setReviewComment(e.target.value)}
+                                                    style={{ minHeight: 60, fontSize: '0.8rem', marginBottom: 10 }}
+                                                />
+                                                <div style={{ display: 'flex', gap: 8 }}>
+                                                    <button
+                                                        onClick={() => handleReviewPost(selectedPost.id, 'approved')}
+                                                        className="btn btn-primary btn-sm"
+                                                        style={{ flex: 1, fontSize: '0.76rem', background: 'var(--success)', border: 'none', color: '#fff' }}
+                                                    >
+                                                        ✓ Approve Post
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleReviewPost(selectedPost.id, 'rejected')}
+                                                        className="btn btn-danger btn-sm"
+                                                        style={{ flex: 1, fontSize: '0.76rem' }}
+                                                    >
+                                                        ✗ Ask to Redo
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!isAdmin && selectedPost.status === 'approved' && (
+                                            <button
+                                                onClick={() => handlePublishNow(selectedPost.id)}
+                                                className="btn btn-primary"
+                                                style={{ width: '100%', marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                                            >
+                                                🚀 Post to LinkedIn
+                                            </button>
+                                        )}
 
                                         {isAdmin && (
                                             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>

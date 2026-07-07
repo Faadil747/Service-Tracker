@@ -50,6 +50,8 @@ class TaskAssignment(Base):
     task_id: Mapped[str] = mapped_column(String(36), ForeignKey("tasks.id"), nullable=False)
     agent_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     assigned_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    accepted: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(50), default="assigned")  # assigned, working, waiting_for_approval, approved, posted
 
     task = relationship("Task", back_populates="assignments")
     agent = relationship("User", back_populates="tasks_assigned")

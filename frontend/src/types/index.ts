@@ -27,7 +27,7 @@ export interface Task {
     created_by_id: string;
     completed_at: string | null;
     created_at: string;
-    assignments: { agent_id: string }[];
+    assignments: { agent_id: string; agent_name?: string; accepted?: boolean; status?: string }[];
 }
 
 export interface Post {

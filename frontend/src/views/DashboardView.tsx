@@ -102,7 +102,7 @@ const LoginPopup: React.FC<{ onClose: () => void; user: User; tasks: Task[]; pen
 };
 
 // ── Calendar ───────────────────────────────────────────────────────────────
-const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; onNavigateToTask: (taskId: string) => void }> = ({ tasks, onAddTask, onNavigateToTask }) => {
+const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; onNavigateToTask: (taskId: string) => void; isAdmin?: boolean }> = ({ tasks, onAddTask, onNavigateToTask, isAdmin }) => {
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
@@ -196,9 +196,11 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
                     <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                         Tasks for {format(selectedDate, 'MMM d, yyyy')}
                     </span>
-                    <button className="btn btn-ghost btn-sm" onClick={() => onAddTask(selectedDate)} style={{ padding: '2px 6px', fontSize: '0.72rem', height: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
-                        <Plus size={11} /> + Add Task
-                    </button>
+                    {isAdmin && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => onAddTask(selectedDate)} style={{ padding: '2px 6px', fontSize: '0.72rem', height: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Plus size={11} /> + Add Task
+                        </button>
+                    )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
                     {selectedDayTasks.map(t => (
@@ -253,6 +255,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const [loading, setLoading] = useState(true);
     const [showAddTask, setShowAddTask] = useState(false);
     const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_id: '' });
+    const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
     const isAdmin = user?.role === 'admin';
     const initialLoaded = useRef(false);
 
@@ -264,27 +267,41 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
 
     const loadAll = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
+        // Fetch page metrics
         try {
-            const [mRes, sumRes, tRes] = await Promise.all([
-                metricsApi.page({ region: region === 'Global' ? undefined : region, days: 30 }),
-                metricsApi.dashboardSummary(region === 'Global' ? undefined : region),
-                tasksApi.list({ region: region === 'Global' ? undefined : region }),
-            ]);
-            setMetrics(mRes.data);
-            setSummary(sumRes.data);
-            setTasks(tRes.data);
+            const res = await metricsApi.page({ region: region === 'Global' ? undefined : region, days: 30 });
+            setMetrics(res.data);
+        } catch (e) { console.error(e); }
 
-            if (isAdmin) {
-                const [paRes, ovRes, agRes] = await Promise.all([
-                    tasksApi.pendingApprovals(),
-                    tasksApi.accountability(region === 'Global' ? undefined : region),
-                    usersApi.list({ role: 'agent' }),
-                ]);
-                setPendingApprovals(paRes.data);
-                setOverdue(ovRes.data);
-                setAgents(agRes.data);
-            }
-        } catch (e) { /* silent fail on polls */ }
+        // Fetch dashboard summary
+        try {
+            const res = await metricsApi.dashboardSummary(region === 'Global' ? undefined : region);
+            setSummary(res.data);
+        } catch (e) { console.error(e); }
+
+        // Fetch tasks
+        try {
+            const res = await tasksApi.list({ region: region === 'Global' ? undefined : region });
+            setTasks(res.data);
+        } catch (e) { console.error(e); }
+
+        // Fetch admin-only resources
+        if (isAdmin) {
+            try {
+                const res = await tasksApi.pendingApprovals();
+                setPendingApprovals(res.data);
+            } catch (e) { console.error(e); }
+
+            try {
+                const res = await tasksApi.accountability(region === 'Global' ? undefined : region);
+                setOverdue(res.data);
+            } catch (e) { console.error(e); }
+
+            try {
+                const res = await usersApi.list({ role: 'agent' });
+                setAgents(res.data);
+            } catch (e) { console.error(e); }
+        }
         if (!silent) setLoading(false);
     }, [region, isAdmin]);
 
@@ -304,13 +321,28 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
 
 
 
+    const handleAcceptTask = async (taskId: string) => {
+        try {
+            await tasksApi.accept(taskId);
+            toast.success("Task accepted! Get started on it now.");
+            loadAll(true);
+        } catch {
+            toast.error("Failed to accept task");
+        }
+    };
+
     const handleAddTask = async () => {
         if (!newTask.title.trim()) return toast.error('Task title is required');
         try {
-            await tasksApi.create({ ...newTask, region });
+            await tasksApi.create({
+                ...newTask,
+                assigned_agent_ids: selectedAgentIds.length > 0 ? selectedAgentIds : undefined,
+                region
+            });
             toast.success(isAdmin ? 'Task created!' : 'Task submitted for approval');
             setShowAddTask(false);
             setNewTask({ title: '', description: '', due_date: '', assigned_to_id: '' });
+            setSelectedAgentIds([]);
             loadAll(true);
         } catch { toast.error('Failed to create task'); }
     };
@@ -413,15 +445,34 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                         <label className="form-label">Due Date</label>
                                         <input className="input" type="datetime-local" value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} />
                                     </div>
-                                    {isAdmin && agents.length > 0 && (
+                                    {isAdmin && (
                                         <div className="form-group">
-                                            <label className="form-label">Assign To (optional)</label>
-                                            <select className="select" value={newTask.assigned_to_id} onChange={e => setNewTask(p => ({ ...p, assigned_to_id: e.target.value }))}>
-                                                <option value="">Unassigned (anyone)</option>
-                                                {agents.map(a => (
-                                                    <option key={a.id} value={a.id}>{a.full_name} ({a.region})</option>
-                                                ))}
-                                            </select>
+                                            <label className="form-label">Assign To Agents</label>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                                                {agents.length === 0 ? (
+                                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>No agents available</span>
+                                                ) : (
+                                                    agents.map(a => {
+                                                        const isChecked = selectedAgentIds.includes(a.id);
+                                                        return (
+                                                            <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={() => {
+                                                                        if (isChecked) {
+                                                                            setSelectedAgentIds(selectedAgentIds.filter(id => id !== a.id));
+                                                                        } else {
+                                                                            setSelectedAgentIds([...selectedAgentIds, a.id]);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                {a.full_name} ({a.region})
+                                                            </label>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
                                         </div>
                                     )}
                                     {!isAdmin && <div className="badge badge-warning" style={{ alignSelf: 'flex-start' }}>Requires admin approval</div>}
@@ -556,9 +607,11 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                         <div className="chart-container">
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                                 <div className="chart-title" style={{ margin: 0 }}>📋 Tasks</div>
-                                <button className="btn btn-primary btn-sm" onClick={() => setShowAddTask(true)}>
-                                    <Plus size={14} /> New Task
-                                </button>
+                                {isAdmin && (
+                                    <button className="btn btn-primary btn-sm" onClick={() => setShowAddTask(true)}>
+                                        <Plus size={14} /> New Task
+                                    </button>
+                                )}
                             </div>
 
                             <div style={{ position: 'relative', marginBottom: 12 }}>
@@ -598,23 +651,97 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                 </div>
                             )}
 
-                            <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                {filteredTasks.slice(0, 10).map(t => (
-                                    <div key={t.id}
-                                        onClick={() => navigate(`/workspace?taskId=${t.id}`)}
-                                        className="glass-card glass-card-hover"
-                                        style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
-                                    >
-                                        <div className={`status-dot dot-${t.status === 'completed' ? 'completed' : t.status === 'active' ? 'active' : t.status === 'pending_approval' ? 'pending' : 'draft'}`} />
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 500 }} className="truncate">{t.title}</div>
-                                            {t.due_date && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Due: {new Date(t.due_date).toLocaleDateString()}</div>}
+                            <div style={{ maxHeight: 350, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {filteredTasks.slice(0, 15).map(t => {
+                                    // Check if task is posted
+                                    const isPosted = t.assignments?.some((a: any) => a.status === 'posted');
+                                    const cardStyle: React.CSSProperties = {
+                                        padding: '12px 14px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: 8,
+                                        cursor: 'pointer',
+                                        opacity: isPosted ? 0.65 : 1,
+                                        background: isPosted ? 'var(--bg-secondary)' : 'var(--surface)',
+                                        borderLeft: isPosted ? '4px solid var(--text-muted)' : '4px solid var(--accent)',
+                                    };
+
+                                    return (
+                                        <div key={t.id}
+                                            onClick={() => navigate(`/workspace?taskId=${t.id}`)}
+                                            className="glass-card glass-card-hover"
+                                            style={cardStyle}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: isPosted ? 'var(--text-muted)' : 'var(--text-primary)' }} className="truncate">{t.title}</div>
+                                                    {t.due_date && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Due: {new Date(t.due_date).toLocaleDateString()}</div>}
+                                                </div>
+                                            </div>
+
+                                            {/* Assignments List */}
+                                            {t.assignments && t.assignments.length > 0 && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+                                                    {t.assignments.map((a: any) => {
+                                                        const isCurrentUserAgent = user?.id === a.agent_id;
+                                                        
+                                                        // Render assignment status badge
+                                                        let badgeBg = 'var(--bg-tertiary)';
+                                                        let badgeColor = 'var(--text-muted)';
+                                                        let statusLabel = 'Assigned';
+
+                                                        if (a.status === 'assigned') {
+                                                            badgeBg = 'rgba(245, 158, 11, 0.15)';
+                                                            badgeColor = 'var(--warning)';
+                                                            statusLabel = 'Pending Acceptance';
+                                                        } else if (a.status === 'working') {
+                                                            badgeBg = 'rgba(59, 130, 246, 0.15)';
+                                                            badgeColor = 'var(--accent)';
+                                                            statusLabel = 'Working';
+                                                        } else if (a.status === 'waiting_for_approval') {
+                                                            badgeBg = 'rgba(236, 72, 153, 0.15)';
+                                                            badgeColor = '#db2777';
+                                                            statusLabel = 'Waiting for Approval';
+                                                        } else if (a.status === 'approved') {
+                                                            badgeBg = 'rgba(16, 185, 129, 0.15)';
+                                                            badgeColor = 'var(--success)';
+                                                            statusLabel = 'Approved';
+                                                        } else if (a.status === 'posted') {
+                                                            badgeBg = 'var(--bg-tertiary)';
+                                                            badgeColor = 'var(--text-muted)';
+                                                            statusLabel = 'Posted';
+                                                        }
+
+                                                        return (
+                                                            <div key={a.agent_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.75rem' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                    <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                                                        {a.agent_name?.charAt(0)}
+                                                                    </div>
+                                                                    <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>{a.agent_name}</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: '0.68rem', fontWeight: 600, background: badgeBg, color: badgeColor }}>
+                                                                        {statusLabel}
+                                                                    </span>
+                                                                    {a.status === 'assigned' && isCurrentUserAgent && (
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); handleAcceptTask(t.id); }}
+                                                                            className="btn btn-primary"
+                                                                            style={{ padding: '2px 8px', fontSize: '0.65rem', height: 'auto', lineHeight: '1.2' }}
+                                                                        >
+                                                                            Accept
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
-                                        <span className={`badge ${t.status === 'completed' ? 'badge-success' : t.status === 'active' ? 'badge-accent' : t.status === 'pending_approval' ? 'badge-warning' : 'badge-muted'}`}>
-                                            {t.status.replace('_', ' ')}
-                                        </span>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                                 {filteredTasks.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No tasks found</div>}
                             </div>
                         </div>
@@ -627,6 +754,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                 setShowAddTask(true);
                             }}
                             onNavigateToTask={(taskId) => navigate(`/workspace?taskId=${taskId}`)}
+                            isAdmin={isAdmin}
                         />
                     </div>
                 </>

@@ -61,6 +61,7 @@ export const tasksApi = {
     pendingApprovals: () => api.get('/api/tasks/pending-approvals'),
     accountability: (region?: string) => api.get('/api/tasks/accountability', { params: { region } }),
     assign: (id: string, agentId: string) => api.post(`/api/tasks/${id}/assign`, null, { params: { agent_id: agentId } }),
+    accept: (id: string) => api.post(`/api/tasks/${id}/accept`),
     delete: (id: string) => api.delete(`/api/tasks/${id}`),
     updateStatus: (id: string, status: string) => api.put(`/api/tasks/${id}/status`, null, { params: { status } }),
 };
@@ -68,6 +69,7 @@ export const tasksApi = {
 // ── Posts ─────────────────────────────────────────────────────────────────
 export const postsApi = {
     list: (params?: object) => api.get('/api/posts/', { params }),
+    get: (id: string) => api.get(`/api/posts/${id}`),
     create: (data: object) => api.post('/api/posts/', data),
     update: (id: string, data: object) => api.put(`/api/posts/${id}`, data),
     approve: (id: string, data: object) => api.post(`/api/posts/${id}/approve`, data),

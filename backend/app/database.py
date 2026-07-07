@@ -39,3 +39,18 @@ async def init_db():
         # Import all models to ensure they are registered
         from app.models import user, task, post, metrics, notification, alert, comment, link_tracking  # noqa
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE posts ADD COLUMN task_id VARCHAR(36)"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE task_assignments ADD COLUMN accepted BOOLEAN DEFAULT 0"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE task_assignments ADD COLUMN status VARCHAR(50) DEFAULT 'assigned'"))
+        except Exception:
+            pass

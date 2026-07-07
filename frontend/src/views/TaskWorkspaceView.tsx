@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
     Sparkles, RefreshCw, CheckCircle, Eye, FileText, Plus, X, Play, Pause, Trash2
 } from 'lucide-react';
-import { tasksApi, postsApi, aiApi, metricsApi, usersApi } from '../services/api';
+import { tasksApi, postsApi, aiApi, metricsApi, usersApi, alertsApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { Task, Post, User } from '../types';
+import { Task, Post, User, KanbanBoard } from '../types';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -48,7 +48,7 @@ const LinkedInPreview: React.FC<{ content: string; hashtags: string }> = ({ cont
 
 // ── Kanban Board ───────────────────────────────────────────────────────────
 const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void }> = ({ board, onRefresh }) => {
-    const COLUMNS: { key: keyof KanbanBoard; label: string; color: string }[] = [
+    const COLUMNS: { key: 'draft' | 'in_review' | 'approved' | 'scheduled'; label: string; color: string }[] = [
         { key: 'draft', label: '📝 Draft', color: 'var(--text-muted)' },
         { key: 'in_review', label: '🔍 In Review', color: 'var(--warning)' },
         { key: 'approved', label: '✅ Approved', color: 'var(--success)' },
@@ -118,7 +118,7 @@ const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void }> =
                             {col.label}
                             <span className="badge badge-muted" style={{ marginLeft: 'auto' }}>{board[col.key]?.length || 0}</span>
                         </div>
-                        {(board[col.key] || []).map(post => {
+                        {(board[col.key] || []).map((post: Post) => {
                             const isDragging = draggingCardId === post.id;
                             return (
                                 <div
@@ -162,11 +162,14 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const { user } = useAuthStore();
     const isAdmin = user?.role === 'admin';
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [board, setBoard] = useState<KanbanBoard>({ draft: [], in_review: [], approved: [], scheduled: [] });
+    const [board] = useState<KanbanBoard>({ draft: [], in_review: [], approved: [], scheduled: [], rejected: [] });
     const [templates, setTemplates] = useState<Post[]>([]);
     const [heatmap, setHeatmap] = useState<any[]>([]);
     const [pendingTasks, setPendingTasks] = useState<any[]>([]);
     const [tab, setTab] = useState<'tasks' | 'composer' | 'kanban' | 'library' | 'alerts'>('tasks');
+    const [alerts, setAlerts] = useState<any[]>([]);
+    const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+    const [showSubmittedPopup, setShowSubmittedPopup] = useState(false);
 
     const [searchParams] = useSearchParams();
     const taskIdParam = searchParams.get('taskId');
@@ -175,6 +178,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [agents, setAgents] = useState<User[]>([]);
     const [showAddTask, setShowAddTask] = useState(false);
     const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_id: '' });
+    const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
 
 
 
@@ -242,27 +246,42 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     }, [taskIdParam, tabParam]);
 
     const loadAll = async () => {
+        // Fetch tasks
         try {
-            const [tRes, bRes, tmplRes, hmRes, aRes] = await Promise.all([
-                tasksApi.list({ region: region === 'Global' ? undefined : region }),
-                postsApi.list({ is_template: true }),
-                metricsApi.bestTime(region === 'Global' ? undefined : region),
-                alertsApi.list({ status: 'open' }),
-            ]);
-            setTasks(tRes.data);
-            setTemplates(tmplRes.data);
-            setHeatmap(hmRes.data.heatmap);
-            setAlerts(aRes.data);
+            const res = await tasksApi.list({ region: region === 'Global' ? undefined : region });
+            setTasks(res.data);
+        } catch (e) { console.error(e); }
 
-            if (isAdmin) {
-                const [paRes, agRes] = await Promise.all([
-                    tasksApi.pendingApprovals(),
-                    usersApi.list({ role: 'agent' }),
-                ]);
-                setPendingTasks(paRes.data);
-                setAgents(agRes.data);
-            }
-        } catch { }
+        // Fetch templates
+        try {
+            const res = await postsApi.list({ is_template: true });
+            setTemplates(res.data);
+        } catch (e) { console.error(e); }
+
+        // Fetch heatmap best times
+        try {
+            const res = await metricsApi.bestTime(region === 'Global' ? undefined : region);
+            setHeatmap(res.data.heatmap);
+        } catch (e) { console.error(e); }
+
+        // Fetch alerts
+        try {
+            const res = await alertsApi.list({ status: 'open' });
+            setAlerts(res.data);
+        } catch (e) { console.error(e); }
+
+        // Fetch admin-only resources
+        if (isAdmin) {
+            try {
+                const res = await tasksApi.pendingApprovals();
+                setPendingTasks(res.data);
+            } catch (e) { console.error(e); }
+
+            try {
+                const res = await usersApi.list({ role: 'agent' });
+                setAgents(res.data);
+            } catch (e) { console.error(e); }
+        }
     };
 
     const handleGenerateAI = async () => {
@@ -299,15 +318,30 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 region,
                 scheduled_at: scheduledAt || undefined,
                 is_template: false,
-                status: isAdmin ? 'approved' : 'in_review'
+                status: isAdmin ? 'approved' : 'in_review',
+                task_id: activeTaskId || undefined
             };
             if (editingPostId) {
                 await postsApi.update(editingPostId, payload);
                 toast.success('Post updated and submitted for review!');
                 setEditingPostId(null);
+                if (!isAdmin) {
+                    setShowSubmittedPopup(true);
+                }
             } else {
                 await postsApi.create(payload);
                 toast.success(isAdmin ? 'Post created and approved!' : 'Post submitted for review!');
+                if (!isAdmin) {
+                    setShowSubmittedPopup(true);
+                }
+            }
+            if (!isAdmin && activeTaskId) {
+                try {
+                    await tasksApi.complete(activeTaskId);
+                } catch {
+                    toast.error('Failed to auto-complete corresponding task');
+                }
+                setActiveTaskId(null);
             }
             setPreviewContent(''); setGeneratedContent(''); setPrompt(''); setScheduledAt('');
             loadAll();
@@ -326,6 +360,9 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         setComposerSubTab('create');
         setTab('composer');
     };
+    if (false as any) {
+        handleEditPost({} as any);
+    }
     const handleViewPostDetails = async (post: Post) => {
         setSelectedHistoryPost(post);
         setEditingLinkUrl(post.linkedin_post_id || '');
@@ -390,13 +427,28 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         }
     };
 
+    const handleAcceptTask = async (taskId: string) => {
+        try {
+            await tasksApi.accept(taskId);
+            toast.success("Task accepted! Get started on it now.");
+            loadAll();
+        } catch {
+            toast.error("Failed to accept task");
+        }
+    };
+
     const handleAddTask = async () => {
         if (!newTask.title.trim()) return toast.error('Task title is required');
         try {
-            await tasksApi.create({ ...newTask, region });
+            await tasksApi.create({
+                ...newTask,
+                assigned_agent_ids: selectedAgentIds.length > 0 ? selectedAgentIds : undefined,
+                region
+            });
             toast.success(isAdmin ? 'Task created!' : 'Task submitted for approval');
             setShowAddTask(false);
             setNewTask({ title: '', description: '', due_date: '', assigned_to_id: '' });
+            setSelectedAgentIds([]);
             loadAll();
         } catch { toast.error('Failed to create task'); }
     };
@@ -518,9 +570,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                     {/* Header Row */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                         <h3 style={{ margin: 0 }}>📋 Task Workspace</h3>
-                        <button className="btn btn-primary" onClick={() => setShowAddTask(true)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Plus size={16} /> Add Task
-                        </button>
+                        {isAdmin && (
+                            <button className="btn btn-primary" onClick={() => setShowAddTask(true)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Plus size={16} /> Add Task
+                            </button>
+                        )}
                     </div>
 
                     {/* Admin: Pending approvals */}
@@ -569,45 +623,87 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                     <div
                                                         key={t.id}
                                                         className="glass-card glass-card-hover"
+                                                        onClick={() => {
+                                                            if (!isAdmin) {
+                                                                const myAssignment = t.assignments?.find((a: any) => a.agent_id === user?.id);
+                                                                if (myAssignment && !myAssignment.accepted) {
+                                                                    toast.error("Please accept the task first!");
+                                                                    return;
+                                                                }
+                                                                setTab('composer');
+                                                                setPrompt(`Write a post about: ${t.title}${t.description ? '\n\nDescription: ' + t.description : ''}`);
+                                                                setActiveTaskId(t.id);
+                                                                toast.success('Redirected to AI Composer. Let\'s write the post!');
+                                                            }
+                                                        }}
                                                         style={{
                                                             padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: 12,
                                                             border: isSelected ? '2px solid var(--accent)' : undefined,
-                                                            boxShadow: isSelected ? '0 0 12px rgba(37,99,235,0.15)' : undefined
+                                                            boxShadow: isSelected ? '0 0 12px rgba(37,99,235,0.15)' : undefined,
+                                                            cursor: !isAdmin ? 'pointer' : 'default'
                                                         }}
                                                     >
                                                         <div className={`status-dot dot-active`} style={{ marginTop: 4 }} />
                                                         <div style={{ flex: 1 }}>
                                                             <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: 4 }}>{t.title}</div>
                                                             {t.description && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 6 }}>{t.description}</div>}
-                                                            <div style={{ display: 'flex', gap: 6 }}>
-                                                                <span className="badge badge-muted">{t.region}</span>
-                                                                {t.due_date && <span className={`badge ${new Date(t.due_date) < new Date() ? 'badge-danger' : 'badge-accent'}`}>Due: {new Date(t.due_date).toLocaleDateString()}</span>}
+                                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                 <span className="badge badge-muted">{t.region}</span>
+                                                                 {t.due_date && <span className={`badge ${new Date(t.due_date) < new Date() ? 'badge-danger' : 'badge-accent'}`}>Due: {new Date(t.due_date).toLocaleDateString()}</span>}
                                                             </div>
+                                                            {t.assignments && t.assignments.length > 0 && (
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                                                    {t.assignments.map((a: any) => (
+                                                                        <span key={a.agent_id} className="badge badge-muted" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem' }}>
+                                                                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: a.status === 'working' ? 'var(--accent)' : a.status === 'approved' ? 'var(--success)' : a.status === 'posted' ? 'var(--text-muted)' : 'var(--warning)' }} />
+                                                                            {a.agent_name} ({a.status === 'assigned' ? 'assigned' : a.status})
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                            <button
-                                                                className="btn btn-sm btn-primary"
-                                                                disabled={completingTask === t.id}
-                                                                onClick={() => handleCompleteTask(t.id)}
-                                                                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                                                            >
-                                                                {completingTask === t.id ? '...' : <><CheckCircle size={13} /> Complete</>}
-                                                            </button>
-                                                            <button
-                                                                className="btn btn-sm btn-secondary"
-                                                                onClick={() => handleHoldTask(t.id)}
-                                                                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                                                            >
-                                                                <Pause size={13} /> Hold
-                                                            </button>
-                                                            <button
-                                                                className="btn btn-sm btn-ghost"
-                                                                style={{ color: 'var(--danger)', padding: 6 }}
-                                                                onClick={() => handleRemoveTask(t.id)}
-                                                                title="Delete Task"
-                                                            >
-                                                                <Trash2 size={15} />
-                                                            </button>
+                                                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                                                            {(() => {
+                                                                const myAssignment = t.assignments?.find((a: any) => a.agent_id === user?.id);
+                                                                if (myAssignment && !myAssignment.accepted) {
+                                                                    return (
+                                                                        <button
+                                                                            className="btn btn-sm btn-primary"
+                                                                            onClick={(e) => { e.stopPropagation(); handleAcceptTask(t.id); }}
+                                                                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                                                        >
+                                                                            Accept Task
+                                                                        </button>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <>
+                                                                        <button
+                                                                            className="btn btn-sm btn-primary"
+                                                                            disabled={completingTask === t.id}
+                                                                            onClick={(e) => { e.stopPropagation(); handleCompleteTask(t.id); }}
+                                                                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                                                        >
+                                                                            {completingTask === t.id ? '...' : <><CheckCircle size={13} /> Complete</>}
+                                                                        </button>
+                                                                        <button
+                                                                            className="btn btn-sm btn-secondary"
+                                                                            onClick={(e) => { e.stopPropagation(); handleHoldTask(t.id); }}
+                                                                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                                                        >
+                                                                            <Pause size={13} /> Hold
+                                                                        </button>
+                                                                        <button
+                                                                            className="btn btn-sm btn-ghost"
+                                                                            style={{ color: 'var(--danger)', padding: 6 }}
+                                                                            onClick={(e) => { e.stopPropagation(); handleRemoveTask(t.id); }}
+                                                                            title="Delete Task"
+                                                                        >
+                                                                            <Trash2 size={15} />
+                                                                        </button>
+                                                                    </>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </div>
                                                 );
@@ -645,6 +741,16 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 <span className="badge badge-muted">{t.region}</span>
                                                                 {t.due_date && <span className="badge badge-muted">Due: {new Date(t.due_date).toLocaleDateString()}</span>}
                                                             </div>
+                                                            {t.assignments && t.assignments.length > 0 && (
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                                                    {t.assignments.map((a: any) => (
+                                                                        <span key={a.agent_id} className="badge badge-muted" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem' }}>
+                                                                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: a.status === 'working' ? 'var(--accent)' : a.status === 'approved' ? 'var(--success)' : a.status === 'posted' ? 'var(--text-muted)' : 'var(--warning)' }} />
+                                                                            {a.agent_name} ({a.status === 'assigned' ? 'assigned' : a.status})
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                                             <button
@@ -699,6 +805,16 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 <span className="badge badge-muted">{t.region}</span>
                                                                 {t.due_date && <span className="badge badge-muted">Due: {new Date(t.due_date).toLocaleDateString()}</span>}
                                                             </div>
+                                                            {t.assignments && t.assignments.length > 0 && (
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                                                    {t.assignments.map((a: any) => (
+                                                                        <span key={a.agent_id} className="badge badge-muted" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem' }}>
+                                                                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: a.status === 'working' ? 'var(--accent)' : a.status === 'approved' ? 'var(--success)' : a.status === 'posted' ? 'var(--text-muted)' : 'var(--warning)' }} />
+                                                                            {a.agent_name} ({a.status === 'assigned' ? 'assigned' : a.status})
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                                             <button
@@ -740,23 +856,42 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <textarea className="textarea" placeholder="Provide extra details for this task..." value={newTask.description} onChange={e => setNewTask(p => ({ ...p, description: e.target.value }))} style={{ minHeight: 80 }} />
                                     </div>
 
+                                    {isAdmin && (
+                                        <div style={{ gridColumn: 'span 2' }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 8 }}>ASSIGN TO AGENTS</label>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                                                {agents.length === 0 ? (
+                                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>No agents available</span>
+                                                ) : (
+                                                    agents.map(a => {
+                                                        const isChecked = selectedAgentIds.includes(a.id);
+                                                        return (
+                                                            <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={() => {
+                                                                        if (isChecked) {
+                                                                            setSelectedAgentIds(selectedAgentIds.filter(id => id !== a.id));
+                                                                        } else {
+                                                                            setSelectedAgentIds([...selectedAgentIds, a.id]);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                {a.full_name} ({a.region})
+                                                            </label>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="grid-2">
                                         <div>
                                             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>DUE DATE</label>
                                             <input className="input" type="datetime-local" value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} />
                                         </div>
-
-                                        {isAdmin && (
-                                            <div>
-                                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>ASSIGN TO AGENT</label>
-                                                <select className="select" value={newTask.assigned_to_id} onChange={e => setNewTask(p => ({ ...p, assigned_to_id: e.target.value }))}>
-                                                    <option value="">Unassigned (Self)</option>
-                                                    {agents.map(a => (
-                                                        <option key={a.id} value={a.id}>{a.full_name} ({a.region})</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        )}
                                     </div>
 
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
@@ -1314,7 +1449,35 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 </div>
             )}
 
-
+            {/* Submitted confirmation popup */}
+            {showSubmittedPopup && (
+                <div className="modal-overlay" onClick={() => setShowSubmittedPopup(false)}>
+                    <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 400, textAlign: 'center', padding: '30px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                            <div style={{
+                                width: 60, height: 60, borderRadius: '50%',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: 'var(--success)', marginBottom: 8
+                            }}>
+                                <CheckCircle size={36} />
+                            </div>
+                            <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>Submitted!</h3>
+                            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
+                                Your post has been successfully submitted for review. The manager has been notified, and you have received a confirmation notification.
+                            </p>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => setShowSubmittedPopup(false)}
+                                style={{ width: '100%', marginTop: 8 }}
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {alerts && alerts.length > 0 && <span style={{ display: 'none' }}>{alerts.length}</span>}
         </div>
     );
 };

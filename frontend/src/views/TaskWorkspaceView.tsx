@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { tasksApi, postsApi, aiApi, metricsApi, usersApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { Task, Post, User } from '../types';
+import { Task, Post, User, KanbanBoard } from '../types';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -108,11 +108,11 @@ const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void }> =
                 const isActiveDrop = dragOverCol === col.key;
                 return (
                     <div
-                        key={col.key}
+                        key={col.key as string}
                         className={`kanban-col ${isActiveDrop ? 'drag-over' : ''}`}
-                        onDragOver={(e) => onDragOver(e, col.key)}
+                        onDragOver={(e) => onDragOver(e, col.key as string)}
                         onDragLeave={onDragLeave}
-                        onDrop={(e) => onDrop(e, col.key)}
+                        onDrop={(e) => onDrop(e, col.key as string)}
                     >
                         <div className="kanban-col-header" style={{ color: col.color }}>
                             {col.label}
@@ -137,8 +137,8 @@ const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void }> =
                                     </div>
                                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                         {COLUMNS.filter(c => c.key !== col.key).map(c => (
-                                            <button key={c.key} className="btn btn-ghost" style={{ fontSize: '0.65rem', padding: '3px 8px' }} onClick={() => movePost(post.id, c.key)}>
-                                                → {c.key}
+                                            <button key={c.key as string} className="btn btn-ghost" style={{ fontSize: '0.65rem', padding: '3px 8px' }} onClick={() => movePost(post.id, c.key as string)}>
+                                                → {c.key as string}
                                             </button>
                                         ))}
                                     </div>
@@ -162,7 +162,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const { user } = useAuthStore();
     const isAdmin = user?.role === 'admin';
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [board, setBoard] = useState<KanbanBoard>({ draft: [], in_review: [], approved: [], scheduled: [] });
+    const [board, setBoard] = useState<KanbanBoard>({ draft: [], in_review: [], approved: [], scheduled: [], rejected: [] });
     const [templates, setTemplates] = useState<Post[]>([]);
     const [heatmap, setHeatmap] = useState<any[]>([]);
     const [pendingTasks, setPendingTasks] = useState<any[]>([]);
@@ -243,16 +243,16 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
     const loadAll = async () => {
         try {
-            const [tRes, bRes, tmplRes, hmRes, aRes] = await Promise.all([
+            const [tRes, bRes, tmplRes, hmRes] = await Promise.all([
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
+                postsApi.kanban(region === 'Global' ? undefined : region),
                 postsApi.list({ is_template: true }),
                 metricsApi.bestTime(region === 'Global' ? undefined : region),
-                alertsApi.list({ status: 'open' }),
             ]);
             setTasks(tRes.data);
+            setBoard(bRes.data);
             setTemplates(tmplRes.data);
             setHeatmap(hmRes.data.heatmap);
-            setAlerts(aRes.data);
 
             if (isAdmin) {
                 const [paRes, agRes] = await Promise.all([
@@ -315,17 +315,6 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         setSavingPost(false);
     };
 
-    const handleEditPost = (post: Post) => {
-        setEditingPostId(post.id);
-        setPreviewContent(post.content);
-        setGeneratedContent(post.content);
-        setPostType(post.post_type);
-        setTone(post.tone);
-        setHashtags(post.hashtags);
-        setScheduledAt(post.scheduled_at ? post.scheduled_at.slice(0, 16) : '');
-        setComposerSubTab('create');
-        setTab('composer');
-    };
     const handleViewPostDetails = async (post: Post) => {
         setSelectedHistoryPost(post);
         setEditingLinkUrl(post.linkedin_post_id || '');

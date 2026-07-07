@@ -20,6 +20,7 @@ class CreateTaskRequest(BaseModel):
     due_date: Optional[str] = None
     recurrence: str = "none"
     assigned_to: Optional[str] = None
+    assigned_to_id: Optional[str] = None
     campaign_id: Optional[str] = None
 
 
@@ -79,13 +80,14 @@ async def create_task(
     await db.flush()
 
     # Assign to agent
-    if req.assigned_to:
-        assignment = TaskAssignment(id=str(uuid.uuid4()), task_id=task.id, agent_id=req.assigned_to)
+    target_agent = req.assigned_to_id or req.assigned_to
+    if target_agent:
+        assignment = TaskAssignment(id=str(uuid.uuid4()), task_id=task.id, agent_id=target_agent)
         db.add(assignment)
         # Notify assigned agent
         notif = Notification(
             id=str(uuid.uuid4()),
-            user_id=req.assigned_to,
+            user_id=target_agent,
             type="task_assigned",
             title=f"New task assigned: {req.title}",
             body=req.description or "",

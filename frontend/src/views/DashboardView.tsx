@@ -243,7 +243,6 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const [summary, setSummary] = useState<any>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [pendingApprovals, setPendingApprovals] = useState<Task[]>([]);
-    const [alerts, setAlerts] = useState<Alert[]>([]);
     const [agents, setAgents] = useState<User[]>([]);
     const [overdue, setOverdue] = useState<any[]>([]);
     const [search, setSearch] = useState('');
@@ -266,16 +265,14 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const loadAll = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         try {
-            const [mRes, sumRes, tRes, aRes] = await Promise.all([
+            const [mRes, sumRes, tRes] = await Promise.all([
                 metricsApi.page({ region: region === 'Global' ? undefined : region, days: 30 }),
                 metricsApi.dashboardSummary(region === 'Global' ? undefined : region),
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
-                alertsApi.list({ status: 'open' }),
             ]);
             setMetrics(mRes.data);
             setSummary(sumRes.data);
             setTasks(tRes.data);
-            setAlerts(aRes.data);
 
             if (isAdmin) {
                 const [paRes, ovRes, agRes] = await Promise.all([
@@ -436,21 +433,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                         </div>
                     )}
 
-                    {/* Active Alerts */}
-                    {alerts.length > 0 && (
-                        <div style={{ marginBottom: 16 }}>
-                            {alerts.slice(0, 2).map(a => (
-                                <div key={a.id} className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'} style={{ marginBottom: 8 }}>
-                                    <AlertTriangle size={16} color={a.priority === 'critical' ? 'var(--danger)' : 'var(--warning)'} style={{ flexShrink: 0 }} />
-                                    <div style={{ flex: 1 }}>
-                                        <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>{a.title}</span>
-                                        {a.body && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>{a.body}</div>}
-                                    </div>
-                                    <span className={`badge ${a.priority === 'critical' ? 'badge-danger' : 'badge-warning'}`}>{a.priority.toUpperCase()}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+
 
                     {/* ── Hero Signal Tile + KPIs ─────────────────────────────────────── */}
                     <div className="grid-4" style={{ marginBottom: 20 }}>
@@ -648,6 +631,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                     </div>
                 </>
             )}
+
         </div>
     );
 };

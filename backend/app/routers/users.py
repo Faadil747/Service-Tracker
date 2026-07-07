@@ -19,6 +19,7 @@ class CreateUserRequest(BaseModel):
     role: str = "agent"
     region: str = "Global"
     linkedin_url: str = ""
+    password: Optional[str] = None
 
 
 class UpdateUserRequest(BaseModel):
@@ -51,24 +52,24 @@ async def create_agent(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin creates an agent and returns temp credentials."""
+    """Admin creates an agent and returns credentials."""
     result = await db.execute(select(User).where(User.email == req.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already exists")
 
-    temp_password = secrets.token_urlsafe(12)
+    final_password = req.password or secrets.token_urlsafe(12)
     user = User(
         id=str(uuid.uuid4()),
         email=req.email,
         full_name=req.full_name,
-        hashed_password=hash_password(temp_password),
+        hashed_password=hash_password(final_password),
         role=req.role,
         region=req.region,
         linkedin_url=req.linkedin_url,
     )
     db.add(user)
     await db.commit()
-    return {**_user_dict(user), "temp_password": temp_password}
+    return {**_user_dict(user), "temp_password": final_password}
 
 
 @router.delete("/{user_id}")

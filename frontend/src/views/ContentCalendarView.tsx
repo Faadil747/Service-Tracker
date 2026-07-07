@@ -7,9 +7,10 @@ import {
 } from 'date-fns';
 import {
     Plus, ChevronLeft, ChevronRight, Calendar,
-    Clock, Edit3, X, Send, Flag, CheckSquare, Trash2, Star
+    Clock, Edit3, X, Send, Flag, CheckSquare, Trash2, Star,
+    Sparkles, RefreshCw
 } from 'lucide-react';
-import { postsApi, tasksApi } from '../services/api';
+import { postsApi, tasksApi, usersApi, aiApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -70,6 +71,8 @@ type ViewMode = 'month' | 'week' | 'list';
 
 const REGIONS = ['Global', 'India', 'USA', 'Indonesia'];
 const POST_TYPES = ['All', 'article', 'post', 'video', 'poll', 'document'];
+const TONES = ['professional', 'casual', 'enthusiastic', 'informative', 'inspirational'];
+const EMOJIS = ['🚀', '💡', '✅', '🌟', '🎯', '📊', '💼', '🤝', '🔥', '👋'];
 
 
 
@@ -187,6 +190,72 @@ const REGION_FLAG: Record<string, string> = {
     India: '🇮🇳', USA: '🇺🇸', Indonesia: '🇮🇩', Global: '🌐',
 };
 
+const LinkedInPreview: React.FC<{ content: string; hashtags: string }> = ({ content, hashtags }) => {
+    const tags = hashtags ? hashtags.split(' ').filter(Boolean) : [];
+    return (
+        <div className="linkedin-preview" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+            <div className="linkedin-preview-header" style={{ padding: '8px 12px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border)', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>linkedin.com · Preview Mode</div>
+            <div style={{ padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent)' }}>G</div>
+                    <div>
+                        <div style={{ color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 600 }}>GOrecruitAI</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Company · Just now</div>
+                    </div>
+                </div>
+                <div className="linkedin-post-card" style={{ padding: '8px 0' }}>
+                    <div className="linkedin-post-content" style={{ fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                        {content || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Your post preview will appear here...</span>}
+                    </div>
+                    {tags.length > 0 && (
+                        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {tags.map(t => <span key={t} style={{ color: 'var(--accent)', fontSize: '0.8rem', fontWeight: 600 }}>{t.startsWith('#') ? t : `#${t}`}</span>)}
+                        </div>
+                    )}
+                </div>
+                <div style={{ display: 'flex', gap: 16, padding: '10px 4px', borderTop: '1px solid var(--border)', marginTop: 10 }}>
+                    {['👍 Like', '💬 Comment', '🔁 Repost', '📤 Send'].map(a => (
+                        <span key={a} style={{ color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>{a}</span>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const generateRecurrenceDates = (startDate: Date, config: { type: string; weeklyDay: string; monthlyDay: string; count: number }): Date[] => {
+    const dates: Date[] = [];
+    let current = new Date(startDate);
+    const count = Math.min(Math.max(config.count || 1, 1), 24); // Cap repeating tasks
+
+    if (config.type === 'weekly') {
+        const targetDay = parseInt(config.weeklyDay, 10);
+        let diff = targetDay - current.getDay();
+        if (diff < 0) diff += 7;
+        current.setDate(current.getDate() + diff);
+
+        for (let i = 0; i < count; i++) {
+            dates.push(new Date(current));
+            current.setDate(current.getDate() + 7);
+        }
+    } else if (config.type === 'monthly') {
+        const targetDate = parseInt(config.monthlyDay, 10);
+        for (let i = 0; i < count; i++) {
+            const temp = new Date(current);
+            temp.setMonth(temp.getMonth() + i);
+            const year = temp.getFullYear();
+            const month = temp.getMonth();
+            const lastDay = new Date(year, month + 1, 0).getDate();
+            const dayToSet = Math.min(targetDate, lastDay);
+            temp.setDate(dayToSet);
+            dates.push(temp);
+        }
+    } else {
+        dates.push(startDate);
+    }
+    return dates;
+};
+
 export const ContentCalendarView: React.FC<Props> = ({ region }) => {
     const { user } = useAuthStore();
     const [searchParams] = useSearchParams();
@@ -198,29 +267,99 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [selectedPost, setSelectedPost] = useState<any | null>(null);
+    const [isEditingPost, setIsEditingPost] = useState(false);
+    const [editPostForm, setEditPostForm] = useState({
+        content: '',
+        post_type: 'post',
+        region: 'Global',
+        scheduled_at: '',
+        status: 'draft'
+    });
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showDayPanel, setShowDayPanel] = useState(false);
     const [filterRegion, setFilterRegion] = useState('Global');
     const [filterType, setFilterType] = useState('All');
     const [filterStatus, setFilterStatus] = useState('All');
     const [showHolidays, setShowHolidays] = useState(true);
-    const [holidayRegionFilter, setHolidayRegionFilter] = useState('All');
     const [newPost, setNewPost] = useState({
         content: '', post_type: 'post', region: region,
         scheduled_at: '', status: 'draft',
     });
-    const [newTask, setNewTask] = useState({ title: '', due_date: '', priority: 'medium' });
+    const [newTask, setNewTask] = useState({
+        title: '',
+        description: '',
+        due_date: '',
+        priority: 'medium',
+        assigned_to_id: '',
+        recurrence: 'none'
+    });
+    const [postRecurrence, setPostRecurrence] = useState({
+        type: 'none',
+        weeklyDay: '1',
+        monthlyDay: '1',
+        count: 4
+    });
+    const [taskRecurrence, setTaskRecurrence] = useState({
+        type: 'none',
+        weeklyDay: '1',
+        monthlyDay: '1',
+        count: 4
+    });
+    const [postCreationMode, setPostCreationMode] = useState<'manual' | 'ai'>('manual');
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [aiTone, setAiTone] = useState('professional');
+    const [aiHashtags, setAiHashtags] = useState('');
+    const [generatingAI, setGeneratingAI] = useState(false);
+    const [predictedReach, setPredictedReach] = useState<{ predicted_reach: number; confidence: number; tips?: string[] } | null>(null);
+    const [agents, setAgents] = useState<any[]>([]);
     const [showTaskForm, setShowTaskForm] = useState(false);
     const initialLoaded = useRef(false);
     const isAdmin = user?.role === 'admin';
+
+    useEffect(() => {
+        if (isAdmin) {
+            usersApi.list({ role: 'agent' })
+                .then(res => setAgents(res.data))
+                .catch(() => { });
+        }
+    }, [isAdmin]);
 
     const holidayMap = buildHolidayMap(currentDate.getFullYear());
 
     const getHolidaysForDay = (day: Date) => {
         const key = format(day, 'yyyy-MM-dd');
-        const all = holidayMap[key] || [];
-        if (holidayRegionFilter === 'All') return all;
-        return all.filter(h => h.region === holidayRegionFilter || h.region === 'Global');
+        return holidayMap[key] || [];
+    };
+
+    const handleSelectPost = (p: any) => {
+        setSelectedPost(p);
+        setIsEditingPost(false);
+        setEditPostForm({
+            content: p.content || '',
+            post_type: p.post_type || 'post',
+            region: p.region || 'Global',
+            scheduled_at: p.scheduled_at ? p.scheduled_at.slice(0, 16) : '',
+            status: p.status || 'draft'
+        });
+    };
+
+    const handleUpdatePost = async () => {
+        if (!editPostForm.content.trim()) {
+            toast.error('Post content is required');
+            return;
+        }
+        try {
+            await postsApi.update(selectedPost.id, {
+                ...editPostForm,
+                scheduled_at: editPostForm.scheduled_at || null,
+            });
+            toast.success('Post updated!');
+            setSelectedPost(null);
+            setIsEditingPost(false);
+            load(false);
+        } catch {
+            toast.error('Failed to update post');
+        }
     };
 
     const load = useCallback(async (silent = false) => {
@@ -252,7 +391,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
         if (postIdParam && posts.length > 0) {
             const post = posts.find(p => p.id === postIdParam);
             if (post) {
-                setSelectedPost(post);
+                handleSelectPost(post);
             }
         }
     }, [postIdParam, posts]);
@@ -275,38 +414,98 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
         try { return isSameDay(safeParseDate(t.due_date), day); } catch { return false; }
     });
 
+    const handleGenerateAIPost = async () => {
+        if (!aiPrompt.trim()) {
+            toast.error('AI Prompt/Topic is required');
+            return;
+        }
+        setGeneratingAI(true);
+        try {
+            const res = await aiApi.generatePost({
+                prompt: aiPrompt,
+                post_type: newPost.post_type,
+                tone: aiTone,
+                hashtags: aiHashtags.split(' ').filter(Boolean),
+                region: newPost.region === 'Global' ? 'Global' : newPost.region,
+                add_emojis: true,
+            });
+            const generated = typeof res.data.content === 'string' ? res.data.content : JSON.stringify(res.data.content);
+            setNewPost(p => ({ ...p, content: generated }));
+            toast.success('AI post generated successfully!');
+            // Predict reach
+            const reachRes = await aiApi.predictReach({ content: generated, region: newPost.region });
+            setPredictedReach(reachRes.data);
+        } catch {
+            toast.error('AI generation failed');
+        } finally {
+            setGeneratingAI(false);
+        }
+    };
+
     const handleCreatePost = async () => {
         if (!newPost.content.trim()) { toast.error('Content is required'); return; }
         try {
-            await postsApi.create({
-                ...newPost,
-                scheduled_at: newPost.scheduled_at || null,
-                region: filterRegion === 'Global' ? 'Global' : filterRegion,
-            });
-            toast.success('Post created!');
+            const baseDate = newPost.scheduled_at ? safeParseDate(newPost.scheduled_at) : new Date();
+            const dates = postRecurrence.type !== 'none'
+                ? generateRecurrenceDates(baseDate, postRecurrence)
+                : [baseDate];
+
+            for (const d of dates) {
+                const formattedSched = format(d, "yyyy-MM-dd'T'HH:mm:ss");
+                await postsApi.create({
+                    ...newPost,
+                    scheduled_at: newPost.scheduled_at ? formattedSched : null,
+                    region: filterRegion === 'Global' ? 'Global' : filterRegion,
+                });
+            }
+
+            toast.success(postRecurrence.type !== 'none' ? `Scheduled ${dates.length} posts successfully!` : 'Post created!');
             setShowCreateModal(false);
-            setNewPost({ content: '', post_type: 'post', region, scheduled_at: '', status: 'draft' });
+            setNewPost({ content: '', post_type: 'post', region: region || 'Global', scheduled_at: '', status: 'draft' });
+            setPostRecurrence({ type: 'none', weeklyDay: '1', monthlyDay: '1', count: 4 });
+            setPostCreationMode('manual');
+            setAiPrompt('');
+            setAiTone('professional');
+            setAiHashtags('');
+            setPredictedReach(null);
             load(false);
-        } catch { toast.error('Failed to create post'); }
+        } catch { toast.error('Failed to create post(s)'); }
     };
 
     const handleCreateTask = async () => {
         if (!newTask.title.trim()) { toast.error('Task title required'); return; }
         try {
-            const dueDateFull = selectedDate
-                ? `${format(selectedDate, 'yyyy-MM-dd')}T09:00:00`
-                : (newTask.due_date || undefined);
-            await tasksApi.create({
-                title: newTask.title,
-                due_date: dueDateFull,
-                priority: newTask.priority,
-                region: filterRegion === 'Global' ? 'Global' : filterRegion,
+            const baseDate = newTask.due_date ? safeParseDate(newTask.due_date) : new Date();
+            const dates = taskRecurrence.type !== 'none'
+                ? generateRecurrenceDates(baseDate, taskRecurrence)
+                : [baseDate];
+
+            for (const d of dates) {
+                const formattedDue = format(d, "yyyy-MM-dd'T'HH:mm:ss");
+                await tasksApi.create({
+                    title: newTask.title,
+                    description: newTask.description,
+                    due_date: newTask.due_date ? formattedDue : undefined,
+                    priority: newTask.priority,
+                    recurrence: taskRecurrence.type,
+                    assigned_to_id: newTask.assigned_to_id || undefined,
+                    region: filterRegion === 'Global' ? 'Global' : filterRegion,
+                });
+            }
+
+            toast.success(taskRecurrence.type !== 'none' ? `Added ${dates.length} tasks successfully!` : 'Task added!');
+            setNewTask({
+                title: '',
+                description: '',
+                due_date: '',
+                priority: 'medium',
+                assigned_to_id: '',
+                recurrence: 'none'
             });
-            toast.success('Task added!');
-            setNewTask({ title: '', due_date: '', priority: 'medium' });
+            setTaskRecurrence({ type: 'none', weeklyDay: '1', monthlyDay: '1', count: 4 });
             setShowTaskForm(false);
             load(false);
-        } catch { toast.error('Failed to add task'); }
+        } catch { toast.error('Failed to add task(s)'); }
     };
 
     const handleDeleteTask = async (taskId: any) => {
@@ -332,6 +531,16 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
         setSelectedDate(day);
         const sch = format(day, "yyyy-MM-dd'T'HH:mm");
         setNewPost(p => ({ ...p, scheduled_at: sch }));
+        setNewTask(() => ({
+            title: '',
+            description: '',
+            due_date: `${format(day, 'yyyy-MM-dd')}T09:00`,
+            priority: 'medium',
+            assigned_to_id: '',
+            recurrence: 'none'
+        }));
+        setPostRecurrence({ type: 'none', weeklyDay: String(day.getDay()), monthlyDay: String(day.getDate()), count: 4 });
+        setTaskRecurrence({ type: 'none', weeklyDay: String(day.getDay()), monthlyDay: String(day.getDate()), count: 4 });
         setShowDayPanel(true);
         setShowTaskForm(false);
     };
@@ -385,7 +594,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                 </div>
 
                 {/* Calendar days */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
                     {days.map((day) => {
                         const dayPosts = getPostsForDay(day);
                         const dayTasks = getTasksForDay(day);
@@ -398,94 +607,104 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                 key={day.toISOString()}
                                 onClick={() => handleDayClick(day)}
                                 style={{
-                                    minHeight: 100, padding: '5px 6px',
-                                    border: `1px solid ${isSelected ? 'var(--accent)' : isToday(day) ? 'rgba(37,99,235,0.3)' : 'var(--border)'}`,
-                                    borderRadius: 6,
-                                    background: isSelected ? 'var(--accent-glow)' : isToday(day) ? 'rgba(37,99,235,0.04)' : !isCurrentMonth ? 'var(--bg-tertiary)' : '#fff',
-                                    opacity: !isCurrentMonth ? 0.45 : 1,
+                                    height: 130, padding: '8px 10px',
+                                    border: `1px solid ${isSelected ? 'var(--accent)' : isToday(day) ? 'rgba(37,99,235,0.4)' : 'var(--border)'}`,
+                                    borderRadius: 8,
+                                    background: isSelected ? 'var(--accent-glow)' : isToday(day) ? 'rgba(37,99,235,0.05)' : !isCurrentMonth ? 'var(--bg-tertiary)' : '#fff',
+                                    opacity: !isCurrentMonth ? 0.5 : 1,
                                     cursor: 'pointer',
-                                    transition: 'all 0.12s',
+                                    transition: 'all 0.15s ease',
                                     position: 'relative',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 5,
+                                    overflow: 'hidden',
                                 }}
                                 onMouseEnter={e => { if (!isSelected) e.currentTarget.style.borderColor = 'var(--border-strong)'; }}
                                 onMouseLeave={e => { if (!isSelected && !isToday(day)) e.currentTarget.style.borderColor = 'var(--border)'; }}
                             >
-                                {/* Date number */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                                {/* Date number and details header */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
                                     <span style={{
-                                        fontSize: '0.78rem', fontWeight: isToday(day) ? 800 : 500,
+                                        fontSize: '0.85rem', fontWeight: isToday(day) ? 800 : 600,
                                         color: isToday(day) ? '#fff' : 'var(--text-primary)',
-                                        width: 22, height: 22, borderRadius: '50%',
+                                        width: 24, height: 24, borderRadius: '50%',
                                         background: isToday(day) ? 'var(--accent)' : 'transparent',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                     }}>
                                         {format(day, 'd')}
                                     </span>
-                                    <div style={{ display: 'flex', gap: 2 }}>
+                                    <div style={{ display: 'flex', gap: 3 }}>
                                         {dayPosts.length > 0 && (
-                                            <span style={{ fontSize: '0.58rem', fontWeight: 700, padding: '1px 4px', background: 'var(--accent)', color: '#fff', borderRadius: 99 }}>
-                                                {dayPosts.length}p
+                                            <span style={{ fontSize: '0.58rem', fontWeight: 700, padding: '1px 5px', background: 'var(--accent-glow)', color: 'var(--accent)', borderRadius: 4, border: '1px solid rgba(37,99,235,0.15)' }}>
+                                                {dayPosts.length} post{dayPosts.length > 1 ? 's' : ''}
                                             </span>
                                         )}
                                         {dayTasks.length > 0 && (
-                                            <span style={{ fontSize: '0.58rem', fontWeight: 700, padding: '1px 4px', background: '#10b981', color: '#fff', borderRadius: 99 }}>
-                                                {dayTasks.length}t
+                                            <span style={{ fontSize: '0.58rem', fontWeight: 700, padding: '1px 5px', background: 'var(--success-glow)', color: 'var(--success)', borderRadius: 4, border: '1px solid rgba(16,185,129,0.15)' }}>
+                                                {dayTasks.length} task{dayTasks.length > 1 ? 's' : ''}
                                             </span>
                                         )}
                                     </div>
                                 </div>
 
-                                {/* Holiday indicators */}
-                                {dayHolidays.slice(0, 2).map((h, i) => (
-                                    <div key={i} style={{
-                                        fontSize: '0.55rem', fontWeight: 700, color: h.color, marginBottom: 2,
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                        display: 'flex', alignItems: 'center', gap: 2,
-                                    }}>
-                                        <Flag style={{ width: 7, height: 7, flexShrink: 0 }} />
-                                        {h.name}
-                                    </div>
-                                ))}
+                                {/* Events List Container */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, overflow: 'hidden' }}>
+                                    {/* Holiday indicators */}
+                                    {dayHolidays.slice(0, 2).map((h, i) => (
+                                        <div key={i} style={{
+                                            fontSize: '0.65rem', fontWeight: 700, color: h.color,
+                                            background: h.color + '12', padding: '2px 5px', borderRadius: 4,
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                            display: 'flex', alignItems: 'center', gap: 3,
+                                            border: `1px solid ${h.color}20`,
+                                        }}>
+                                            <Flag style={{ width: 8, height: 8, flexShrink: 0 }} />
+                                            {h.name}
+                                        </div>
+                                    ))}
 
-                                {/* Post chips */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    {dayPosts.slice(0, dayHolidays.length > 0 ? 1 : 2).map(p => {
+                                    {/* Post chips */}
+                                    {dayPosts.slice(0, 2).map(p => {
                                         const cfg = STATUS_CONFIG[p.status] || STATUS_CONFIG.draft;
                                         return (
                                             <div
                                                 key={p.id}
-                                                onClick={e => { e.stopPropagation(); setSelectedPost(p); }}
+                                                onClick={e => { e.stopPropagation(); handleSelectPost(p); }}
                                                 style={{
-                                                    padding: '2px 5px', borderRadius: 3, fontSize: '0.6rem', fontWeight: 600,
+                                                    padding: '3px 6px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 600,
                                                     background: cfg.bg, color: cfg.color,
                                                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                                    cursor: 'pointer', border: `1px solid ${cfg.color}30`,
-                                                }}>
-                                                {p.content?.slice(0, 22) || 'Post'}
+                                                    cursor: 'pointer', border: `1px solid ${cfg.color}25`,
+                                                    transition: 'filter 0.12s',
+                                                }}
+                                                onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(0.96)'; }}
+                                                onMouseLeave={e => { e.currentTarget.style.filter = 'none'; }}>
+                                                📝 {p.content?.slice(0, 24) || 'Post'}
                                             </div>
                                         );
                                     })}
 
                                     {/* Task chips */}
-                                    {dayTasks.slice(0, 1).map(t => {
+                                    {dayTasks.slice(0, 2).map(t => {
                                         const cfg = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.pending;
                                         return (
                                             <div key={t.id} style={{
-                                                padding: '2px 5px', borderRadius: 3, fontSize: '0.6rem', fontWeight: 600,
+                                                padding: '3px 6px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 600,
                                                 background: cfg.bg, color: cfg.color,
                                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                                 display: 'flex', alignItems: 'center', gap: 3,
-                                                border: `1px solid ${cfg.color}30`,
+                                                border: `1px solid ${cfg.color}25`,
                                             }}>
-                                                <CheckSquare style={{ width: 7, height: 7, flexShrink: 0 }} />
-                                                {t.title?.slice(0, 20) || 'Task'}
+                                                <CheckSquare style={{ width: 8, height: 8, flexShrink: 0 }} />
+                                                {t.title}
                                             </div>
                                         );
                                     })}
 
-                                    {(dayPosts.length + dayTasks.length) > 3 && (
-                                        <div style={{ fontSize: '0.58rem', color: 'var(--text-muted)', paddingLeft: 2 }}>
-                                            +{dayPosts.length + dayTasks.length - 3} more
+                                    {(dayPosts.length + dayTasks.length) > 4 && (
+                                        <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', paddingLeft: 2 }}>
+                                            +{dayPosts.length + dayTasks.length - 4} more
                                         </div>
                                     )}
                                 </div>
@@ -543,7 +762,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                     {dayPosts.map(p => {
                                         const cfg = STATUS_CONFIG[p.status] || STATUS_CONFIG.draft;
                                         return (
-                                            <div key={p.id} onClick={() => setSelectedPost(p)} style={{
+                                            <div key={p.id} onClick={() => handleSelectPost(p)} style={{
                                                 padding: '6px 8px', background: cfg.bg, borderRadius: 5, cursor: 'pointer',
                                                 borderLeft: `3px solid ${cfg.color}`,
                                                 fontSize: '0.72rem', fontWeight: 600, color: cfg.color,
@@ -631,7 +850,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                     </span>
                                 </td>
                                 <td>
-                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setSelectedPost(p)} title="View">
+                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleSelectPost(p)} title="View/Edit">
                                         <Edit3 size={13} />
                                     </button>
                                 </td>
@@ -676,11 +895,6 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                     <div className="page-title">Content Calendar</div>
                     <div className="page-subtitle">Schedule, manage and track your LinkedIn content pipeline</div>
                 </div>
-                <div className="page-header-right">
-                    <button className="btn btn-primary" onClick={() => { setSelectedDate(new Date()); setShowDayPanel(true); setShowTaskForm(false); }}>
-                        <Plus size={15} /> Schedule Post
-                    </button>
-                </div>
             </div>
 
             {/* Toolbar */}
@@ -706,15 +920,6 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                     >
                         <Flag size={12} /> Holidays
                     </button>
-
-                    {showHolidays && (
-                        <select className="select" style={{ width: 'auto', fontSize: '0.75rem', padding: '5px 8px' }}
-                            value={holidayRegionFilter}
-                            onChange={e => setHolidayRegionFilter(e.target.value)}>
-                            <option value="All">All Regions</option>
-                            {REGIONS.map(r => <option key={r}>{r}</option>)}
-                        </select>
-                    )}
 
                     <select className="select" style={{ width: 'auto', fontSize: '0.78rem', padding: '6px 10px' }} value={filterRegion} onChange={e => setFilterRegion(e.target.value)}>
                         {REGIONS.map(r => <option key={r}>{r}</option>)}
@@ -812,7 +1017,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                     </div>
                                     <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7rem', padding: '3px 8px' }}
                                         onClick={() => { setShowCreateModal(true); setShowDayPanel(false); }}>
-                                        <Plus size={11} /> Add
+                                        <Plus size={11} /> Post
                                     </button>
                                 </div>
                                 {dayPanelPosts.length === 0 ? (
@@ -850,31 +1055,120 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                     {isAdmin && (
                                         <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7rem', padding: '3px 8px' }}
                                             onClick={() => setShowTaskForm(v => !v)}>
-                                            <Plus size={11} /> Add
+                                            <Plus size={11} /> Task
                                         </button>
                                     )}
                                 </div>
 
                                 {/* Quick add task form */}
                                 {showTaskForm && isAdmin && (
-                                    <div style={{ padding: '10px', marginBottom: 10, background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                                        <input
-                                            className="input" style={{ marginBottom: 8, fontSize: '0.78rem' }}
-                                            placeholder="Task title..."
-                                            value={newTask.title}
-                                            onChange={e => setNewTask(t => ({ ...t, title: e.target.value }))}
-                                            onKeyDown={e => e.key === 'Enter' && handleCreateTask()}
-                                        />
-                                        <select className="select" style={{ marginBottom: 8, fontSize: '0.75rem' }}
-                                            value={newTask.priority}
-                                            onChange={e => setNewTask(t => ({ ...t, priority: e.target.value }))}>
-                                            <option value="low">Low Priority</option>
-                                            <option value="medium">Medium Priority</option>
-                                            <option value="high">High Priority</option>
-                                        </select>
-                                        <div style={{ display: 'flex', gap: 6 }}>
+                                    <div style={{ padding: '12px', marginBottom: 14, background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        <div>
+                                            <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Title *</label>
+                                            <input
+                                                className="input" style={{ fontSize: '0.78rem' }}
+                                                placeholder="Task title..."
+                                                value={newTask.title}
+                                                onChange={e => setNewTask(t => ({ ...t, title: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Description</label>
+                                            <textarea
+                                                className="textarea" style={{ fontSize: '0.78rem', minHeight: 50, padding: 6 }}
+                                                placeholder="Add details / JD link..."
+                                                value={newTask.description}
+                                                onChange={e => setNewTask(t => ({ ...t, description: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                            <div>
+                                                <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Due Date & Time</label>
+                                                <input
+                                                    className="input" style={{ fontSize: '0.75rem' }}
+                                                    type="datetime-local"
+                                                    value={newTask.due_date}
+                                                    onChange={e => setNewTask(t => ({ ...t, due_date: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Priority</label>
+                                                <select className="select" style={{ fontSize: '0.75rem' }}
+                                                    value={newTask.priority}
+                                                    onChange={e => setNewTask(t => ({ ...t, priority: e.target.value }))}>
+                                                    <option value="low">Low</option>
+                                                    <option value="medium">Medium</option>
+                                                    <option value="high">High</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                            <div>
+                                                <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Assign To Agent</label>
+                                                <select className="select" style={{ fontSize: '0.75rem' }}
+                                                    value={newTask.assigned_to_id}
+                                                    onChange={e => setNewTask(t => ({ ...t, assigned_to_id: e.target.value }))}>
+                                                    <option value="">Unassigned (Self)</option>
+                                                    {agents.map(a => (
+                                                        <option key={a.id} value={a.id}>{a.full_name} ({a.region})</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Recurrence Period</label>
+                                                <select className="select" style={{ fontSize: '0.75rem' }}
+                                                    value={taskRecurrence.type}
+                                                    onChange={e => setTaskRecurrence(t => ({ ...t, type: e.target.value }))}>
+                                                    <option value="none">One-off / None</option>
+                                                    <option value="weekly">Weekly Once</option>
+                                                    <option value="monthly">Monthly Once</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        {taskRecurrence.type !== 'none' && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                                {taskRecurrence.type === 'weekly' && (
+                                                    <div>
+                                                        <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Repeat On Day</label>
+                                                        <select className="select" style={{ fontSize: '0.75rem' }} value={taskRecurrence.weeklyDay} onChange={e => setTaskRecurrence(t => ({ ...t, weeklyDay: e.target.value }))}>
+                                                            <option value="1">Monday</option>
+                                                            <option value="2">Tuesday</option>
+                                                            <option value="3">Wednesday</option>
+                                                            <option value="4">Thursday</option>
+                                                            <option value="5">Friday</option>
+                                                            <option value="6">Saturday</option>
+                                                            <option value="0">Sunday</option>
+                                                        </select>
+                                                    </div>
+                                                )}
+                                                {taskRecurrence.type === 'monthly' && (
+                                                    <div>
+                                                        <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Repeat On Day of Month</label>
+                                                        <select className="select" style={{ fontSize: '0.75rem' }} value={taskRecurrence.monthlyDay} onChange={e => setTaskRecurrence(t => ({ ...t, monthlyDay: e.target.value }))}>
+                                                            {Array.from({ length: 31 }, (_, idx) => (
+                                                                <option key={idx + 1} value={String(idx + 1)}>{idx + 1}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Repeat Count</label>
+                                                    <input
+                                                        type="number"
+                                                        className="input"
+                                                        style={{ fontSize: '0.75rem' }}
+                                                        min={1}
+                                                        max={24}
+                                                        value={taskRecurrence.count}
+                                                        onChange={e => setTaskRecurrence(t => ({ ...t, count: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 24) }))}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                                             <button className="btn btn-primary btn-sm" style={{ flex: 1, fontSize: '0.72rem' }} onClick={handleCreateTask}>Add Task</button>
-                                            <button className="btn btn-ghost btn-sm" onClick={() => setShowTaskForm(false)}><X size={12} /></button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => setShowTaskForm(false)} style={{ padding: '0 8px' }}><X size={12} /></button>
                                         </div>
                                     </div>
                                 )}
@@ -914,28 +1208,93 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                 })}
                             </div>
                         </div>
-
-                        {/* Panel Footer */}
-                        <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
-                            <button className="btn btn-primary btn-sm" style={{ flex: 1 }}
-                                onClick={() => { setShowCreateModal(true); setShowDayPanel(false); }}>
-                                <Plus size={13} /> Schedule Post
-                            </button>
-                        </div>
                     </div>
                 )}
             </div>
 
             {/* Post Detail Modal */}
             {selectedPost && (
-                <div className="modal-overlay" onClick={() => setSelectedPost(null)}>
+                <div className="modal-overlay" onClick={() => { setSelectedPost(null); setIsEditingPost(false); }}>
                     <div className="modal-box" onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                            <h3>Post Details</h3>
-                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setSelectedPost(null)}><X size={16} /></button>
+                            <h3>{isEditingPost ? 'Edit Post' : 'Post Details'}</h3>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                {!isEditingPost && (
+                                    <button className="btn btn-sm btn-secondary" onClick={() => setIsEditingPost(true)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        <Edit3 size={12} /> Edit
+                                    </button>
+                                )}
+                                <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setSelectedPost(null); setIsEditingPost(false); }}><X size={16} /></button>
+                            </div>
                         </div>
                         <div>
-                            {(() => {
+                            {isEditingPost ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Content *</label>
+                                        <textarea
+                                            className="textarea"
+                                            rows={6}
+                                            placeholder="Write your LinkedIn post content here..."
+                                            value={editPostForm.content}
+                                            onChange={e => setEditPostForm(p => ({ ...p, content: e.target.value }))}
+                                        />
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', alignSelf: 'flex-end' }}>
+                                            {editPostForm.content.length} / 3000 chars
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Post Type</label>
+                                            <select
+                                                className="select"
+                                                value={editPostForm.post_type}
+                                                onChange={e => setEditPostForm(p => ({ ...p, post_type: e.target.value }))}
+                                            >
+                                                {POST_TYPES.filter(t => t !== 'All').map(t => <option key={t}>{t}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Region</label>
+                                            <select
+                                                className="select"
+                                                value={editPostForm.region}
+                                                onChange={e => setEditPostForm(p => ({ ...p, region: e.target.value }))}
+                                            >
+                                                {REGIONS.map(r => <option key={r}>{r}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Scheduled Date & Time</label>
+                                            <input
+                                                className="input"
+                                                type="datetime-local"
+                                                value={editPostForm.scheduled_at}
+                                                onChange={e => setEditPostForm(p => ({ ...p, scheduled_at: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Status</label>
+                                            <select
+                                                className="select"
+                                                value={editPostForm.status}
+                                                onChange={e => setEditPostForm(p => ({ ...p, status: e.target.value }))}
+                                            >
+                                                <option value="draft">Draft</option>
+                                                {isAdmin && <option value="approved">Approved</option>}
+                                                {isAdmin && <option value="scheduled">Scheduled</option>}
+                                                <option value="published">Published</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                                        <button className="btn btn-secondary" onClick={() => setIsEditingPost(false)}>Cancel</button>
+                                        <button className="btn btn-primary" onClick={handleUpdatePost}>Save Changes</button>
+                                    </div>
+                                </div>
+                            ) : (() => {
                                 const cfg = STATUS_CONFIG[selectedPost.status] || STATUS_CONFIG.draft;
                                 return (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -997,43 +1356,231 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
             {/* Create Post Modal */}
             {showCreateModal && (
                 <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
-                    <div className="modal-box modal-box-wide" onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                    <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: postCreationMode === 'ai' ? '950px' : '680px', width: '90%', transition: 'all 0.3s ease' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                             <h3>Schedule New Post</h3>
                             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowCreateModal(false)}><X size={16} /></button>
                         </div>
+
+                        {/* Tab Selector */}
+                        <div style={{ display: 'flex', gap: 12, borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
+                            <button
+                                type="button"
+                                className={`btn btn-sm ${postCreationMode === 'manual' ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setPostCreationMode('manual')}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', padding: '6px 14px' }}
+                            >
+                                <Edit3 size={12} /> Manual Draft
+                            </button>
+                            <button
+                                type="button"
+                                className={`btn btn-sm ${postCreationMode === 'ai' ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setPostCreationMode('ai')}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', padding: '6px 14px' }}
+                            >
+                                <Sparkles size={12} /> AI Post Composer (DeepSeek)
+                            </button>
+                        </div>
+
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                            <div className="form-group">
-                                <label className="form-label">Content *</label>
-                                <textarea className="textarea" rows={5} placeholder="Write your LinkedIn post content here..." value={newPost.content} onChange={e => setNewPost(p => ({ ...p, content: e.target.value }))} />
-                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', alignSelf: 'flex-end' }}>{newPost.content.length} / 3000 chars</div>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                                <div className="form-group">
-                                    <label className="form-label">Post Type</label>
-                                    <select className="select" value={newPost.post_type} onChange={e => setNewPost(p => ({ ...p, post_type: e.target.value }))}>
-                                        {POST_TYPES.filter(t => t !== 'All').map(t => <option key={t}>{t}</option>)}
-                                    </select>
+                            {postCreationMode === 'manual' ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Content *</label>
+                                        <textarea className="textarea" rows={5} placeholder="Write your LinkedIn post content here..." value={newPost.content} onChange={e => setNewPost(p => ({ ...p, content: e.target.value }))} />
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', alignSelf: 'flex-end' }}>{newPost.content.length} / 3000 chars</div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Post Type</label>
+                                            <select className="select" value={newPost.post_type} onChange={e => setNewPost(p => ({ ...p, post_type: e.target.value }))}>
+                                                {POST_TYPES.filter(t => t !== 'All').map(t => <option key={t}>{t}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Region</label>
+                                            <select className="select" value={newPost.region} onChange={e => setNewPost(p => ({ ...p, region: e.target.value }))}>
+                                                {REGIONS.map(r => <option key={r}>{r}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Scheduled Date & Time</label>
+                                            <input className="input" type="datetime-local" value={newPost.scheduled_at} onChange={e => setNewPost(p => ({ ...p, scheduled_at: e.target.value }))} />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Status</label>
+                                            <select className="select" value={newPost.status} onChange={e => setNewPost(p => ({ ...p, status: e.target.value }))}>
+                                                <option value="draft">Draft</option>
+                                                {isAdmin && <option value="approved">Approved</option>}
+                                                {isAdmin && <option value="scheduled">Scheduled</option>}
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="form-group">
-                                    <label className="form-label">Region</label>
-                                    <select className="select" value={newPost.region} onChange={e => setNewPost(p => ({ ...p, region: e.target.value }))}>
-                                        {REGIONS.map(r => <option key={r}>{r}</option>)}
-                                    </select>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20 }}>
+                                    {/* Left Pane: Prompt + Controls */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                            <div className="form-group">
+                                                <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Post Type</label>
+                                                <select className="select" style={{ fontSize: '0.78rem' }} value={newPost.post_type} onChange={e => setNewPost(p => ({ ...p, post_type: e.target.value }))}>
+                                                    {POST_TYPES.filter(t => t !== 'All').map(t => <option key={t}>{t}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Region</label>
+                                                <select className="select" style={{ fontSize: '0.78rem' }} value={newPost.region} onChange={e => setNewPost(p => ({ ...p, region: e.target.value }))}>
+                                                    {REGIONS.map(r => <option key={r}>{r}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Tone</label>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                                {TONES.map(t => (
+                                                    <button key={t} type="button" className="btn btn-sm" onClick={() => setAiTone(t)} style={{ background: aiTone === t ? 'var(--accent-glow)' : 'var(--surface)', color: aiTone === t ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${aiTone === t ? 'var(--accent)' : 'var(--border)'}`, fontSize: '0.72rem', padding: '3px 8px' }}>
+                                                        {t}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Hashtags</label>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+                                                {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
+                                                    <button key={h} type="button" className="btn btn-sm btn-ghost" onClick={() => setAiHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())} style={{ fontSize: '0.68rem', padding: '2px 6px', background: aiHashtags.includes(h) ? 'var(--accent-glow)' : undefined, color: aiHashtags.includes(h) ? 'var(--accent)' : undefined }}>
+                                                        {h}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <input className="input" style={{ fontSize: '0.75rem' }} placeholder="Add custom hashtags..." value={aiHashtags} onChange={e => setAiHashtags(e.target.value)} />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Quick Emojis</label>
+                                            <div style={{ display: 'flex', gap: 4 }}>
+                                                {EMOJIS.map(e => <button key={e} type="button" className="btn btn-sm btn-ghost" onClick={() => setAiPrompt(p => p + e)} style={{ padding: '2px 6px', fontSize: '0.72rem' }}>{e}</button>)}
+                                            </div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Prompt / Topic *</label>
+                                            <textarea className="textarea" style={{ fontSize: '0.75rem', minHeight: 60 }} placeholder="Describe what you want to post about..." value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
+                                        </div>
+
+                                        <button className="btn btn-primary w-full" type="button" onClick={handleGenerateAIPost} disabled={generatingAI || !aiPrompt} style={{ padding: '8px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                            {generatingAI ? <><RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</> : <><Sparkles size={12} /> Generate with DeepSeek AI</>}
+                                        </button>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                            <div className="form-group">
+                                                <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Scheduled Date & Time</label>
+                                                <input className="input" style={{ fontSize: '0.75rem' }} type="datetime-local" value={newPost.scheduled_at} onChange={e => setNewPost(p => ({ ...p, scheduled_at: e.target.value }))} />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Status</label>
+                                                <select className="select" style={{ fontSize: '0.75rem' }} value={newPost.status} onChange={e => setNewPost(p => ({ ...p, status: e.target.value }))}>
+                                                    <option value="draft">Draft</option>
+                                                    {isAdmin && <option value="approved">Approved</option>}
+                                                    {isAdmin && <option value="scheduled">Scheduled</option>}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Right Pane: Live Preview */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><Edit3 size={11} /> Edit Draft</label>
+                                            <textarea className="textarea" style={{ fontSize: '0.75rem', minHeight: 90 }} placeholder="Your generated post content will appear here and can be edited..." value={newPost.content} onChange={e => setNewPost(p => ({ ...p, content: e.target.value }))} />
+                                        </div>
+
+                                        {predictedReach && (
+                                            <div className="glass-card" style={{ padding: 10, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 4, background: 'var(--accent-glow)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)' }}>PREDICTED REACH</span>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--accent)' }}>{predictedReach.predicted_reach?.toLocaleString()}</span>
+                                                </div>
+                                                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Confidence: {predictedReach.confidence}%</div>
+                                            </div>
+                                        )}
+
+                                        <LinkedInPreview content={newPost.content} hashtags={aiHashtags} />
+                                    </div>
                                 </div>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                                <div className="form-group">
-                                    <label className="form-label">Scheduled Date & Time</label>
-                                    <input className="input" type="datetime-local" value={newPost.scheduled_at} onChange={e => setNewPost(p => ({ ...p, scheduled_at: e.target.value }))} />
+                            )}
+
+                            {/* Recurrence Options */}
+                            <div style={{
+                                padding: '14px',
+                                background: 'var(--bg-secondary)',
+                                borderRadius: 10,
+                                border: '1px solid var(--border)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 10
+                            }}>
+                                <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <Clock size={14} style={{ color: 'var(--accent)' }} /> 🔁 Post Recurrence Options
                                 </div>
-                                <div className="form-group">
-                                    <label className="form-label">Status</label>
-                                    <select className="select" value={newPost.status} onChange={e => setNewPost(p => ({ ...p, status: e.target.value }))}>
-                                        <option value="draft">Draft</option>
-                                        {isAdmin && <option value="approved">Approved</option>}
-                                        {isAdmin && <option value="scheduled">Scheduled</option>}
-                                    </select>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                                    <div>
+                                        <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Recurrence Type</label>
+                                        <select className="select" style={{ fontSize: '0.78rem' }}
+                                            value={postRecurrence.type}
+                                            onChange={e => setPostRecurrence(p => ({ ...p, type: e.target.value }))}>
+                                            <option value="none">One-off / None</option>
+                                            <option value="weekly">Weekly Once</option>
+                                            <option value="monthly">Monthly Once</option>
+                                        </select>
+                                    </div>
+                                    {postRecurrence.type === 'weekly' && (
+                                        <div>
+                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Repeat On Day</label>
+                                            <select className="select" style={{ fontSize: '0.78rem' }}
+                                                value={postRecurrence.weeklyDay}
+                                                onChange={e => setPostRecurrence(p => ({ ...p, weeklyDay: e.target.value }))}>
+                                                <option value="1">Monday</option>
+                                                <option value="2">Tuesday</option>
+                                                <option value="3">Wednesday</option>
+                                                <option value="4">Thursday</option>
+                                                <option value="5">Friday</option>
+                                                <option value="6">Saturday</option>
+                                                <option value="0">Sunday</option>
+                                            </select>
+                                        </div>
+                                    )}
+                                    {postRecurrence.type === 'monthly' && (
+                                        <div>
+                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Repeat On Day of Month</label>
+                                            <select className="select" style={{ fontSize: '0.78rem' }}
+                                                value={postRecurrence.monthlyDay}
+                                                onChange={e => setPostRecurrence(p => ({ ...p, monthlyDay: e.target.value }))}>
+                                                {Array.from({ length: 31 }, (_, idx) => (
+                                                    <option key={idx + 1} value={String(idx + 1)}>{idx + 1}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+                                    {postRecurrence.type !== 'none' && (
+                                        <div>
+                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Repeat Count</label>
+                                            <input
+                                                type="number"
+                                                className="input"
+                                                style={{ fontSize: '0.78rem' }}
+                                                min={1}
+                                                max={24}
+                                                value={postRecurrence.count}
+                                                onChange={e => setPostRecurrence(p => ({ ...p, count: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 24) }))}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

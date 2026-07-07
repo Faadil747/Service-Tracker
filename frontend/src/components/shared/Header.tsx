@@ -528,6 +528,9 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                                     {a.priority.toUpperCase()}
                                 </span>
                             </div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                Raised by: {a.raised_by_name || 'System'}
+                            </div>
                             {a.body && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{a.body}</div>}
                             <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center', justifyContent: 'space-between' }}>
                                 <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{a.region}</span>

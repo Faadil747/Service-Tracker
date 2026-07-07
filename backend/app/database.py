@@ -39,3 +39,12 @@ async def init_db():
         # Import all models to ensure they are registered
         from app.models import user, task, post, metrics, notification, alert, comment, link_tracking  # noqa
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Automatic gentle schema patch for alerts (if deploying/collaborating on other machines)
+        try:
+            from sqlalchemy import text
+            await conn.execute(text('ALTER TABLE alerts ADD target_user_id VARCHAR(36) NULL'))
+            await conn.execute(text('ALTER TABLE alerts ADD resolved_at DATETIME NULL'))
+            await conn.execute(text('ALTER TABLE alerts ADD resolved_by_id VARCHAR(36) NULL'))
+        except Exception:
+            pass

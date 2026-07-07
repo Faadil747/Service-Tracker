@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import Alert, Notification, User
@@ -29,14 +30,14 @@ async def list_alerts(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Alert)
+    q = select(Alert).options(selectinload(Alert.raised_by_user))
     
     # agents should only see alerts that are either global (without target_user_id) or assigned specifically to them
     if current_user.role == "agent":
         from sqlalchemy import or_
         q = q.where(or_(
             Alert.target_user_id == current_user.id,
-            Alert.target_user_id == "all",
+            Alert.target_user_id.is_(None),
             Alert.raised_by_id == current_user.id
         ))
 
@@ -62,6 +63,8 @@ async def create_alert(
     elif not target_id:
         target_id = "all"
         
+    db_target = None if target_id in ["all", "admin"] else target_id
+
     alert = Alert(
         id=str(uuid.uuid4()),
         raised_by_id=current_user.id,
@@ -71,7 +74,7 @@ async def create_alert(
         region=req.region,
         reference_id=req.reference_id,
         reference_type=req.reference_type,
-        target_user_id=target_id,
+        target_user_id=db_target,
     )
     db.add(alert)
     await db.flush()
@@ -96,7 +99,7 @@ async def create_alert(
                     id=str(uuid.uuid4()),
                     user_id=admin.id,
                     type="alert",
-                    title=f"🚨 Alert from Agent: {req.title}",
+                    title=f"🚨 Alert from {current_user.full_name}: {req.title}",
                     body=req.body,
                     reference_id=alert.id,
                     reference_type="alert",
@@ -111,7 +114,7 @@ async def create_alert(
                         id=str(uuid.uuid4()),
                         user_id=u.id,
                         type="alert",
-                        title=f"🚨 Global Alert: {req.title}",
+                        title=f"🚨 Global Alert from {current_user.full_name}: {req.title}",
                         body=req.body,
                         reference_id=alert.id,
                         reference_type="alert",
@@ -150,6 +153,7 @@ def _alert_dict(a: Alert) -> dict:
     return {
         "id": a.id,
         "raised_by_id": a.raised_by_id,
+        "raised_by_name": a.raised_by_user.full_name if getattr(a, "raised_by_user", None) else "Unknown",
         "title": a.title,
         "body": a.body,
         "priority": a.priority,

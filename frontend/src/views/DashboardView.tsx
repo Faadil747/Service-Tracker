@@ -437,21 +437,28 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
 
                     {/* ── Hero Signal Tile + KPIs ─────────────────────────────────────── */}
                     <div className="grid-4" style={{ marginBottom: 20 }}>
-                        {/* Hero tile */}
-                        <div className="hero-tile" style={{ gridColumn: 'span 1', background: 'var(--bg-tertiary)', border: '1px solid var(--border)' }}>
-                            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                                Followers
+                        <div className="glass-card glass-card-hover" style={{ padding: 20 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <TrendingUp size={18} color="var(--accent)" />
+                                </div>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL FOLLOWERS</span>
                             </div>
-                            <div className="hero-number" style={{ background: 'none', color: 'var(--text-primary)' }}>{summary?.total_followers?.toLocaleString() || '—'}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                                <TrendingUp size={14} color={summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)'} />
-                                <span style={{ fontSize: '0.8rem', color: summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{summary?.total_followers?.toLocaleString() || '—'}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                                <span style={{ fontSize: '0.75rem', color: summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
                                     {summary?.weekly_growth >= 0 ? '+' : ''}{summary?.weekly_growth || 0} this week
                                 </span>
                             </div>
                             {summary?.sparkline?.length > 0 && (
-                                <ResponsiveContainer width="100%" height={40} style={{ marginTop: 8 }}>
+                                <ResponsiveContainer width="100%" height={30} style={{ marginTop: 12 }}>
                                     <AreaChart data={summary.sparkline.slice(-7)}>
+                                        <Tooltip
+                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.75rem', padding: '4px 8px' }}
+                                            formatter={(value: any) => [value, 'Followers']}
+                                            labelStyle={{ display: 'none' }}
+                                            cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '3 3' }}
+                                        />
                                         <Area type="monotone" dataKey="value" stroke="var(--accent)" fill="var(--accent-glow)" strokeWidth={2} dot={false} />
                                     </AreaChart>
                                 </ResponsiveContainer>

@@ -11,9 +11,9 @@ import {
     format, startOfMonth, endOfMonth, eachDayOfInterval,
     isSameMonth, isToday, startOfWeek, endOfWeek, addMonths, subMonths
 } from 'date-fns';
-import { metricsApi, tasksApi, usersApi, alertsApi } from '../services/api';
+import { metricsApi, tasksApi, usersApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { PageMetric, Task, User, Alert } from '../types';
+import { PageMetric, Task, User } from '../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AnalyticsHubView } from './AnalyticsHubView';
@@ -243,7 +243,6 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const [summary, setSummary] = useState<any>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [pendingApprovals, setPendingApprovals] = useState<Task[]>([]);
-    const [alerts, setAlerts] = useState<Alert[]>([]);
     const [agents, setAgents] = useState<User[]>([]);
     const [overdue, setOverdue] = useState<any[]>([]);
     const [search, setSearch] = useState('');
@@ -266,16 +265,14 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const loadAll = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         try {
-            const [mRes, sumRes, tRes, aRes] = await Promise.all([
+            const [mRes, sumRes, tRes] = await Promise.all([
                 metricsApi.page({ region: region === 'Global' ? undefined : region, days: 30 }),
                 metricsApi.dashboardSummary(region === 'Global' ? undefined : region),
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
-                alertsApi.list({ status: 'open' }),
             ]);
             setMetrics(mRes.data);
             setSummary(sumRes.data);
             setTasks(tRes.data);
-            setAlerts(aRes.data);
 
             if (isAdmin) {
                 const [paRes, ovRes, agRes] = await Promise.all([
@@ -436,48 +433,30 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                         </div>
                     )}
 
-                    {/* Active Alerts */}
-                    {alerts.length > 0 && (
-                        <div style={{ marginBottom: 16 }}>
-                            {alerts.slice(0, 2).map(a => (
-                                <div key={a.id} className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'} style={{ marginBottom: 8 }}>
-                                    <AlertTriangle size={16} color={a.priority === 'critical' ? 'var(--danger)' : 'var(--warning)'} style={{ flexShrink: 0 }} />
-                                    <div style={{ flex: 1 }}>
-                                        <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>{a.title}</span>
-                                        {a.body && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>{a.body}</div>}
-                                    </div>
-                                    <span className={`badge ${a.priority === 'critical' ? 'badge-danger' : 'badge-warning'}`}>{a.priority.toUpperCase()}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+
 
                     {/* ── Hero Signal Tile + KPIs ─────────────────────────────────────── */}
                     <div className="grid-4" style={{ marginBottom: 20 }}>
-                        <div className="glass-card glass-card-hover" style={{ padding: 20 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(37,99,235,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Users size={18} color="var(--accent)" />
-                                </div>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>FOLLOWERS</span>
+                        {/* Hero tile */}
+                        <div className="hero-tile" style={{ gridColumn: 'span 1', background: 'var(--bg-tertiary)', border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                                Followers
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                                <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{summary?.total_followers?.toLocaleString() || '—'}</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                                    <TrendingUp size={12} color={summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)'} />
-                                    <span style={{ fontSize: '0.72rem', color: summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
-                                        {summary?.weekly_growth >= 0 ? '+' : ''}{summary?.weekly_growth || 0}
-                                    </span>
-                                </div>
+                            <div className="hero-number" style={{ background: 'none', color: 'var(--text-primary)' }}>{summary?.total_followers?.toLocaleString() || '—'}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                                <TrendingUp size={14} color={summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)'} />
+                                <span style={{ fontSize: '0.8rem', color: summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
+                                    {summary?.weekly_growth >= 0 ? '+' : ''}{summary?.weekly_growth || 0} this week
+                                </span>
                             </div>
-                            {summary?.sparkline?.length > 0 ? (
-                                <ResponsiveContainer width="100%" height={32} style={{ marginTop: 8 }}>
+                            {summary?.sparkline?.length > 0 && (
+                                <ResponsiveContainer width="100%" height={40} style={{ marginTop: 8 }}>
                                     <AreaChart data={summary.sparkline.slice(-7)}>
-                                        <Area type="monotone" dataKey="value" stroke="var(--accent)" fill="var(--accent-glow)" strokeWidth={1.5} dot={false} />
+                                        <Area type="monotone" dataKey="value" stroke="var(--accent)" fill="var(--accent-glow)" strokeWidth={2} dot={false} />
                                     </AreaChart>
                                 </ResponsiveContainer>
                             ) : (
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>Followers count</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>Followers count</div>
                             )}
                         </div>
 
@@ -647,6 +626,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                     </div>
                 </>
             )}
+
         </div>
     );
 };

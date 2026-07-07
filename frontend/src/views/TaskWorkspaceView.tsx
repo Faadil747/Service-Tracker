@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
     Sparkles, RefreshCw, CheckCircle, Eye, FileText, Plus, X, Play, Pause, Trash2
 } from 'lucide-react';
-import { tasksApi, postsApi, aiApi, metricsApi, usersApi, alertsApi } from '../services/api';
+import { tasksApi, postsApi, aiApi, metricsApi, usersApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { Task, Post, KanbanBoard, User, Alert } from '../types';
+import { Task, Post, User } from '../types';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -47,122 +47,14 @@ const LinkedInPreview: React.FC<{ content: string; hashtags: string }> = ({ cont
 };
 
 // ── Kanban Board ───────────────────────────────────────────────────────────
-const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void }> = ({ board, onRefresh }) => {
-    const COLUMNS: { key: keyof KanbanBoard; label: string; color: string }[] = [
-        { key: 'draft', label: '📝 Draft', color: 'var(--text-muted)' },
-        { key: 'in_review', label: '🔍 In Review', color: 'var(--warning)' },
-        { key: 'approved', label: '✅ Approved', color: 'var(--success)' },
-        { key: 'scheduled', label: '📅 Scheduled', color: 'var(--accent)' },
-    ];
 
-    const [dragOverCol, setDragOverCol] = useState<string | null>(null);
-    const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
-
-    const movePost = async (postId: string, newStatus: string) => {
-        try {
-            await postsApi.moveKanban(postId, newStatus);
-            toast.success('Post moved!');
-            onRefresh();
-        } catch { toast.error('Failed to move post'); }
-    };
-
-    const onDragStart = (e: React.DragEvent, postId: string) => {
-        setDraggingCardId(postId);
-        e.dataTransfer.setData('text/plain', postId);
-        e.dataTransfer.effectAllowed = 'move';
-    };
-
-    const onDragEnd = () => {
-        setDraggingCardId(null);
-        setDragOverCol(null);
-    };
-
-    const onDragOver = (e: React.DragEvent, colKey: string) => {
-        e.preventDefault();
-        if (dragOverCol !== colKey) {
-            setDragOverCol(colKey);
-        }
-    };
-
-    const onDragLeave = (e: React.DragEvent) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX;
-        const y = e.clientY;
-        if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
-            setDragOverCol(null);
-        }
-    };
-
-    const onDrop = async (e: React.DragEvent, colKey: string) => {
-        e.preventDefault();
-        setDragOverCol(null);
-        const postId = e.dataTransfer.getData('text/plain');
-        if (postId) {
-            await movePost(postId, colKey);
-        }
-    };
-
-    return (
-        <div className="kanban-board">
-            {COLUMNS.map(col => {
-                const isActiveDrop = dragOverCol === col.key;
-                return (
-                    <div
-                        key={col.key}
-                        className={`kanban-col ${isActiveDrop ? 'drag-over' : ''}`}
-                        onDragOver={(e) => onDragOver(e, col.key)}
-                        onDragLeave={onDragLeave}
-                        onDrop={(e) => onDrop(e, col.key)}
-                    >
-                        <div className="kanban-col-header" style={{ color: col.color }}>
-                            {col.label}
-                            <span className="badge badge-muted" style={{ marginLeft: 'auto' }}>{board[col.key]?.length || 0}</span>
-                        </div>
-                        {(board[col.key] || []).map(post => {
-                            const isDragging = draggingCardId === post.id;
-                            return (
-                                <div
-                                    key={post.id}
-                                    className={`kanban-card ${isDragging ? 'dragging' : ''}`}
-                                    draggable
-                                    onDragStart={(e) => onDragStart(e, post.id)}
-                                    onDragEnd={onDragEnd}
-                                >
-                                    <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 6 }} className="truncate" title={post.title || post.content}>
-                                        {post.title || post.content.slice(0, 60) + '...'}
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                                        <span className="badge badge-muted">{post.region}</span>
-                                        <span className="badge badge-muted">{post.post_type.replace('_', ' ')}</span>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                        {COLUMNS.filter(c => c.key !== col.key).map(c => (
-                                            <button key={c.key} className="btn btn-ghost" style={{ fontSize: '0.65rem', padding: '3px 8px' }} onClick={() => movePost(post.id, c.key)}>
-                                                → {c.key}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                        {(board[col.key]?.length || 0) === 0 && (
-                            <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', borderRadius: 8, border: '2px dashed var(--border)' }}>
-                                Drop posts here
-                            </div>
-                        )}
-                    </div>
-                );
-            })}
-        </div>
-    );
-};
 
 // ── Main Workspace ─────────────────────────────────────────────────────────
 export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const { user } = useAuthStore();
     const isAdmin = user?.role === 'admin';
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [board, setBoard] = useState<KanbanBoard>({ draft: [], in_review: [], approved: [], scheduled: [] });
+
     const [templates, setTemplates] = useState<Post[]>([]);
     const [heatmap, setHeatmap] = useState<any[]>([]);
     const [pendingTasks, setPendingTasks] = useState<any[]>([]);
@@ -176,12 +68,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [showAddTask, setShowAddTask] = useState(false);
     const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_id: '' });
 
-    // Alerts state
-    const [alerts, setAlerts] = useState<Alert[]>([]);
-    const [alertTitle, setAlertTitle] = useState('');
-    const [alertBody, setAlertBody] = useState('');
-    const [alertPriority, setAlertPriority] = useState<'high' | 'critical'>('high');
-    const [showNewAlert, setShowNewAlert] = useState(false);
+
 
     // AI Composer state
     const [prompt, setPrompt] = useState('');
@@ -194,6 +81,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [scheduledAt, setScheduledAt] = useState('');
     const [predictedReach, setPredictedReach] = useState<any>(null);
     const [savingPost, setSavingPost] = useState(false);
+    const [hoveredCell, setHoveredCell] = useState<{ day: string; hour: number; engagement: number; x: number; y: number } | null>(null);
 
     // Task completion
     const [completingTask, setCompletingTask] = useState<string | null>(null);
@@ -212,18 +100,14 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
     const loadAll = async () => {
         try {
-            const [tRes, bRes, tmplRes, hmRes, aRes] = await Promise.all([
+            const [tRes, tmplRes, hmRes] = await Promise.all([
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
-                postsApi.kanban(region === 'Global' ? undefined : region),
                 postsApi.list({ is_template: true }),
-                metricsApi.bestTime(region === 'Global' ? undefined : region),
-                alertsApi.list({ status: 'open' }),
+                metricsApi.bestTime(region === 'Global' ? undefined : region)
             ]);
             setTasks(tRes.data);
-            setBoard(bRes.data);
             setTemplates(tmplRes.data);
             setHeatmap(hmRes.data.heatmap);
-            setAlerts(aRes.data);
 
             if (isAdmin) {
                 const [paRes, agRes] = await Promise.all([
@@ -332,27 +216,46 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         } catch { toast.error('Action failed'); }
     };
 
-    const handleRaiseAlert = async () => {
-        try {
-            await alertsApi.create({ title: alertTitle, body: alertBody, priority: alertPriority, region: user?.region || 'Global' });
-            toast.success('Alert raised!');
-            setShowNewAlert(false);
-            setAlertTitle(''); setAlertBody('');
-            loadAll();
-        } catch { toast.error('Failed to raise alert'); }
-    };
 
-    const handleResolveAlert = async (id: string) => {
-        try {
-            await alertsApi.resolve(id);
-            toast.success('Alert resolved!');
-            loadAll();
-        } catch { }
-    };
 
     // Heatmap rendering
     const maxEngagement = Math.max(...heatmap.map(c => c.engagement), 1);
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    const handleHeatmapCellClick = (dayName: string, hour: number) => {
+        const dayIndex = days.indexOf(dayName);
+        if (dayIndex === -1) return;
+
+        // Mon is index 0, Sun is index 6. JS Sunday is 0, Monday is 1... Saturday is 6
+        const targetJsDay = dayIndex === 6 ? 0 : dayIndex + 1;
+
+        const now = new Date();
+        const resultDate = new Date(now);
+        const currentJsDay = now.getDay();
+
+        let daysToAdd = targetJsDay - currentJsDay;
+        if (daysToAdd < 0) {
+            daysToAdd += 7;
+        } else if (daysToAdd === 0 && now.getHours() >= hour) {
+            daysToAdd = 7;
+        }
+
+        resultDate.setDate(now.getDate() + daysToAdd);
+        resultDate.setHours(hour);
+        resultDate.setMinutes(0);
+        resultDate.setSeconds(0);
+        resultDate.setMilliseconds(0);
+
+        const year = resultDate.getFullYear();
+        const month = String(resultDate.getMonth() + 1).padStart(2, '0');
+        const date = String(resultDate.getDate()).padStart(2, '0');
+        const hoursStr = String(resultDate.getHours()).padStart(2, '0');
+        const minutesStr = String(resultDate.getMinutes()).padStart(2, '0');
+
+        const formatted = `${year}-${month}-${date}T${hoursStr}:${minutesStr}`;
+        setScheduledAt(formatted);
+        toast.success(`Selected slot: ${dayName} ${hour}:00. Post schedule set to ${month}/${date} ${hoursStr}:00.`);
+    };
 
     const TAB_STYLE = (active: boolean) => ({
         padding: '8px 16px',
@@ -373,9 +276,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 {[
                     { id: 'tasks', label: '📋 My Tasks' },
                     { id: 'composer', label: '✨ AI Composer' },
-                    { id: 'kanban', label: '🗂 Kanban' },
-                    { id: 'library', label: '📚 Library' },
-                    { id: 'alerts', label: '🚨 Alerts' }
+                    { id: 'library', label: '📚 Library' }
                 ].map(t => (
                     <button key={t.id} style={TAB_STYLE(tab === t.id)} onClick={() => setTab(t.id as any)}>
                         {t.label}
@@ -732,12 +633,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
                             <LinkedInPreview content={previewContent} hashtags={hashtags} />
 
-                            {/* Best time heatmap preview */}
                             {heatmap.length > 0 && (
-                                <div className="chart-container">
+                                <div className="chart-container" style={{ position: 'relative' }}>
                                     <div className="chart-title">⏰ Best Time to Post ({region})</div>
-                                    <div style={{ overflowX: 'auto' }}>
-                                        <div style={{ display: 'grid', gridTemplateColumns: `32px repeat(24, 1fr)`, gap: 2, minWidth: 500 }}>
+                                    <div style={{ overflowX: 'auto', padding: '10px 0' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: `32px repeat(24, 1fr)`, gap: 2, minWidth: 500, position: 'relative' }}>
                                             <div />
                                             {Array.from({ length: 24 }, (_, h) => (
                                                 <div key={h} style={{ fontSize: '0.6rem', textAlign: 'center', color: 'var(--text-muted)' }}>{h}</div>
@@ -748,14 +648,91 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                     {Array.from({ length: 24 }, (_, h) => {
                                                         const cell = heatmap.find(c => c.day === day && c.hour === h);
                                                         const intensity = cell ? cell.engagement / maxEngagement : 0;
+                                                        const isHovered = hoveredCell?.day === day && hoveredCell?.hour === h;
                                                         return (
-                                                            <div key={h} className="heatmap-cell" title={`${day} ${h}:00 — ${cell?.engagement || 0} engagement`} style={{ background: `rgba(0, 198, 167, ${intensity * 0.9 + 0.05})`, aspectRatio: '1' }} />
+                                                            <div
+                                                                key={h}
+                                                                className="heatmap-cell"
+                                                                onMouseEnter={(e) => {
+                                                                    const cellEl = e.currentTarget;
+                                                                    const containerEl = cellEl.closest('.chart-container');
+                                                                    if (containerEl) {
+                                                                        const cellRect = cellEl.getBoundingClientRect();
+                                                                        const containerRect = containerEl.getBoundingClientRect();
+                                                                        setHoveredCell({
+                                                                            day,
+                                                                            hour: h,
+                                                                            engagement: cell?.engagement || 0,
+                                                                            x: cellRect.left - containerRect.left + cellRect.width / 2,
+                                                                            y: cellRect.top - containerRect.top
+                                                                        });
+                                                                    }
+                                                                }}
+                                                                onMouseLeave={() => setHoveredCell(null)}
+                                                                onClick={() => handleHeatmapCellClick(day, h)}
+                                                                style={{
+                                                                    background: `rgba(0, 198, 167, ${intensity * 0.9 + 0.05})`,
+                                                                    aspectRatio: '1',
+                                                                    borderRadius: '3px',
+                                                                    cursor: 'pointer',
+                                                                    transition: 'all 0.15s ease',
+                                                                    transform: isHovered ? 'scale(1.25)' : 'scale(1)',
+                                                                    boxShadow: isHovered ? '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)' : 'none',
+                                                                    border: isHovered ? '2px solid #fff' : '1px solid rgba(255,255,255,0.05)',
+                                                                    zIndex: isHovered ? 10 : 1,
+                                                                    position: 'relative'
+                                                                }}
+                                                            />
                                                         );
                                                     })}
                                                 </React.Fragment>
                                             ))}
                                         </div>
                                     </div>
+                                    {hoveredCell && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            left: hoveredCell.x,
+                                            top: hoveredCell.y,
+                                            transform: 'translate(-50%, -125%)',
+                                            background: '#0f172a',
+                                            color: '#fff',
+                                            padding: '8px 12px',
+                                            borderRadius: '8px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            pointerEvents: 'none',
+                                            whiteSpace: 'nowrap',
+                                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5)',
+                                            zIndex: 9999,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                            border: '1px solid rgba(255,255,255,0.1)'
+                                        }}>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                                                📅 {hoveredCell.day} at {hoveredCell.hour}:00
+                                            </div>
+                                            <div style={{ color: '#2dd4bf', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                🔥 {hoveredCell.engagement} engagement
+                                            </div>
+                                            <div style={{ color: '#94a3b8', fontSize: '0.62rem', fontWeight: 400, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4, marginTop: 2 }}>
+                                                ⚡ Click to schedule post
+                                            </div>
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: '100%',
+                                                left: '50%',
+                                                transform: 'translateX(-50%)',
+                                                width: 0,
+                                                height: 0,
+                                                borderLeft: '6px solid transparent',
+                                                borderRight: '6px solid transparent',
+                                                borderTop: '6px solid #0f172a',
+                                            }} />
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -763,16 +740,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 </div>
             )}
 
-            {/* ── Kanban Tab ────────────────────────────────────────────────── */}
-            {tab === 'kanban' && (
-                <div>
-                    <div style={{ marginBottom: 16 }}>
-                        <h4>Approval Pipeline</h4>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Drag posts through the review process</p>
-                    </div>
-                    <KanbanBoardView board={board} onRefresh={loadAll} />
-                </div>
-            )}
+
 
             {/* ── Library Tab ───────────────────────────────────────────────── */}
             {tab === 'library' && (
@@ -815,68 +783,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 </div>
             )}
 
-            {/* ── Alerts Tab ─────────────────────────────────────────────────── */}
-            {tab === 'alerts' && (
-                <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                        <div>
-                            <h4>Workspace Alerts 🚨</h4>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Flag and trace regional issues or system warnings</p>
-                        </div>
-                        <button className="btn btn-primary btn-sm" onClick={() => setShowNewAlert(true)}>
-                            <Plus size={14} /> Raise Alert
-                        </button>
-                    </div>
 
-                    {showNewAlert && (
-                        <div className="glass-card" style={{ padding: 20, marginBottom: 16 }}>
-                            <h4 style={{ marginBottom: 14 }}>New Alert</h4>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                <input className="input" placeholder="Alert title" value={alertTitle} onChange={e => setAlertTitle(e.target.value)} />
-                                <textarea className="textarea" placeholder="Describe the issue..." value={alertBody} onChange={e => setAlertBody(e.target.value)} style={{ minHeight: 80 }} />
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                    {(['high', 'critical'] as const).map(p => (
-                                        <button
-                                            key={p}
-                                            className="btn btn-sm"
-                                            onClick={() => setAlertPriority(p)}
-                                            style={{
-                                                background: alertPriority === p ? (p === 'critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)') : 'var(--surface)',
-                                                color: alertPriority === p ? (p === 'critical' ? 'var(--danger)' : 'var(--warning)') : 'var(--text-secondary)',
-                                                border: `1px solid ${alertPriority === p ? 'currentColor' : 'var(--border)'}`
-                                            }}
-                                        >
-                                            {p === 'critical' ? '🔴 Critical' : '🟡 High'}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                                    <button className="btn btn-primary btn-sm" onClick={handleRaiseAlert}>Raise Alert</button>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => setShowNewAlert(false)}>Cancel</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {alerts.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No open alerts 🎉</div>}
-                        {alerts.map(a => (
-                            <div key={a.id} className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'} style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontWeight: 700, marginBottom: 4 }}>{a.title}</div>
-                                    {a.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{a.body}</div>}
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 6 }}>{a.region} · {new Date(a.created_at).toLocaleDateString()}</div>
-                                </div>
-                                {isAdmin && (
-                                    <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', whiteSpace: 'nowrap' }} onClick={() => handleResolveAlert(a.id)}>
-                                        ✓ Resolve
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

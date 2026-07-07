@@ -42,6 +42,7 @@ class Post(Base):
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=True)
     created_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     approved_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    review_comment: Mapped[str] = mapped_column(Text, default="", nullable=True)
     is_template: Mapped[bool] = mapped_column(default=False)
     ab_variant: Mapped[str] = mapped_column(String(10), default="")  # A/B testing
     predicted_reach: Mapped[int] = mapped_column(default=0)

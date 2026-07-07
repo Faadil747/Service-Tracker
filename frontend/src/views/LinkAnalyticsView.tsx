@@ -129,9 +129,6 @@ export const LinkAnalyticsView: React.FC<Props> = ({ region }) => {
                         ))}
                     </div>
                     <button className="btn btn-secondary btn-icon" onClick={load} title="Refresh"><RefreshCw size={15} /></button>
-                    <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-                        <Plus size={15} /> Create Link
-                    </button>
                 </div>
             </div>
 

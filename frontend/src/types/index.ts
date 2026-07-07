@@ -47,6 +47,8 @@ export interface Post {
     created_at: string;
     campaign_id: string | null;
     predicted_reach: number;
+    review_comment?: string;
+    linkedin_post_id?: string;
 }
 
 export interface PageMetric {
@@ -117,6 +119,7 @@ export interface LinkTracking {
 
 export interface KanbanBoard {
     draft: Post[];
+    rejected: Post[];
     in_review: Post[];
     approved: Post[];
     scheduled: Post[];

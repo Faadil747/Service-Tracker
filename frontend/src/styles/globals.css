@@ -1466,3 +1466,27 @@ a {
     padding-top: 8px;
   }
 }
+
+/* ─── Header Responsiveness ────────────────────────────────────────── */
+.desktop-nav {
+  display: flex;
+}
+
+.mobile-menu-btn {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .desktop-nav {
+    display: none;
+  }
+  .mobile-menu-btn {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 560px) {
+  .profile-name-text {
+    display: none;
+  }
+}

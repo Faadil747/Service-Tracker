@@ -129,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                 </div>
 
                 {/* Desktop Nav */}
-                <nav className="desktop-nav" style={{ display: 'flex', gap: 2, flex: 1, overflow: 'hidden' }}>
+                <nav className="desktop-nav" style={{ gap: 2, flex: 1, overflow: 'hidden' }}>
                     {navItems.map(({ to, icon: Icon, label }) => (
                         <NavLink
                             key={to}
@@ -304,7 +304,6 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                     <button
                         className="mobile-menu-btn btn btn-ghost btn-icon"
                         onClick={() => setMobileMenuOpen(p => !p)}
-                        style={{ display: 'none' }}
                     >
                         {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
                     </button>

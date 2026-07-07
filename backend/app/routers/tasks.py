@@ -209,6 +209,20 @@ async def complete_task(
         entity_type="task",
         entity_id=task.id,
     ))
+    
+    # Notify all admins that the task is completed
+    admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
+    for admin in admins.scalars():
+        db.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=admin.id,
+            type="task_completed",
+            title=f"Task Completed: {task.title}",
+            body=f"Completed by {current_user.full_name}. Notes: {notes}" if notes else f"Completed by {current_user.full_name}",
+            reference_id=task.id,
+            reference_type="task",
+        ))
+
     await db.commit()
     return {"message": "Task completed", "completed_at": task.completed_at.isoformat()}
 
@@ -295,6 +309,34 @@ async def update_task_status(
         task.completed_at = datetime.utcnow()
     else:
         task.completed_at = None
+
+    # Determine who to notify
+    if current_user.role == "agent":
+        # Agent updated, notify admins
+        admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
+        for admin in admins.scalars():
+            db.add(Notification(
+                id=str(uuid.uuid4()),
+                user_id=admin.id,
+                type="task_updated",
+                title=f"Task Status Updated: {task.title}",
+                body=f"{current_user.full_name} moved task to '{status}'",
+                reference_id=task.id,
+                reference_type="task",
+            ))
+    else:
+        # Admin updated, notify assigned agents
+        assignments = await db.execute(select(TaskAssignment).where(TaskAssignment.task_id == task_id))
+        for assign in assignments.scalars():
+            db.add(Notification(
+                id=str(uuid.uuid4()),
+                user_id=assign.agent_id,
+                type="task_updated",
+                title=f"Task Status Updated: {task.title}",
+                body=f"Admin {current_user.full_name} moved task to '{status}'",
+                reference_id=task.id,
+                reference_type="task",
+            ))
 
     await db.commit()
     return await _task_dict(task, db)

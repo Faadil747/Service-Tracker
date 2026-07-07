@@ -19,7 +19,9 @@ class Alert(Base):
     reference_type: Mapped[str] = mapped_column(String(50), default="")
     resolved_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     resolved_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    target_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     raised_by_user = relationship("User", foreign_keys=[raised_by_id], back_populates="alerts_raised")
     resolved_by_user = relationship("User", foreign_keys=[resolved_by_id])
+    target_user = relationship("User", foreign_keys=[target_user_id])

@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
     Sparkles, RefreshCw, CheckCircle, Eye, FileText, Plus, X, Play, Pause, Trash2
 } from 'lucide-react';
-import { tasksApi, postsApi, aiApi, metricsApi, usersApi, alertsApi } from '../services/api';
+import { tasksApi, postsApi, aiApi, metricsApi, usersApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { Task, Post, KanbanBoard, User, Alert } from '../types';
+import { Task, Post, User } from '../types';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -47,12 +47,9 @@ const LinkedInPreview: React.FC<{ content: string; hashtags: string }> = ({ cont
 };
 
 // ── Kanban Board ───────────────────────────────────────────────────────────
-const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void; onEditPost: (post: Post) => void }> = ({ board, onRefresh, onEditPost }) => {
-    const { user } = useAuthStore();
-    const isAdmin = user?.role === 'admin';
+const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void }> = ({ board, onRefresh }) => {
     const COLUMNS: { key: keyof KanbanBoard; label: string; color: string }[] = [
         { key: 'draft', label: '📝 Draft', color: 'var(--text-muted)' },
-        { key: 'rejected', label: '🔄 Redo Required', color: 'var(--danger)' },
         { key: 'in_review', label: '🔍 In Review', color: 'var(--warning)' },
         { key: 'approved', label: '✅ Approved', color: 'var(--success)' },
         { key: 'scheduled', label: '📅 Scheduled', color: 'var(--accent)' },
@@ -67,33 +64,6 @@ const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void; onE
             toast.success('Post moved!');
             onRefresh();
         } catch { toast.error('Failed to move post'); }
-    };
-
-    const handleApproveClick = async (postId: string) => {
-        if (!window.confirm("Approve this post for publication?")) return;
-        try {
-            await postsApi.approve(postId, { status: 'approved', comment: 'Approved by manager' });
-            toast.success("Post approved!");
-            onRefresh();
-        } catch { toast.error("Failed to approve post."); }
-    };
-
-    const handleRedoClick = async (postId: string) => {
-        const comment = window.prompt("Enter review comments/redo instructions for the agent:");
-        if (comment === null) return;
-        try {
-            await postsApi.approve(postId, { status: 'rejected', comment });
-            toast.success("Redo request submitted!");
-            onRefresh();
-        } catch { toast.error("Failed to request redo."); }
-    };
-
-    const handlePublishClick = async (postId: string) => {
-        try {
-            await postsApi.publish(postId);
-            toast.success("Post published to LinkedIn!");
-            onRefresh();
-        } catch { toast.error("Failed to publish post."); }
     };
 
     const onDragStart = (e: React.DragEvent, postId: string) => {
@@ -137,13 +107,13 @@ const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void; onE
             {COLUMNS.map(col => {
                 const isActiveDrop = dragOverCol === col.key;
                 return (
-                     <div
-                         key={col.key}
-                         className={`kanban-col ${isActiveDrop ? 'drag-over' : ''}`}
-                         onDragOver={(e) => onDragOver(e, col.key)}
-                         onDragLeave={onDragLeave}
-                         onDrop={(e) => onDrop(e, col.key)}
-                     >
+                    <div
+                        key={col.key}
+                        className={`kanban-col ${isActiveDrop ? 'drag-over' : ''}`}
+                        onDragOver={(e) => onDragOver(e, col.key)}
+                        onDragLeave={onDragLeave}
+                        onDrop={(e) => onDrop(e, col.key)}
+                    >
                         <div className="kanban-col-header" style={{ color: col.color }}>
                             {col.label}
                             <span className="badge badge-muted" style={{ marginLeft: 'auto' }}>{board[col.key]?.length || 0}</span>
@@ -165,63 +135,10 @@ const KanbanBoardView: React.FC<{ board: KanbanBoard; onRefresh: () => void; onE
                                         <span className="badge badge-muted">{post.region}</span>
                                         <span className="badge badge-muted">{post.post_type.replace('_', ' ')}</span>
                                     </div>
-                                    
-                                    {/* Redo Feedback Comment */}
-                                    {post.review_comment && col.key === 'rejected' && (
-                                        <div style={{ 
-                                            marginTop: 6, 
-                                            marginBottom: 10,
-                                            padding: 6, 
-                                            background: 'rgba(239, 68, 68, 0.05)', 
-                                            borderLeft: '2px solid var(--danger)', 
-                                            borderRadius: 4,
-                                            fontSize: '0.72rem',
-                                            color: '#dc2626'
-                                        }}>
-                                            <strong>Feedback:</strong> {post.review_comment}
-                                        </div>
-                                    )}
-
-                                    {/* Admin Reviews Controls */}
-                                    {isAdmin && col.key === 'in_review' && (
-                                        <div style={{ display: 'flex', gap: 6, marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 8, marginBottom: 8 }}>
-                                            <button 
-                                                className="btn btn-success btn-sm w-full" 
-                                                style={{ fontSize: '0.7rem', padding: '4px 8px' }}
-                                                onClick={() => handleApproveClick(post.id)}
-                                            >
-                                                Approve ✓
-                                            </button>
-                                            <button 
-                                                className="btn btn-danger btn-sm w-full" 
-                                                style={{ fontSize: '0.7rem', padding: '4px 8px' }}
-                                                onClick={() => handleRedoClick(post.id)}
-                                            >
-                                                Redo 🔄
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {/* Agent Publish Controls */}
-                                    {!isAdmin && col.key === 'approved' && (
-                                        <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 8, marginBottom: 8 }}>
-                                            <button 
-                                                className="btn btn-primary btn-sm w-full" 
-                                                style={{ fontSize: '0.75rem', padding: '5px 8px' }}
-                                                onClick={() => handlePublishClick(post.id)}
-                                            >
-                                                Publish to LinkedIn 🚀
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
-                                        <button className="btn btn-ghost" style={{ fontSize: '0.65rem', padding: '3px 8px' }} onClick={() => onEditPost(post)}>
-                                            ✏️ Edit
-                                        </button>
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                         {COLUMNS.filter(c => c.key !== col.key).map(c => (
                                             <button key={c.key} className="btn btn-ghost" style={{ fontSize: '0.65rem', padding: '3px 8px' }} onClick={() => movePost(post.id, c.key)}>
-                                                → {c.key.replace('_', ' ')}
+                                                → {c.key}
                                             </button>
                                         ))}
                                     </div>
@@ -245,7 +162,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const { user } = useAuthStore();
     const isAdmin = user?.role === 'admin';
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [board, setBoard] = useState<KanbanBoard>({ draft: [], rejected: [], in_review: [], approved: [], scheduled: [] });
+    const [board, setBoard] = useState<KanbanBoard>({ draft: [], in_review: [], approved: [], scheduled: [] });
     const [templates, setTemplates] = useState<Post[]>([]);
     const [heatmap, setHeatmap] = useState<any[]>([]);
     const [pendingTasks, setPendingTasks] = useState<any[]>([]);
@@ -259,12 +176,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [showAddTask, setShowAddTask] = useState(false);
     const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_id: '' });
 
-    // Alerts state
-    const [alerts, setAlerts] = useState<Alert[]>([]);
-    const [alertTitle, setAlertTitle] = useState('');
-    const [alertBody, setAlertBody] = useState('');
-    const [alertPriority, setAlertPriority] = useState<'high' | 'critical'>('high');
-    const [showNewAlert, setShowNewAlert] = useState(false);
+
 
     // AI Composer state
     const [prompt, setPrompt] = useState('');
@@ -302,11 +214,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const filteredHistoryPosts = publishedPosts.filter(p => {
         const matchesSearch = !historySearch || p.content.toLowerCase().includes(historySearch.toLowerCase()) || (p.title && p.title.toLowerCase().includes(historySearch.toLowerCase()));
         const matchesType = historyType === 'all' || p.post_type === historyType;
-        
+
         const pubTime = p.published_at ? new Date(p.published_at).getTime() : new Date(p.created_at).getTime();
         const matchesFrom = !historyFromDate || pubTime >= new Date(historyFromDate).getTime();
         const matchesTo = !historyToDate || pubTime <= new Date(historyToDate + 'T23:59:59').getTime();
-        
+
         return matchesSearch && matchesType && matchesFrom && matchesTo;
     });
 
@@ -331,20 +243,16 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
     const loadAll = async () => {
         try {
-            const [tRes, bRes, tmplRes, hmRes, aRes, pubRes] = await Promise.all([
+            const [tRes, bRes, tmplRes, hmRes, aRes] = await Promise.all([
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
-                postsApi.kanban(region === 'Global' ? undefined : region),
                 postsApi.list({ is_template: true }),
                 metricsApi.bestTime(region === 'Global' ? undefined : region),
                 alertsApi.list({ status: 'open' }),
-                postsApi.list({ status: 'published', region: region === 'Global' ? undefined : region }),
             ]);
             setTasks(tRes.data);
-            setBoard(bRes.data);
             setTemplates(tmplRes.data);
             setHeatmap(hmRes.data.heatmap);
             setAlerts(aRes.data);
-            setPublishedPosts(pubRes.data);
 
             if (isAdmin) {
                 const [paRes, agRes] = await Promise.all([
@@ -536,23 +444,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         } catch { toast.error('Action failed'); }
     };
 
-    const handleRaiseAlert = async () => {
-        try {
-            await alertsApi.create({ title: alertTitle, body: alertBody, priority: alertPriority, region: user?.region || 'Global' });
-            toast.success('Alert raised!');
-            setShowNewAlert(false);
-            setAlertTitle(''); setAlertBody('');
-            loadAll();
-        } catch { toast.error('Failed to raise alert'); }
-    };
 
-    const handleResolveAlert = async (id: string) => {
-        try {
-            await alertsApi.resolve(id);
-            toast.success('Alert resolved!');
-            loadAll();
-        } catch { }
-    };
 
     // Heatmap rendering
     const maxEngagement = Math.max(...heatmap.map(c => c.engagement), 1);
@@ -612,9 +504,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 {[
                     { id: 'tasks', label: '📋 My Tasks' },
                     { id: 'composer', label: '✨ AI Composer' },
-                    { id: 'kanban', label: '🗂 Kanban' },
-                    { id: 'library', label: '📚 Library' },
-                    { id: 'alerts', label: '🚨 Alerts' }
+                    { id: 'library', label: '📚 Library' }
                 ].map(t => (
                     <button key={t.id} style={TAB_STYLE(tab === t.id)} onClick={() => setTab(t.id as any)}>
                         {t.label}
@@ -888,14 +778,14 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 <div>
                     {/* Toggle Sub-tabs */}
                     <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-                        <button 
-                            className={`btn ${composerSubTab === 'create' ? 'btn-primary' : 'btn-secondary'}`} 
+                        <button
+                            className={`btn ${composerSubTab === 'create' ? 'btn-primary' : 'btn-secondary'}`}
                             onClick={() => { setComposerSubTab('create'); setSelectedHistoryPost(null); }}
                         >
                             ✍️ AI Post Composer
                         </button>
-                        <button 
-                            className={`btn ${composerSubTab === 'history' ? 'btn-primary' : 'btn-secondary'}`} 
+                        <button
+                            className={`btn ${composerSubTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
                             onClick={() => { setComposerSubTab('history'); setSelectedHistoryPost(null); }}
                         >
                             📜 Published Posts ({publishedPosts.length})
@@ -1101,8 +991,8 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                             {selectedHistoryPost ? (
                                 /* Detailed view */
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                    <button 
-                                        className="btn btn-ghost btn-sm" 
+                                    <button
+                                        className="btn btn-ghost btn-sm"
                                         onClick={() => setSelectedHistoryPost(null)}
                                         style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                     >
@@ -1114,11 +1004,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <div className="composer-pane" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                                             <div className="glass-card" style={{ padding: 18 }}>
                                                 <h4 style={{ margin: 0, marginBottom: 12 }}>Post Content</h4>
-                                                <div style={{ 
-                                                    fontSize: '0.85rem', 
-                                                    color: 'var(--text-primary)', 
-                                                    background: 'var(--bg-tertiary)', 
-                                                    padding: 12, 
+                                                <div style={{
+                                                    fontSize: '0.85rem',
+                                                    color: 'var(--text-primary)',
+                                                    background: 'var(--bg-tertiary)',
+                                                    padding: 12,
                                                     borderRadius: 6,
                                                     whiteSpace: 'pre-wrap',
                                                     lineHeight: 1.6,
@@ -1133,13 +1023,13 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                             <div className="glass-card" style={{ padding: 18 }}>
                                                 <h4 style={{ margin: 0, marginBottom: 6 }}>🔗 LinkedIn post link</h4>
                                                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                                    <input 
-                                                        className="input" 
-                                                        placeholder="https://www.linkedin.com/feed/update/urn:li:share:..." 
+                                                    <input
+                                                        className="input"
+                                                        placeholder="https://www.linkedin.com/feed/update/urn:li:share:..."
                                                         value={editingLinkUrl}
                                                         onChange={e => setEditingLinkUrl(e.target.value)}
                                                     />
-                                                    <button 
+                                                    <button
                                                         className="btn btn-primary"
                                                         onClick={() => handleSaveLinkedInLink(editingLinkUrl)}
                                                     >
@@ -1162,7 +1052,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             </div>
                                                         )}
                                                     </div>
-                                                    <button 
+                                                    <button
                                                         className="btn btn-secondary btn-sm"
                                                         disabled={!selectedHistoryPost.linkedin_post_id}
                                                         onClick={handleDemoSync}
@@ -1170,7 +1060,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                         Demo sync
                                                     </button>
                                                 </div>
-                                                
+
                                                 <div className="grid-3">
                                                     <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
                                                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>LIKES</div>
@@ -1197,10 +1087,10 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         {/* Right Column */}
                                         <div className="composer-pane" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                                             <h4 style={{ marginBottom: 0 }}>LinkedIn Live Preview</h4>
-                                            
-                                            <LinkedInPreview 
-                                                content={selectedHistoryPost.content} 
-                                                hashtags={selectedHistoryPost.hashtags} 
+
+                                            <LinkedInPreview
+                                                content={selectedHistoryPost.content}
+                                                hashtags={selectedHistoryPost.hashtags}
                                             />
 
                                             {selectedHistoryPost.hashtags && (
@@ -1249,11 +1139,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                     <div className="glass-card" style={{ padding: 16, marginBottom: 20 }}>
                                         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                                             <div style={{ flex: 1, minWidth: 200 }}>
-                                                <input 
-                                                    className="input" 
-                                                    placeholder="Search posts..." 
-                                                    value={historySearch} 
-                                                    onChange={e => setHistorySearch(e.target.value)} 
+                                                <input
+                                                    className="input"
+                                                    placeholder="Search posts..."
+                                                    value={historySearch}
+                                                    onChange={e => setHistorySearch(e.target.value)}
                                                 />
                                             </div>
                                             <div>
@@ -1276,8 +1166,8 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                 <input className="input" type="date" value={historyToDate} onChange={e => setHistoryToDate(e.target.value)} style={{ width: 'auto' }} />
                                             </div>
                                             {(historySearch || historyFromDate || historyToDate || historyType !== 'all') && (
-                                                <button 
-                                                    className="btn btn-ghost btn-sm" 
+                                                <button
+                                                    className="btn btn-ghost btn-sm"
                                                     onClick={() => {
                                                         setHistorySearch('');
                                                         setHistoryFromDate('');
@@ -1301,25 +1191,25 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         )}
                                         {filteredHistoryPosts.map(p => {
                                             return (
-                                                <div 
-                                                    key={p.id} 
-                                                    className="glass-card hover-glow" 
-                                                    style={{ 
-                                                        padding: 16, 
-                                                        display: 'flex', 
-                                                        justifyContent: 'space-between', 
+                                                <div
+                                                    key={p.id}
+                                                    className="glass-card hover-glow"
+                                                    style={{
+                                                        padding: 16,
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
                                                         alignItems: 'center',
                                                         gap: 16,
                                                         transition: 'all 0.2s'
                                                     }}
                                                 >
                                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                                        <div 
-                                                            style={{ 
-                                                                fontSize: '0.88rem', 
-                                                                color: 'var(--text-primary)', 
+                                                        <div
+                                                            style={{
+                                                                fontSize: '0.88rem',
+                                                                color: 'var(--text-primary)',
                                                                 lineHeight: 1.5,
-                                                                whiteSpace: 'pre-wrap' 
+                                                                whiteSpace: 'pre-wrap'
                                                             }}
                                                             className="truncate"
                                                             title={p.content}
@@ -1335,10 +1225,10 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 {p.published_at ? new Date(p.published_at).toLocaleDateString() : new Date(p.created_at).toLocaleDateString()}
                                                             </span>
                                                             {p.linkedin_post_id && (
-                                                                <a 
-                                                                    href={p.linkedin_post_id} 
-                                                                    target="_blank" 
-                                                                    rel="noopener noreferrer" 
+                                                                <a
+                                                                    href={p.linkedin_post_id}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
                                                                     style={{ fontSize: '0.73rem', color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
                                                                 >
                                                                     Open ↗
@@ -1347,15 +1237,15 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                         </div>
                                                     </div>
                                                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                                                        <button 
-                                                            className="btn btn-secondary btn-sm" 
+                                                        <button
+                                                            className="btn btn-secondary btn-sm"
                                                             onClick={() => handleViewPostDetails(p)}
                                                         >
                                                             View
                                                         </button>
-                                                        <button 
-                                                            className="btn btn-ghost btn-icon btn-sm" 
-                                                            style={{ color: 'var(--danger)' }} 
+                                                        <button
+                                                            className="btn btn-ghost btn-icon btn-sm"
+                                                            style={{ color: 'var(--danger)' }}
                                                             onClick={() => handleDeleteHistoryPost(p.id)}
                                                         >
                                                             🗑️
@@ -1379,7 +1269,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                         <h4>Approval Pipeline</h4>
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Drag posts through the review process</p>
                     </div>
-                    <KanbanBoardView board={board} onRefresh={loadAll} onEditPost={handleEditPost} />
+                    <KanbanBoardView board={board} onRefresh={loadAll} />
                 </div>
             )}
 
@@ -1424,68 +1314,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 </div>
             )}
 
-            {/* ── Alerts Tab ─────────────────────────────────────────────────── */}
-            {tab === 'alerts' && (
-                <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                        <div>
-                            <h4>Workspace Alerts 🚨</h4>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Flag and trace regional issues or system warnings</p>
-                        </div>
-                        <button className="btn btn-primary btn-sm" onClick={() => setShowNewAlert(true)}>
-                            <Plus size={14} /> Raise Alert
-                        </button>
-                    </div>
 
-                    {showNewAlert && (
-                        <div className="glass-card" style={{ padding: 20, marginBottom: 16 }}>
-                            <h4 style={{ marginBottom: 14 }}>New Alert</h4>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                <input className="input" placeholder="Alert title" value={alertTitle} onChange={e => setAlertTitle(e.target.value)} />
-                                <textarea className="textarea" placeholder="Describe the issue..." value={alertBody} onChange={e => setAlertBody(e.target.value)} style={{ minHeight: 80 }} />
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                    {(['high', 'critical'] as const).map(p => (
-                                        <button
-                                            key={p}
-                                            className="btn btn-sm"
-                                            onClick={() => setAlertPriority(p)}
-                                            style={{
-                                                background: alertPriority === p ? (p === 'critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)') : 'var(--surface)',
-                                                color: alertPriority === p ? (p === 'critical' ? 'var(--danger)' : 'var(--warning)') : 'var(--text-secondary)',
-                                                border: `1px solid ${alertPriority === p ? 'currentColor' : 'var(--border)'}`
-                                            }}
-                                        >
-                                            {p === 'critical' ? '🔴 Critical' : '🟡 High'}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                                    <button className="btn btn-primary btn-sm" onClick={handleRaiseAlert}>Raise Alert</button>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => setShowNewAlert(false)}>Cancel</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {alerts.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No open alerts 🎉</div>}
-                        {alerts.map(a => (
-                            <div key={a.id} className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'} style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontWeight: 700, marginBottom: 4 }}>{a.title}</div>
-                                    {a.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{a.body}</div>}
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 6 }}>{a.region} · {new Date(a.created_at).toLocaleDateString()}</div>
-                                </div>
-                                {isAdmin && (
-                                    <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', whiteSpace: 'nowrap' }} onClick={() => handleResolveAlert(a.id)}>
-                                        ✓ Resolve
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

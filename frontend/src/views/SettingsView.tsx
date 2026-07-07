@@ -209,7 +209,7 @@ export const SettingsView: React.FC = () => {
             {/* ── Team Tab (Admin only) ─────────────────────────────────────── */}
             {tab === 'team' && isAdmin && (
                 <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
                         <div><h4>Team Management</h4><p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Manage agents and their regional assignments</p></div>
                         <button className="btn btn-primary btn-sm" onClick={() => setShowAddUser(true)}><Plus size={14} /> Add User</button>
                     </div>
@@ -240,19 +240,21 @@ export const SettingsView: React.FC = () => {
                     <div className="chart-container">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {teamUsers.map(u => (
-                                <div key={u.id} className="glass-card" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'var(--accent)', fontSize: '0.9rem' }}>
+                                <div key={u.id} className="glass-card team-member-card">
+                                    <div className="team-member-avatar">
                                         {u.full_name.charAt(0)}
                                     </div>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{u.full_name}</div>
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                                    <div className="team-member-info">
+                                        <div className="team-member-name">{u.full_name}</div>
+                                        <div className="team-member-email">{u.email}</div>
                                     </div>
-                                    <span className="badge badge-muted">{u.region}</span>
-                                    <span className={`badge ${u.role === 'admin' ? 'badge-purple' : u.role === 'developer' ? 'badge-info' : 'badge-accent'}`}>{u.role}</span>
-                                    <span className={`badge ${u.is_active ? 'badge-success' : 'badge-danger'}`}>{u.is_active ? 'Active' : 'Inactive'}</span>
+                                    <div className="team-member-badges">
+                                        <span className="badge badge-muted">{u.region}</span>
+                                        <span className={`badge ${u.role === 'admin' ? 'badge-purple' : u.role === 'developer' ? 'badge-info' : 'badge-accent'}`}>{u.role}</span>
+                                        <span className={`badge ${u.is_active ? 'badge-success' : 'badge-danger'}`}>{u.is_active ? 'Active' : 'Inactive'}</span>
+                                    </div>
                                     {u.id !== user?.id && (
-                                        <button className="btn btn-icon btn-danger btn-sm" onClick={() => handleRemoveUser(u.id)}><Trash2 size={14} /></button>
+                                        <button className="btn btn-icon btn-danger btn-sm team-member-delete" onClick={() => handleRemoveUser(u.id)}><Trash2 size={14} /></button>
                                     )}
                                 </div>
                             ))}
@@ -266,7 +268,7 @@ export const SettingsView: React.FC = () => {
             {/* ── Link Tracking Tab ────────────────────────────────────────── */}
             {tab === 'links' && (
                 <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
                         <div><h4>🔗 UTM Link Tracker</h4><p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Create trackable short links for posts and campaigns</p></div>
                         <button className="btn btn-primary btn-sm" onClick={() => setShowAddLink(true)}><Plus size={14} /> Shorten URL</button>
                     </div>
@@ -295,22 +297,24 @@ export const SettingsView: React.FC = () => {
                             {links.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No links yet — create your first!</div>}
                             {links.map(l => (
                                 <div key={l.id} className="glass-card" style={{ padding: '12px 16px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="link-tracking-card">
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                                            <div style={{ display: 'flex', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
                                                 <code style={{ fontSize: '0.8rem', color: 'var(--accent)', background: 'var(--accent-glow)', padding: '2px 8px', borderRadius: 6 }}>{l.short_url}</code>
                                                 <span className="badge badge-muted">{l.region}</span>
                                                 <span className="badge badge-muted">{l.utm_campaign}</span>
                                             </div>
                                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }} className="truncate">{l.original_url}</div>
                                         </div>
-                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                            <div style={{ fontWeight: 700, color: 'var(--accent)', fontSize: '1.1rem' }}>{l.total_clicks}</div>
-                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>clicks</div>
+                                        <div className="link-tracking-stats-actions">
+                                            <div style={{ textAlign: 'right', flexShrink: 0 }} className="link-clicks-container">
+                                                <span style={{ fontWeight: 700, color: 'var(--accent)', fontSize: '1.1rem' }}>{l.total_clicks}</span>
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 4 }}>clicks</span>
+                                            </div>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(l.short_url); toast.success('Copied!'); }}>
+                                                📋 Copy
+                                            </button>
                                         </div>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(l.short_url); toast.success('Copied!'); }}>
-                                            📋 Copy
-                                        </button>
                                     </div>
                                 </div>
                             ))}

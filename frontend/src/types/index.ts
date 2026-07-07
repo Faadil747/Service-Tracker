@@ -81,11 +81,14 @@ export interface Notification {
 export interface Alert {
     id: string;
     raised_by_id: string;
+    raised_by_name?: string;
     title: string;
     body: string;
     priority: 'high' | 'critical';
     status: 'open' | 'resolved';
     region: string;
+    reference_id?: string;
+    reference_type?: string;
     created_at: string;
     resolved_at: string | null;
 }

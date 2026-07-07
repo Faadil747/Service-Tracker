@@ -20,6 +20,7 @@ class CreateTaskRequest(BaseModel):
     due_date: Optional[str] = None
     recurrence: str = "none"
     assigned_to: Optional[str] = None
+    assigned_to_id: Optional[str] = None
     campaign_id: Optional[str] = None
 
 
@@ -79,13 +80,14 @@ async def create_task(
     await db.flush()
 
     # Assign to agent
-    if req.assigned_to:
-        assignment = TaskAssignment(id=str(uuid.uuid4()), task_id=task.id, agent_id=req.assigned_to)
+    target_agent = req.assigned_to_id or req.assigned_to
+    if target_agent:
+        assignment = TaskAssignment(id=str(uuid.uuid4()), task_id=task.id, agent_id=target_agent)
         db.add(assignment)
         # Notify assigned agent
         notif = Notification(
             id=str(uuid.uuid4()),
-            user_id=req.assigned_to,
+            user_id=target_agent,
             type="task_assigned",
             title=f"New task assigned: {req.title}",
             body=req.description or "",
@@ -207,6 +209,20 @@ async def complete_task(
         entity_type="task",
         entity_id=task.id,
     ))
+    
+    # Notify all admins that the task is completed
+    admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
+    for admin in admins.scalars():
+        db.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=admin.id,
+            type="task_completed",
+            title=f"Task Completed: {task.title}",
+            body=f"Completed by {current_user.full_name}. Notes: {notes}" if notes else f"Completed by {current_user.full_name}",
+            reference_id=task.id,
+            reference_type="task",
+        ))
+
     await db.commit()
     return {"message": "Task completed", "completed_at": task.completed_at.isoformat()}
 
@@ -293,6 +309,34 @@ async def update_task_status(
         task.completed_at = datetime.utcnow()
     else:
         task.completed_at = None
+
+    # Determine who to notify
+    if current_user.role == "agent":
+        # Agent updated, notify admins
+        admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
+        for admin in admins.scalars():
+            db.add(Notification(
+                id=str(uuid.uuid4()),
+                user_id=admin.id,
+                type="task_updated",
+                title=f"Task Status Updated: {task.title}",
+                body=f"{current_user.full_name} moved task to '{status}'",
+                reference_id=task.id,
+                reference_type="task",
+            ))
+    else:
+        # Admin updated, notify assigned agents
+        assignments = await db.execute(select(TaskAssignment).where(TaskAssignment.task_id == task_id))
+        for assign in assignments.scalars():
+            db.add(Notification(
+                id=str(uuid.uuid4()),
+                user_id=assign.agent_id,
+                type="task_updated",
+                title=f"Task Status Updated: {task.title}",
+                body=f"Admin {current_user.full_name} moved task to '{status}'",
+                reference_id=task.id,
+                reference_type="task",
+            ))
 
     await db.commit()
     return await _task_dict(task, db)

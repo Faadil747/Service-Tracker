@@ -11,9 +11,9 @@ import {
     format, startOfMonth, endOfMonth, eachDayOfInterval,
     isSameMonth, isToday, startOfWeek, endOfWeek, addMonths, subMonths
 } from 'date-fns';
-import { metricsApi, tasksApi, usersApi, alertsApi } from '../services/api';
+import { metricsApi, tasksApi, usersApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { PageMetric, Task, User, Alert } from '../types';
+import { PageMetric, Task, User } from '../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AnalyticsHubView } from './AnalyticsHubView';

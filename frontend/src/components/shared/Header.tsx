@@ -7,7 +7,7 @@ import {
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useNotificationStore } from '../../store/notificationStore';
-import { chatApi, alertsApi } from '../../services/api';
+import { chatApi, alertsApi, usersApi } from '../../services/api';
 
 interface HeaderProps {
     region: string;
@@ -50,7 +50,15 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
         } else if (n.reference_type === 'post') {
             navigate(`/calendar?postId=${n.reference_id}`);
         } else if (n.reference_type === 'alert') {
-            navigate(`/workspace?tab=alerts`);
+            try {
+                const res = await alertsApi.list(); // fetch immediately to check if alert has task
+                const alertMatch = res.data.find((a: any) => a.id === n.reference_id);
+                if (alertMatch && (alertMatch.reference_type === 'task' || alertMatch.reference_id)) {
+                    navigate(`/workspace?taskId=${alertMatch.reference_id || alertMatch.reference_type}`);
+                    return;
+                }
+            } catch { }
+            setShowAlertsSidebar(true);
         } else if (n.reference_type === 'chat' || n.reference_type === 'message') {
             navigate(`?chatWith=${n.reference_id}`);
         }
@@ -62,6 +70,20 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
     const [alerts, setAlerts] = useState<any[]>([]);
     const [showAlertsSidebar, setShowAlertsSidebar] = useState(false);
     const alertsLoaded = useRef(false);
+
+    // New Alert State
+    const [showNewAlert, setShowNewAlert] = useState(false);
+    const [alertTitle, setAlertTitle] = useState('');
+    const [alertBody, setAlertBody] = useState('');
+    const [alertPriority, setAlertPriority] = useState<'high' | 'critical'>('high');
+    const [alertTargetId, setAlertTargetId] = useState<string>('');
+    const [agents, setAgents] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (user?.role === 'admin') {
+            usersApi.list({ role: 'agent' }).then(res => setAgents(res.data)).catch(() => { });
+        }
+    }, [user]);
 
     const navItems = user ? getNavItems(user.role) : [];
     const roleColor = user ? (ROLE_COLORS[user.role] || '#2563eb') : '#2563eb';
@@ -97,12 +119,29 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
             try {
                 const res = await alertsApi.list({ status: 'open' });
                 setAlerts(res.data);
-            } catch {}
+            } catch { }
         };
         fetchAlerts();
         const interval = setInterval(fetchAlerts, 30000);
         return () => clearInterval(interval);
     }, []);
+
+    const handleRaiseAlert = async () => {
+        if (!alertTitle.trim()) return;
+        try {
+            await alertsApi.create({
+                title: alertTitle,
+                body: alertBody,
+                priority: alertPriority,
+                region: user?.region || 'Global',
+                target_user_id: alertTargetId || undefined
+            });
+            setShowNewAlert(false);
+            setAlertTitle(''); setAlertBody(''); setAlertTargetId('');
+            const res = await alertsApi.list({ status: 'open' });
+            setAlerts(res.data);
+        } catch { }
+    };
 
     useEffect(() => {
         if (alerts.length > 0 && !alertsLoaded.current) {
@@ -181,30 +220,30 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 12, flexShrink: 0 }}>
 
                     {/* Alerts Button */}
-                    {alerts.length > 0 && (
-                        <button 
-                            onClick={() => { setShowAlertsSidebar(p => !p); setShowNotifs(false); setShowProfile(false); }} 
-                            className="btn btn-ghost btn-icon" 
-                            style={{
-                                position: 'relative', padding: 7,
-                                background: showAlertsSidebar ? 'var(--danger-glow)' : 'transparent',
-                                borderRadius: 8,
-                                color: 'var(--danger)',
-                            }}
-                        >
-                            <AlertTriangle size={16} />
-                            <span 
-                                className="notif-badge" 
-                                style={{ 
-                                    background: 'var(--danger)', 
+                    <button
+                        onClick={() => { setShowAlertsSidebar(p => !p); setShowNotifs(false); setShowProfile(false); }}
+                        className="btn btn-ghost btn-icon"
+                        style={{
+                            position: 'relative', padding: 7,
+                            background: showAlertsSidebar ? 'var(--danger-glow)' : 'transparent',
+                            borderRadius: 8,
+                            color: 'var(--danger)',
+                        }}
+                    >
+                        <AlertTriangle size={16} />
+                        {alerts.length > 0 && (
+                            <span
+                                className="notif-badge"
+                                style={{
+                                    background: 'var(--danger)',
                                     color: '#fff',
                                     animation: 'pulse-dot 2s infinite'
                                 }}
                             >
                                 {alerts.length}
                             </span>
-                        </button>
-                    )}
+                        )}
+                    </button>
 
                     {/* Notification Bell */}
                     <div id="notif-dropdown" style={{ position: 'relative' }}>
@@ -238,24 +277,24 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                                     )}
                                 </div>
                                 <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-                                    {notifications.length === 0 ? (
+                                    {notifications.filter(n => !n.is_read).length === 0 ? (
                                         <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                                             <div style={{ fontSize: '1.8rem', marginBottom: 8 }}>🔔</div>
                                             All caught up!
                                         </div>
-                                    ) : notifications.slice(0, 15).map((n) => (
+                                    ) : notifications.filter(n => !n.is_read).slice(0, 15).map((n) => (
                                         <div key={n.id}
                                             onClick={() => handleNotifClick(n)}
                                             style={{
                                                 padding: '12px 16px',
                                                 borderBottom: '1px solid var(--border)',
-                                                background: n.is_read ? 'transparent' : 'rgba(37,99,235,0.04)',
+                                                background: 'rgba(37,99,235,0.04)',
                                                 display: 'flex', gap: 10, alignItems: 'flex-start',
                                                 transition: 'background 0.2s',
                                                 cursor: 'pointer',
                                             }}
                                             onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
-                                            onMouseLeave={e => e.currentTarget.style.background = n.is_read ? 'transparent' : 'rgba(37,99,235,0.04)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(37,99,235,0.04)'}
                                         >
                                             <div className="status-dot" style={{
                                                 marginTop: 5, flexShrink: 0,
@@ -397,23 +436,91 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                 </div>
             )}
             {/* Alerts Drawer Sidebar */}
-            <div className={`alerts-sidebar-overlay ${showAlertsSidebar ? 'open' : ''}`} onClick={() => setShowAlertsSidebar(false)} />
+            <div className={`alerts-sidebar-overlay ${showAlertsSidebar ? 'open' : ''}`} onClick={() => { setShowAlertsSidebar(false); setShowNewAlert(false); }} />
             <div className={`alerts-sidebar ${showAlertsSidebar ? 'open' : ''}`}>
-                <div className="alerts-sidebar-header">
+                <div className="alerts-sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <AlertTriangle size={18} color="var(--danger)" />
-                        <h4 style={{ margin: 0 }}>Active Alerts</h4>
+                        <h4 style={{ margin: 0 }}>Workspace Alerts</h4>
                     </div>
-                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowAlertsSidebar(false)}>
-                        <X size={16} />
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        {!showNewAlert && (
+                            <button className="btn btn-primary btn-sm btn-icon" onClick={() => setShowNewAlert(true)} style={{ padding: 4 }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+                            </button>
+                        )}
+                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setShowAlertsSidebar(false); setShowNewAlert(false); }}>
+                            <X size={16} />
+                        </button>
+                    </div>
                 </div>
                 <div className="alerts-sidebar-content">
-                    {alerts.map(a => (
-                        <div 
-                            key={a.id} 
-                            className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'} 
-                            style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+                    {showNewAlert && (
+                        <div className="glass-card" style={{ padding: 16, marginBottom: 16 }}>
+                            <h4 style={{ marginBottom: 14 }}>New Alert</h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <input className="input" placeholder="Alert title" value={alertTitle} onChange={e => setAlertTitle(e.target.value)} />
+                                <textarea className="textarea" placeholder="Describe the issue..." value={alertBody} onChange={e => setAlertBody(e.target.value)} style={{ minHeight: 80 }} />
+
+                                {user?.role === 'admin' && (
+                                    <select className="input" value={alertTargetId} onChange={e => setAlertTargetId(e.target.value)}>
+                                        <option value="">Target: All (Global)</option>
+                                        {agents.map(ag => (
+                                            <option key={ag.id} value={ag.id}>Target: {ag.full_name}</option>
+                                        ))}
+                                    </select>
+                                )}
+
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    {(['high', 'critical'] as const).map(p => (
+                                        <button
+                                            key={p}
+                                            className="btn btn-sm"
+                                            onClick={() => setAlertPriority(p)}
+                                            style={{
+                                                background: alertPriority === p ? (p === 'critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)') : 'var(--surface)',
+                                                color: alertPriority === p ? (p === 'critical' ? 'var(--danger)' : 'var(--warning)') : 'var(--text-secondary)',
+                                                border: `1px solid ${alertPriority === p ? 'currentColor' : 'var(--border)'}`,
+                                                flex: 1
+                                            }}
+                                        >
+                                            {p === 'critical' ? '🔴 Critical' : '🟡 High'}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                                    <button className="btn btn-primary btn-sm" onClick={handleRaiseAlert} style={{ flex: 1 }}>Raise Alert</button>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setShowNewAlert(false)} style={{ flex: 1 }}>Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {!showNewAlert && alerts.length === 0 && (
+                        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No open alerts 🎉</div>
+                    )}
+
+                    {!showNewAlert && alerts.map(a => (
+                        <div
+                            key={a.id}
+                            className={a.priority === 'critical' ? 'alert-critical' : 'alert-high'}
+                            onClick={async () => {
+                                // mark as resolved upon viewing
+                                try {
+                                    await alertsApi.resolve(a.id);
+                                    const res = await alertsApi.list({ status: 'open' });
+                                    setAlerts(res.data);
+                                } catch { }
+                                setShowAlertsSidebar(false);
+                                if (a.reference_type === 'task' && a.reference_id) {
+                                    navigate(`/workspace?taskId=${a.reference_id}`);
+                                } else {
+                                    navigate(`/workspace`);
+                                }
+                            }}
+                            style={{ display: 'flex', flexDirection: 'column', gap: 6, cursor: 'pointer', transition: 'transform 0.1s' }}
+                            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
+                            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                         >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                                 <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{a.title}</span>
@@ -422,11 +529,10 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                                 </span>
                             </div>
                             {a.body && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{a.body}</div>}
-                            {a.region && (
-                                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                                    <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{a.region}</span>
-                                </div>
-                            )}
+                            <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{a.region}</span>
+                                {(a.reference_type === 'task' || a.reference_id) && <span style={{ fontSize: '0.65rem', color: 'var(--accent)', fontWeight: 600 }}>Tap to view task ➔</span>}
+                            </div>
                         </div>
                     ))}
                 </div>

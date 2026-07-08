@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     LINKEDIN_REDIRECT_URI: str = "http://localhost:8000/api/auth/linkedin/callback"
     LINKEDIN_ORG_ID: str = ""
 
+    # LinkedIn long-lived access token (used for publishing + metrics)
+    LINKEDIN_ACCESS_TOKEN: str = ""
+
+    # Minutes between live LinkedIn analytics fetches. LinkedIn day-throttles the
+    # follower/page statistics endpoints, so we cache each real snapshot and only
+    # re-fetch after this interval. Frontend polls read the cached snapshot.
+    LINKEDIN_SYNC_INTERVAL_MIN: int = 30
+
     # LinkedIn proxy (configurable for dev/test role)
     LINKEDIN_PROXY_URL: str = "http://localhost:3001"
 

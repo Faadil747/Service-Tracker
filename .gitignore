@@ -31,6 +31,12 @@ run/
 *.sqlite
 *.sqlite3
 
+# LinkedIn snapshot cache (real fetched data, persisted between restarts)
+linkedin_cache.json
+
+# Local diagnostic scripts
+li_diag*.py
+
 # OS metadata
 .DS_Store
 Thumbs.db

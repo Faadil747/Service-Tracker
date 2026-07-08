@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Eye, EyeOff } from 'lucide-react';
-import { settingsApi, usersApi, linksApi } from '../services/api';
+import { Plus, Trash2, Eye, EyeOff, RefreshCw, CheckCircle, XCircle, Loader } from 'lucide-react';
+import { settingsApi, usersApi, linksApi, metricsApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { User as UserType, LinkTracking } from '../types';
 import toast from 'react-hot-toast';
@@ -10,7 +10,20 @@ interface SettingsData {
     deepseek_model: string;
     dev_mode: boolean;
     deepseek_key_set: boolean;
-    linkedin_key_set: boolean;
+    linkedin_client_id_set: boolean;
+    linkedin_access_token_set: boolean;
+    linkedin_org_id: string;
+}
+
+interface ConnectionStatus {
+    connected: boolean;
+    error?: string;
+    account_name?: string;
+    org_name?: string;
+    org_id?: string;
+    followers?: number;
+    model?: string;
+    base_url?: string;
 }
 
 export const SettingsView: React.FC = () => {
@@ -24,6 +37,13 @@ export const SettingsView: React.FC = () => {
     const [showAddLink, setShowAddLink] = useState(false);
     const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
 
+    // Connection status
+    const [linkedinStatus, setLinkedinStatus] = useState<ConnectionStatus | null>(null);
+    const [deepseekStatus, setDeepseekStatus] = useState<ConnectionStatus | null>(null);
+    const [testingLinkedin, setTestingLinkedin] = useState(false);
+    const [testingDeepseek, setTestingDeepseek] = useState(false);
+    const [syncingMetrics, setSyncingMetrics] = useState(false);
+
     // Form states
     const [apiKey, setApiKey] = useState('');
     const [linkedinKey, setLinkedinKey] = useState('');
@@ -31,6 +51,14 @@ export const SettingsView: React.FC = () => {
     const [newLink, setNewLink] = useState({ original_url: '', utm_campaign: '', utm_source: 'linkedin', utm_medium: 'social', region: 'Global' });
 
     useEffect(() => { loadAll(); }, [tab]);
+
+    // Auto-test connections when API tab is opened
+    useEffect(() => {
+        if (tab === 'api' && isAdmin) {
+            testLinkedIn();
+            testDeepSeek();
+        }
+    }, [tab]);
 
     const loadAll = async () => {
         try {
@@ -47,6 +75,48 @@ export const SettingsView: React.FC = () => {
                 setLinks(res.data);
             }
         } catch { }
+    };
+
+    const testLinkedIn = async () => {
+        setTestingLinkedin(true);
+        setLinkedinStatus(null);
+        try {
+            const res = await settingsApi.linkedinStatus();
+            setLinkedinStatus(res.data);
+        } catch (e: any) {
+            setLinkedinStatus({ connected: false, error: e?.response?.data?.detail || 'Connection failed' });
+        } finally {
+            setTestingLinkedin(false);
+        }
+    };
+
+    const testDeepSeek = async () => {
+        setTestingDeepseek(true);
+        setDeepseekStatus(null);
+        try {
+            const res = await settingsApi.deepseekStatus();
+            setDeepseekStatus(res.data);
+        } catch (e: any) {
+            setDeepseekStatus({ connected: false, error: e?.response?.data?.detail || 'Connection failed' });
+        } finally {
+            setTestingDeepseek(false);
+        }
+    };
+
+    const syncPageMetrics = async () => {
+        setSyncingMetrics(true);
+        try {
+            const res = await metricsApi.syncPage();
+            if (res.data.synced) {
+                toast.success(`Synced! Followers: ${res.data.followers?.toLocaleString() ?? 'N/A'}`);
+            } else {
+                toast.error(res.data.message || 'Sync failed');
+            }
+        } catch (e: any) {
+            toast.error(e?.response?.data?.detail || 'Sync failed');
+        } finally {
+            setSyncingMetrics(false);
+        }
     };
 
     const handleSaveApiKey = async (keyName: string, value: string) => {
@@ -85,8 +155,6 @@ export const SettingsView: React.FC = () => {
         } catch { toast.error('Failed to create link'); }
     };
 
-
-
     const TAB_STYLE = (active: boolean) => ({
         padding: '8px 16px', borderRadius: 8, cursor: 'pointer', border: 'none',
         fontSize: '0.85rem', fontWeight: active ? 600 : 400,
@@ -95,6 +163,24 @@ export const SettingsView: React.FC = () => {
         transition: 'all 0.18s',
     });
 
+    const StatusBadge: React.FC<{ status: ConnectionStatus | null; loading: boolean }> = ({ status, loading }) => {
+        if (loading) return (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> Testing…
+            </span>
+        );
+        if (!status) return null;
+        return status.connected ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '3px 10px', borderRadius: 99 }}>
+                <CheckCircle size={13} /> Connected
+            </span>
+        ) : (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: '#ef4444', background: 'rgba(239,68,68,0.1)', padding: '3px 10px', borderRadius: 99 }}>
+                <XCircle size={13} /> Disconnected
+            </span>
+        );
+    };
+
     return (
         <div className="page-content animate-fade">
             {/* Tabs */}
@@ -102,7 +188,7 @@ export const SettingsView: React.FC = () => {
                 {[
                     { id: 'profile', label: '👤 Profile' },
                     { id: 'links', label: '🔗 Link Tracking' },
-                    ...(isAdmin ? [{ id: 'api', label: '🔑 API Keys' }, { id: 'team', label: '👥 Team' }] : []),
+                    ...(isAdmin ? [{ id: 'api', label: '🔑 API & Connections' }, { id: 'team', label: '👥 Team' }] : []),
                 ].map(t => (
                     <button key={t.id} style={TAB_STYLE(tab === (t.id as any))} onClick={() => setTab(t.id as any)}>{t.label}</button>
                 ))}
@@ -151,22 +237,153 @@ export const SettingsView: React.FC = () => {
                 </div>
             )}
 
-            {/* ── API Keys Tab (Admin only) ─────────────────────────────────── */}
+            {/* ── API Keys + Connection Status Tab (Admin only) ─────────────── */}
             {tab === 'api' && isAdmin && (
-                <div style={{ maxWidth: 700 }}>
+                <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+                    {/* Status overview row */}
                     {settings && (
-                        <div className="glass-card" style={{ padding: 12, marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                            <span className={`badge ${settings.dev_mode ? 'badge-warning' : 'badge-success'}`}>{settings.dev_mode ? 'Dev Mode ON' : 'Production'}</span>
-                            <span className={`badge ${settings.deepseek_key_set ? 'badge-success' : 'badge-danger'}`}>DeepSeek: {settings.deepseek_key_set ? 'Configured' : 'Not Set'}</span>
-                            <span className={`badge ${settings.linkedin_key_set ? 'badge-success' : 'badge-danger'}`}>LinkedIn: {settings.linkedin_key_set ? 'Configured' : 'Not Set'}</span>
+                        <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginRight: 4 }}>SYSTEM STATUS</span>
+                            <span className={`badge ${settings.dev_mode ? 'badge-warning' : 'badge-success'}`}>{settings.dev_mode ? '⚠️ Dev Mode' : '✅ Production'}</span>
+                            <span className={`badge ${settings.deepseek_key_set ? 'badge-success' : 'badge-danger'}`}>🤖 DeepSeek: {settings.deepseek_key_set ? 'Configured' : 'Not Set'}</span>
+                            <span className={`badge ${settings.linkedin_access_token_set ? 'badge-success' : 'badge-danger'}`}>💼 LinkedIn Token: {settings.linkedin_access_token_set ? 'Configured' : 'Not Set'}</span>
+                            {settings.linkedin_org_id && (
+                                <span className="badge badge-info">🏢 Org ID: {settings.linkedin_org_id}</span>
+                            )}
                         </div>
                     )}
 
-                    {/* DeepSeek Key */}
-                    <div className="chart-container" style={{ marginBottom: 16 }}>
-                        <div className="chart-title">🤖 DeepSeek AI</div>
-                        <div style={{ marginBottom: 8 }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>API KEY</label>
+                    {/* LinkedIn Connection Card */}
+                    <div className="chart-container">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(0,119,181,0.12)', border: '1px solid rgba(0,119,181,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>💼</div>
+                                <div>
+                                    <div className="chart-title" style={{ margin: 0 }}>LinkedIn API</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Techwaukee · Org ID: {settings?.linkedin_org_id || '15078287'}</div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <StatusBadge status={linkedinStatus} loading={testingLinkedin} />
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={testLinkedIn}
+                                    disabled={testingLinkedin}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                                >
+                                    <RefreshCw size={12} style={testingLinkedin ? { animation: 'spin 1s linear infinite' } : {}} />
+                                    Test
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Connection details */}
+                        {linkedinStatus && linkedinStatus.connected && (
+                            <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
+                                {linkedinStatus.account_name && (
+                                    <div>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>ACCOUNT</div>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{linkedinStatus.account_name}</div>
+                                    </div>
+                                )}
+                                {linkedinStatus.org_name && (
+                                    <div>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>PAGE</div>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{linkedinStatus.org_name}</div>
+                                    </div>
+                                )}
+                                {linkedinStatus.followers !== undefined && (
+                                    <div>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>FOLLOWERS</div>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent)' }}>{linkedinStatus.followers.toLocaleString()}</div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {linkedinStatus && !linkedinStatus.connected && (
+                            <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: '0.8rem', color: '#ef4444' }}>
+                                ❌ {linkedinStatus.error || 'Connection failed'}
+                            </div>
+                        )}
+
+                        {/* Sync page metrics button */}
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                            <button
+                                className="btn btn-primary btn-sm"
+                                onClick={syncPageMetrics}
+                                disabled={syncingMetrics}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                            >
+                                {syncingMetrics ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />}
+                                Sync Page Metrics Now
+                            </button>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Pull latest follower + visitor data from LinkedIn</span>
+                        </div>
+
+                        {/* Access token field */}
+                        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>ACCESS TOKEN (override)</label>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <div style={{ position: 'relative', flex: 1 }}>
+                                    <input className="input" type={showApiKey['li_token'] ? 'text' : 'password'} value={linkedinKey} onChange={e => setLinkedinKey(e.target.value)} placeholder="AQWI45juh_..." style={{ paddingRight: 40 }} />
+                                    <button onClick={() => setShowApiKey(p => ({ ...p, li_token: !p.li_token }))} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                        {showApiKey['li_token'] ? <EyeOff size={14} /> : <Eye size={14} />}
+                                    </button>
+                                </div>
+                                <button className="btn btn-primary btn-sm" onClick={() => handleSaveApiKey('LINKEDIN_ACCESS_TOKEN', linkedinKey)}>Save</button>
+                            </div>
+                            <p style={{ fontSize: '0.71rem', color: 'var(--text-muted)', marginTop: 5 }}>
+                                ℹ️ The active token is loaded from the server's <code>.env</code> file. This field lets you store a new token in the database for future reference.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* DeepSeek AI Card */}
+                    <div className="chart-container">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>🤖</div>
+                                <div>
+                                    <div className="chart-title" style={{ margin: 0 }}>DeepSeek AI</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{settings?.deepseek_model || 'deepseek-chat'} · api.deepseek.com</div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <StatusBadge status={deepseekStatus} loading={testingDeepseek} />
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={testDeepSeek}
+                                    disabled={testingDeepseek}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                                >
+                                    <RefreshCw size={12} style={testingDeepseek ? { animation: 'spin 1s linear infinite' } : {}} />
+                                    Test
+                                </button>
+                            </div>
+                        </div>
+
+                        {deepseekStatus && deepseekStatus.connected && (
+                            <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
+                                <div>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>MODEL</div>
+                                    <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{deepseekStatus.model}</div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>ENDPOINT</div>
+                                    <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>api.deepseek.com</div>
+                                </div>
+                            </div>
+                        )}
+                        {deepseekStatus && !deepseekStatus.connected && (
+                            <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: '0.8rem', color: '#ef4444' }}>
+                                ❌ {deepseekStatus.error || 'Connection failed'}
+                            </div>
+                        )}
+
+                        {/* API key input */}
+                        <div style={{ paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>API KEY (override)</label>
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <div style={{ position: 'relative', flex: 1 }}>
                                     <input className="input" type={showApiKey['deepseek'] ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-deepseek-..." style={{ paddingRight: 40 }} />
@@ -175,31 +392,6 @@ export const SettingsView: React.FC = () => {
                                     </button>
                                 </div>
                                 <button className="btn btn-primary btn-sm" onClick={() => handleSaveApiKey('DEEPSEEK_API_KEY', apiKey)}>Save</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* LinkedIn Keys */}
-                    <div className="chart-container">
-                        <div className="chart-title">💼 LinkedIn OAuth</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            <div>
-                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>CLIENT ID</label>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <input className="input" type={showApiKey['li_id'] ? 'text' : 'password'} placeholder="7xxxxxxxxxxxxxxxx" onChange={e => setLinkedinKey(e.target.value)} />
-                                    <button className="btn btn-primary btn-sm" onClick={() => handleSaveApiKey('LINKEDIN_CLIENT_ID', linkedinKey)}>Save</button>
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>CLIENT SECRET</label>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <input className="input" type="password" placeholder="••••••••••••••••" />
-                                    <button className="btn btn-primary btn-sm">Save</button>
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>PROXY URL</label>
-                                <input className="input" defaultValue={settings?.linkedin_proxy_url || 'http://localhost:3001'} />
                             </div>
                         </div>
                     </div>
@@ -262,8 +454,6 @@ export const SettingsView: React.FC = () => {
                     </div>
                 </div>
             )}
-
-
 
             {/* ── Link Tracking Tab ────────────────────────────────────────── */}
             {tab === 'links' && (

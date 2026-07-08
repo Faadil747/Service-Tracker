@@ -91,11 +91,16 @@ export const aiApi = {
 
 // ── Metrics ───────────────────────────────────────────────────────────────
 export const metricsApi = {
-    page: (params?: object) => api.get('/api/metrics/page', { params }),
+    // Real LinkedIn company-page snapshot (cached, throttle-aware, real-only).
+    linkedinOverview: (force?: boolean) => api.get('/api/metrics/linkedin-overview', { params: { force } }),
+    linkedinPosts: (count?: number) => api.get('/api/metrics/linkedin-posts', { params: { count } }),
     posts: (params?: object) => api.get('/api/metrics/posts', { params }),
     demographics: (params?: object) => api.get('/api/metrics/demographics', { params }),
-    bestTime: (region?: string) => api.get('/api/metrics/best-time', { params: { region } }),
     dashboardSummary: (region?: string) => api.get('/api/metrics/dashboard-summary', { params: { region } }),
+    syncPage: (region?: string) => api.post('/api/metrics/sync-page', null, { params: { region } }),
+    // Deprecated (LinkedIn exposes no daily history to this token) — kept for compat.
+    page: (params?: object) => api.get('/api/metrics/page', { params }),
+    bestTime: (region?: string) => api.get('/api/metrics/best-time', { params: { region } }),
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────
@@ -126,6 +131,8 @@ export const settingsApi = {
     get: () => api.get('/api/settings/'),
     apiConfigs: () => api.get('/api/settings/api-config'),
     upsertApiConfig: (data: object) => api.post('/api/settings/api-config', data),
+    linkedinStatus: () => api.get('/api/settings/linkedin-status'),
+    deepseekStatus: () => api.get('/api/settings/deepseek-status'),
 };
 
 // ── Chat (localStorage-backed, no backend required) ───────────────────────

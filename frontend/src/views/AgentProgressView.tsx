@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-    BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+    BarChart, Bar,
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { Award, CheckCircle, Clock, AlertTriangle, X, MessageSquare } from 'lucide-react';
-import { usersApi, tasksApi, metricsApi } from '../services/api';
+import { usersApi, tasksApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { User, Task, PageMetric } from '../types';
+import { User, Task } from '../types';
 import { useNavigate } from 'react-router-dom';
 
 interface AgentStats {
@@ -176,7 +176,6 @@ export const AgentProgressView: React.FC<{ region: string }> = ({ region }) => {
     const [agents, setAgents] = useState<User[]>([]);
     const [statsMap, setStatsMap] = useState<Record<string, AgentStats>>({});
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [metrics, setMetrics] = useState<PageMetric[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedAgent, setSelectedAgent] = useState<User | null>(null);
     const initialLoaded = useRef(false);
@@ -185,16 +184,14 @@ export const AgentProgressView: React.FC<{ region: string }> = ({ region }) => {
         if (!silent) setLoading(true);
         try {
             if (isAdmin) {
-                const [agRes, tRes, mRes] = await Promise.all([
+                const [agRes, tRes] = await Promise.all([
                     usersApi.list({ role: 'agent', region: region === 'Global' ? undefined : region }),
                     tasksApi.list({ region: region === 'Global' ? undefined : region }),
-                    metricsApi.page({ region: region === 'Global' ? undefined : region, days: 30 }),
                 ]);
                 const agentList: User[] = agRes.data;
                 const allTasks: Task[] = tRes.data;
                 setAgents(agentList);
                 setTasks(allTasks);
-                setMetrics(mRes.data);
 
                 // Compute stats per agent
                 const sMap: Record<string, AgentStats> = {};
@@ -242,18 +239,6 @@ export const AgentProgressView: React.FC<{ region: string }> = ({ region }) => {
         { week: 'W3', completed: 22, active: 6, overdue: 3 },
         { week: 'W4', completed: tasks.filter(t => t.status === 'completed').length, active: tasks.filter(t => t.status === 'active').length, overdue: tasks.filter(t => t.status === 'overdue').length },
     ];
-
-    const regionData = metrics.reduce((acc: any[], m) => {
-        const existing = acc.find(d => d.region === m.region);
-        if (existing) {
-            existing.engagement += m.likes + m.comments + m.shares;
-            existing.followers += m.followers_gained;
-            existing.count += 1;
-        } else {
-            acc.push({ region: m.region, engagement: m.likes + m.comments + m.shares, followers: m.followers_gained, count: 1 });
-        }
-        return acc;
-    }, []);
 
     if (loading) {
         return <div className="page-content"><div className="grid-auto">{[...Array(6)].map((_, i) => <div key={i} className="skeleton" style={{ height: 160 }} />)}</div></div>;
@@ -422,8 +407,9 @@ export const AgentProgressView: React.FC<{ region: string }> = ({ region }) => {
                             </div>
                         </div>
 
-                        {/* Charts row */}
-                        <div className="grid-2" style={{ marginBottom: 20 }}>
+                        {/* Charts row — task progress (real). Per-region LinkedIn engagement
+                            is not available via the API (org-wide only, no daily history). */}
+                        <div style={{ marginBottom: 20 }}>
                             <div className="chart-container">
                                 <div className="chart-title">📅 Weekly Task Progress</div>
                                 <ResponsiveContainer width="100%" height={200}>
@@ -437,21 +423,6 @@ export const AgentProgressView: React.FC<{ region: string }> = ({ region }) => {
                                         <Bar dataKey="active" name="Active" fill="var(--accent)" radius={[4, 4, 0, 0]} />
                                         <Bar dataKey="overdue" name="Overdue" fill="var(--danger)" radius={[4, 4, 0, 0]} />
                                     </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-
-                            <div className="chart-container">
-                                <div className="chart-title">🌍 Regional Engagement</div>
-                                <ResponsiveContainer width="100%" height={200}>
-                                    <RadarChart data={regionData}>
-                                        <PolarGrid stroke="var(--border)" />
-                                        <PolarAngleAxis dataKey="region" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                                        <PolarRadiusAxis tick={{ fill: 'var(--text-muted)', fontSize: 9 }} />
-                                        <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                                        <Radar dataKey="engagement" name="Engagement" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.2} />
-                                        <Radar dataKey="followers" name="Followers" stroke="var(--purple)" fill="var(--purple)" fillOpacity={0.2} />
-                                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                                    </RadarChart>
                                 </ResponsiveContainer>
                             </div>
                         </div>

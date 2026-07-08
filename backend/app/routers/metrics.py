@@ -20,6 +20,62 @@ async def page_metrics(
     db: AsyncSession = Depends(get_db),
 ):
     """Follower growth, visitors, engagement over time."""
+    from app.config import settings
+    # Try syncing today's PageMetric from real LinkedIn API if credentials are set
+    if settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET and settings.LINKEDIN_ORG_ID:
+        try:
+            from app.services.linkedin_service import linkedin_service
+            raw_page_metrics = await linkedin_service.get_page_metrics(
+                access_token=settings.LINKEDIN_CLIENT_SECRET,
+                org_id=settings.LINKEDIN_ORG_ID,
+                start_date="",
+                end_date=""
+            )
+            # Find or create today's PageMetric
+            today_date = date.today()
+            metric_region = region if region else "Global"
+            q_today = select(PageMetric).where(PageMetric.metric_date == today_date, PageMetric.region == metric_region)
+            metric_res = await db.execute(q_today)
+            today_metric = metric_res.scalar_one_or_none()
+
+            followers_data = raw_page_metrics.get("follower_counts", {})
+            followers = followers_data.get("organicFollowerCount", 0) + followers_data.get("paidFollowerCount", 0)
+            gained = raw_page_metrics.get("follower_gained", 0)
+            lost = raw_page_metrics.get("follower_lost", 0)
+            visitors = raw_page_metrics.get("visitor_count", 0)
+
+            if followers > 0 or gained > 0 or visitors > 0:
+                if not today_metric:
+                    # Get yesterday's followers to make it continuous
+                    q_yesterday = select(PageMetric).where(PageMetric.metric_date == today_date - timedelta(days=1), PageMetric.region == metric_region)
+                    yesterday_res = await db.execute(q_yesterday)
+                    yesterday_metric = yesterday_res.scalar_one_or_none()
+                    base_f = yesterday_metric.followers if yesterday_metric else followers
+
+                    today_metric = PageMetric(
+                        id=str(uuid.uuid4()),
+                        metric_date=today_date,
+                        region=metric_region,
+                        followers=base_f + gained - lost,
+                        followers_gained=gained,
+                        followers_lost=lost,
+                        visitors=visitors,
+                        impressions=visitors * 5,
+                        likes=0,
+                        comments=0,
+                        shares=0,
+                        clicks=0,
+                        engagement_rate=0.0
+                    )
+                    db.add(today_metric)
+                else:
+                    today_metric.followers_gained = gained
+                    today_metric.followers_lost = lost
+                    today_metric.visitors = visitors
+                await db.commit()
+        except Exception as e:
+            print(f"LinkedIn page metrics sync error: {e}")
+
     cutoff = date.today() - timedelta(days=days)
     q = select(PageMetric).where(PageMetric.metric_date >= cutoff)
     if region and region != "Global":

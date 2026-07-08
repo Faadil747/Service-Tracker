@@ -243,16 +243,18 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
     const loadAll = async () => {
         try {
-            const [tRes, bRes, tmplRes, hmRes] = await Promise.all([
+            const [tRes, bRes, tmplRes, hmRes, pubRes] = await Promise.all([
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
                 postsApi.kanban(region === 'Global' ? undefined : region),
                 postsApi.list({ is_template: true }),
                 metricsApi.bestTime(region === 'Global' ? undefined : region),
+                postsApi.list({ status: 'published', region: region === 'Global' ? undefined : region }),
             ]);
             setTasks(tRes.data);
             setBoard(bRes.data);
             setTemplates(tmplRes.data);
             setHeatmap(hmRes.data.heatmap);
+            setPublishedPosts(pubRes.data);
 
             if (isAdmin) {
                 const [paRes, agRes] = await Promise.all([

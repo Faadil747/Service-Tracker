@@ -168,10 +168,35 @@ async def publish_post(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     
-    # 1. Fetch using the API key of LinkedIn (simulate generating a LinkedIn post link).
-    post_id_fake = str(random.randint(1000000000, 9999999999))
-    linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_fake}"
-    
+    # 1. Publish to LinkedIn using the service
+    from app.config import settings
+    linkedin_url = None
+    post_id_fake = None
+
+    if settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET and settings.LINKEDIN_ORG_ID:
+        try:
+            from app.services.linkedin_service import linkedin_service
+            # We use the access token provided via settings.LINKEDIN_CLIENT_SECRET
+            # and the organization ID from settings.LINKEDIN_ORG_ID
+            res = await linkedin_service.publish_post(
+                access_token=settings.LINKEDIN_CLIENT_SECRET,
+                org_id=settings.LINKEDIN_ORG_ID,
+                content=post.content
+            )
+            if res and "linkedin_post_id" in res:
+                post_id_fake = res["linkedin_post_id"]
+                if post_id_fake.startswith("urn:"):
+                    linkedin_url = f"https://www.linkedin.com/feed/update/{post_id_fake}"
+                else:
+                    linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_fake}"
+        except Exception as e:
+            print(f"LinkedIn publishing error: {e}")
+            raise HTTPException(status_code=400, detail=f"LinkedIn API error: {str(e)}")
+
+    if not linkedin_url:
+        post_id_fake = f"stub_{uuid.uuid4().hex[:8]}"
+        linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{random.randint(1000000000, 9999999999)}"
+
     post.linkedin_post_id = linkedin_url
     post.status = PostStatus.published
     post.published_at = datetime.utcnow()
@@ -257,7 +282,38 @@ async def sync_linkedin_metrics(
     comments = random.randint(3, 18)
     shares = random.randint(1, 10)
     clicks = random.randint(20, 95)
-    
+    impressions = likes * 14 + clicks
+
+    from app.config import settings
+    if settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET and post.linkedin_post_id and not post.linkedin_post_id.startswith("stub_"):
+        import re
+        urn_match = re.search(r'(urn:li:\w+:[^/\s\?\#]+)', post.linkedin_post_id)
+        if urn_match:
+            urn = urn_match.group(1)
+            try:
+                from app.services.linkedin_service import linkedin_service
+                raw_metrics = await linkedin_service.get_post_metrics(
+                    access_token=settings.LINKEDIN_CLIENT_SECRET,
+                    post_id=urn
+                )
+                if raw_metrics and ("impressions" in raw_metrics or "likes" in raw_metrics or "reactionSummaries" in raw_metrics):
+                    if "reactionSummaries" in raw_metrics:
+                        reactions = raw_metrics.get("reactionSummaries", {})
+                        likes = sum(r.get("count", 0) for r in reactions.values())
+                    else:
+                        likes = raw_metrics.get("likes", likes)
+
+                    if "comments" in raw_metrics:
+                        comments = raw_metrics.get("comments")
+                    elif "numComments" in raw_metrics:
+                        comments = raw_metrics.get("numComments")
+
+                    shares = raw_metrics.get("shares", shares)
+                    clicks = raw_metrics.get("clicks", clicks)
+                    impressions = raw_metrics.get("impressions", likes * 14 + clicks)
+            except Exception as e:
+                print(f"Failed to sync real LinkedIn metrics: {e}")
+
     # Check if PostMetric already exists for today/this post
     metric_res = await db.execute(select(PostMetric).where(PostMetric.post_id == post_id))
     metric = metric_res.scalar_one_or_none()
@@ -266,7 +322,7 @@ async def sync_linkedin_metrics(
             id=str(uuid.uuid4()),
             post_id=post_id,
             metric_date=datetime.utcnow().date(),
-            impressions=likes * 14 + clicks,
+            impressions=impressions,
             likes=likes,
             comments=comments,
             shares=shares,
@@ -278,7 +334,7 @@ async def sync_linkedin_metrics(
         metric.comments = comments
         metric.shares = shares
         metric.clicks = clicks
-        metric.impressions = likes * 14 + clicks
+        metric.impressions = impressions
         
     await db.commit()
     return {

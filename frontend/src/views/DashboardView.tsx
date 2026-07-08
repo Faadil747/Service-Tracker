@@ -306,24 +306,26 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const loadAll = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         try {
-            const [oRes, sumRes, tRes] = await Promise.all([
+            // Fetch independently so a failure in one (e.g. summary or tasks)
+            // doesn't block the others — LinkedIn analytics must still render.
+            const [oRes, sumRes, tRes] = await Promise.allSettled([
                 metricsApi.linkedinOverview(),
                 metricsApi.dashboardSummary(),
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
             ]);
-            setOverview(oRes.data);
-            setSummary(sumRes.data);
-            setTasks(tRes.data);
+            if (oRes.status === 'fulfilled') setOverview(oRes.value.data);
+            if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data);
+            if (tRes.status === 'fulfilled') setTasks(tRes.value.data);
 
             if (isAdmin) {
-                const [paRes, ovRes, agRes] = await Promise.all([
+                const [paRes, ovRes, agRes] = await Promise.allSettled([
                     tasksApi.pendingApprovals(),
                     tasksApi.accountability(region === 'Global' ? undefined : region),
                     usersApi.list({ role: 'agent' }),
                 ]);
-                setPendingApprovals(paRes.data);
-                setOverdue(ovRes.data);
-                setAgents(agRes.data);
+                if (paRes.status === 'fulfilled') setPendingApprovals(paRes.value.data);
+                if (ovRes.status === 'fulfilled') setOverdue(ovRes.value.data);
+                if (agRes.status === 'fulfilled') setAgents(agRes.value.data);
             }
         } catch (e) { /* silent fail on polls */ }
         if (!silent) setLoading(false);

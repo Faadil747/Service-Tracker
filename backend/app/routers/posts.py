@@ -173,22 +173,25 @@ async def publish_post(
     linkedin_url = None
     post_id_fake = None
 
-    if settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET and settings.LINKEDIN_ORG_ID:
+    if settings.LINKEDIN_ACCESS_TOKEN and settings.LINKEDIN_ORG_ID:
         try:
             from app.services.linkedin_service import linkedin_service
-            # We use the access token provided via settings.LINKEDIN_CLIENT_SECRET
-            # and the organization ID from settings.LINKEDIN_ORG_ID
             res = await linkedin_service.publish_post(
-                access_token=settings.LINKEDIN_CLIENT_SECRET,
+                access_token=settings.LINKEDIN_ACCESS_TOKEN,
                 org_id=settings.LINKEDIN_ORG_ID,
-                content=post.content
+                content=post.content,
             )
             if res and "linkedin_post_id" in res:
-                post_id_fake = res["linkedin_post_id"]
-                if post_id_fake.startswith("urn:"):
-                    linkedin_url = f"https://www.linkedin.com/feed/update/{post_id_fake}"
+                post_id_raw = res["linkedin_post_id"]
+                if post_id_raw.startswith("stub_"):
+                    # No real token — fall through to stub URL
+                    post_id_fake = post_id_raw
+                elif post_id_raw.startswith("urn:"):
+                    linkedin_url = f"https://www.linkedin.com/feed/update/{post_id_raw}"
+                    post_id_fake = post_id_raw
                 else:
-                    linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_fake}"
+                    linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_raw}"
+                    post_id_fake = post_id_raw
         except Exception as e:
             print(f"LinkedIn publishing error: {e}")
             raise HTTPException(status_code=400, detail=f"LinkedIn API error: {str(e)}")
@@ -273,76 +276,35 @@ async def sync_linkedin_metrics(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Sync per-post engagement from LinkedIn.
+
+    NOTE: LinkedIn will not expose per-post likes/comments/shares to this token —
+    the socialActions endpoint returns HTTP 403 (it requires Community Management
+    API partner access). Rather than fabricate numbers, we report it as
+    unavailable. Aggregate company-page engagement IS available and is surfaced on
+    the Analytics dashboard via /api/metrics/linkedin-overview.
+    """
     result = await db.execute(select(Post).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-        
-    likes = random.randint(12, 60)
-    comments = random.randint(3, 18)
-    shares = random.randint(1, 10)
-    clicks = random.randint(20, 95)
-    impressions = likes * 14 + clicks
 
-    from app.config import settings
-    if settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET and post.linkedin_post_id and not post.linkedin_post_id.startswith("stub_"):
-        import re
-        urn_match = re.search(r'(urn:li:\w+:[^/\s\?\#]+)', post.linkedin_post_id)
-        if urn_match:
-            urn = urn_match.group(1)
-            try:
-                from app.services.linkedin_service import linkedin_service
-                raw_metrics = await linkedin_service.get_post_metrics(
-                    access_token=settings.LINKEDIN_CLIENT_SECRET,
-                    post_id=urn
-                )
-                if raw_metrics and ("impressions" in raw_metrics or "likes" in raw_metrics or "reactionSummaries" in raw_metrics):
-                    if "reactionSummaries" in raw_metrics:
-                        reactions = raw_metrics.get("reactionSummaries", {})
-                        likes = sum(r.get("count", 0) for r in reactions.values())
-                    else:
-                        likes = raw_metrics.get("likes", likes)
-
-                    if "comments" in raw_metrics:
-                        comments = raw_metrics.get("comments")
-                    elif "numComments" in raw_metrics:
-                        comments = raw_metrics.get("numComments")
-
-                    shares = raw_metrics.get("shares", shares)
-                    clicks = raw_metrics.get("clicks", clicks)
-                    impressions = raw_metrics.get("impressions", likes * 14 + clicks)
-            except Exception as e:
-                print(f"Failed to sync real LinkedIn metrics: {e}")
-
-    # Check if PostMetric already exists for today/this post
+    # Return any real per-post metrics we already have stored; never invent them.
     metric_res = await db.execute(select(PostMetric).where(PostMetric.post_id == post_id))
     metric = metric_res.scalar_one_or_none()
-    if not metric:
-        metric = PostMetric(
-            id=str(uuid.uuid4()),
-            post_id=post_id,
-            metric_date=datetime.utcnow().date(),
-            impressions=impressions,
-            likes=likes,
-            comments=comments,
-            shares=shares,
-            clicks=clicks,
-        )
-        db.add(metric)
-    else:
-        metric.likes = likes
-        metric.comments = comments
-        metric.shares = shares
-        metric.clicks = clicks
-        metric.impressions = impressions
-        
-    await db.commit()
+    if metric:
+        return {
+            "available": True,
+            "likes": metric.likes,
+            "comments": metric.comments,
+            "shares": metric.shares,
+            "clicks": metric.clicks,
+            "impressions": metric.impressions,
+        }
     return {
-        "likes": metric.likes,
-        "comments": metric.comments,
-        "shares": metric.shares,
-        "clicks": metric.clicks,
-        "impressions": metric.impressions,
+        "available": False,
+        "reason": "Per-post engagement is not available via the LinkedIn API for this token "
+                  "(requires Community Management API access). See aggregate page analytics instead.",
     }
 
 

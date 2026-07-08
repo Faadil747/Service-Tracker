@@ -57,6 +57,7 @@ export const tasksApi = {
     list: (params?: object) => api.get('/api/tasks/', { params }),
     create: (data: object) => api.post('/api/tasks/', data),
     approve: (id: string, data: object) => api.post(`/api/tasks/${id}/approve`, data),
+    accept: (id: string) => api.post(`/api/tasks/${id}/accept`),
     complete: (id: string, notes?: string) => api.post(`/api/tasks/${id}/complete`, null, { params: { notes } }),
     pendingApprovals: () => api.get('/api/tasks/pending-approvals'),
     accountability: (region?: string) => api.get('/api/tasks/accountability', { params: { region } }),

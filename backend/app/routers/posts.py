@@ -30,6 +30,7 @@ class CreatePostRequest(BaseModel):
     campaign_id: Optional[str] = None
     is_template: bool = False
     status: Optional[str] = None
+    task_id: Optional[str] = None
 
 
 class ApprovePostRequest(BaseModel):
@@ -67,7 +68,11 @@ async def create_post(
     db: AsyncSession = Depends(get_db),
 ):
     sched = datetime.fromisoformat(req.scheduled_at) if req.scheduled_at else None
-    if req.status:
+    
+    # If it is linked to a task, default to in_review
+    if req.task_id:
+        initial_status = PostStatus.in_review
+    elif req.status:
         try:
             initial_status = PostStatus(req.status)
         except ValueError:
@@ -87,6 +92,7 @@ async def create_post(
         hashtags=req.hashtags,
         image_url=req.image_url,
         campaign_id=req.campaign_id,
+        task_id=req.task_id,
         scheduled_at=sched,
         is_template=req.is_template,
         created_by_id=current_user.id,
@@ -104,7 +110,26 @@ async def create_post(
         created_by_id=current_user.id,
     ))
 
-    if current_user.role == "agent":
+    # Link task integration
+    if req.task_id:
+        from app.models.task import Task, TaskStatus
+        task_res = await db.execute(select(Task).where(Task.id == req.task_id))
+        task = task_res.scalar_one_or_none()
+        if task:
+            task.status = TaskStatus.pending_approval
+            # Notify admins of the pending approval task
+            admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
+            for admin in admins.scalars():
+                db.add(Notification(
+                    id=str(uuid.uuid4()),
+                    user_id=admin.id,
+                    type="pending_approval",
+                    title=f"Task Pending Approval: {task.title}",
+                    body=f"Agent {current_user.full_name} completed the draft and requested review.",
+                    reference_id=task.id,
+                    reference_type="task",
+                ))
+    elif current_user.role == "agent":
         admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
         for admin in admins.scalars():
             db.add(Notification(
@@ -144,6 +169,31 @@ async def approve_post(
     post.approved_by_id = current_user.id
     post.review_comment = req.comment or ""
 
+    # Link task integration
+    if post.task_id:
+        from app.models.task import Task, TaskStatus
+        task_res = await db.execute(select(Task).where(Task.id == post.task_id))
+        task = task_res.scalar_one_or_none()
+        if task:
+            if req.status == "approved":
+                # Ready to post, keeps task in_progress or updates it
+                # Task status can remain in_progress so it can be completed on publish
+                task.status = TaskStatus.in_progress
+            else:
+                # Manager rejects (redo) -> moves task back to in_progress
+                task.status = TaskStatus.in_progress
+
+            decision = "approved" if req.status == "approved" else "requested to redo"
+            db.add(Notification(
+                id=str(uuid.uuid4()),
+                user_id=post.created_by_id,
+                type=f"task_{req.status}",
+                title=f"Task Revision Details: {task.title}",
+                body=f"Manager {current_user.full_name} {decision}. Comments: {req.comment or 'None'}",
+                reference_id=task.id,
+                reference_type="task",
+            ))
+
     db.add(Notification(
         id=str(uuid.uuid4()),
         user_id=post.created_by_id,
@@ -157,6 +207,37 @@ async def approve_post(
     return _post_dict(post)
 
 
+async def complete_linked_task(post: Post, db: AsyncSession, current_user: User):
+    if post.task_id:
+        from app.models.task import Task, TaskStatus, TaskCompletion
+        task_res = await db.execute(select(Task).where(Task.id == post.task_id))
+        task = task_res.scalar_one_or_none()
+        if task and task.status != TaskStatus.completed:
+            task.status = TaskStatus.completed
+            task.completed_at = datetime.utcnow()
+            
+            # Create completion entry
+            db.add(TaskCompletion(
+                id=str(uuid.uuid4()),
+                task_id=task.id,
+                agent_id=post.created_by_id or current_user.id,
+                notes=f"Post published: {post.linkedin_post_id}",
+            ))
+            
+            # Notify admins of Task completion
+            admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
+            for admin in admins.scalars():
+                db.add(Notification(
+                    id=str(uuid.uuid4()),
+                    user_id=admin.id,
+                    type="task_completed",
+                    title=f"Task Completed: {task.title}",
+                    body=f"Completed via post publication by {current_user.full_name}",
+                    reference_id=task.id,
+                    reference_type="task",
+                ))
+
+
 @router.post("/{post_id}/publish")
 async def publish_post(
     post_id: str,
@@ -168,13 +249,37 @@ async def publish_post(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     
-    # 1. Fetch using the API key of LinkedIn (simulate generating a LinkedIn post link).
-    post_id_fake = str(random.randint(1000000000, 9999999999))
-    linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_fake}"
-    
+    # 1. Publish to LinkedIn using the service (or fallback if config/api is expired)
+    from app.config import settings
+    linkedin_url = None
+    post_id_fake = None
+
+    if settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET and settings.LINKEDIN_ORG_ID:
+        try:
+            from app.services.linkedin_service import linkedin_service
+            res = await linkedin_service.publish_post(
+                access_token=settings.LINKEDIN_CLIENT_SECRET,
+                org_id=settings.LINKEDIN_ORG_ID,
+                content=post.content
+            )
+            if res and "linkedin_post_id" in res:
+                post_id_fake = res["linkedin_post_id"]
+                if post_id_fake.startswith("urn:"):
+                    linkedin_url = f"https://www.linkedin.com/feed/update/{post_id_fake}"
+                else:
+                    linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_fake}"
+        except Exception as e:
+            print(f"LinkedIn publishing error: {e}")
+
+    if not linkedin_url:
+        post_id_fake = f"stub_{uuid.uuid4().hex[:8]}"
+        linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{random.randint(1000000000, 9999999999)}"
     post.linkedin_post_id = linkedin_url
     post.status = PostStatus.published
     post.published_at = datetime.utcnow()
+    
+    # Complete linked task
+    await complete_linked_task(post, db, current_user)
     
     # 2. Automagically create a tracking link for this published post
     short_code = "".join(random.choices(string.ascii_letters + string.digits, k=8))
@@ -214,6 +319,9 @@ async def save_linkedin_link(
     post.status = PostStatus.published
     if not post.published_at:
         post.published_at = datetime.utcnow()
+
+    # Complete linked task
+    await complete_linked_task(post, db, current_user)
         
     # Check if a LinkTracking already exists for this post. If not, create one!
     link_res = await db.execute(select(LinkTracking).where(LinkTracking.post_id == post.id))
@@ -406,6 +514,7 @@ def _post_dict(p: Post) -> dict:
         "created_by_id": p.created_by_id,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "campaign_id": p.campaign_id,
+        "task_id": p.task_id,
         "predicted_reach": p.predicted_reach,
         "review_comment": p.review_comment,
         "linkedin_post_id": p.linkedin_post_id,

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, delete, cast, Date
 from pydantic import BaseModel
 from app.database import get_db
-from app.models import Task, TaskAssignment, TaskCompletion, TaskApproval, Notification, ActivityLog, User, TaskStatus, Comment
+from app.models import Task, TaskAssignment, TaskCompletion, TaskApproval, Notification, ActivityLog, User, TaskStatus, Comment, Post
 from app.services.auth_service import get_current_user, require_role
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -21,6 +21,7 @@ class CreateTaskRequest(BaseModel):
     recurrence: str = "none"
     assigned_to: Optional[str] = None
     assigned_to_id: Optional[str] = None
+    assigned_to_ids: Optional[List[str]] = None
     campaign_id: Optional[str] = None
 
 
@@ -79,9 +80,12 @@ async def create_task(
     db.add(task)
     await db.flush()
 
-    # Assign to agent
-    target_agent = req.assigned_to_id or req.assigned_to
-    if target_agent:
+    # Assign to agent(s)
+    target_agents = req.assigned_to_ids or []
+    if not target_agents and (req.assigned_to_id or req.assigned_to):
+        target_agents = [req.assigned_to_id or req.assigned_to]
+
+    for target_agent in target_agents:
         assignment = TaskAssignment(id=str(uuid.uuid4()), task_id=task.id, agent_id=target_agent)
         db.add(assignment)
         # Notify assigned agent
@@ -101,7 +105,7 @@ async def create_task(
         approval = TaskApproval(
             id=str(uuid.uuid4()),
             task_id=task.id,
-            approver_id=current_user.id,  # placeholder — will be updated on approval
+            approver_id=current_user.id,  # placeholder
             status="pending",
         )
         db.add(approval)
@@ -153,10 +157,19 @@ async def approve_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    new_status = TaskStatus.active if req.status == "approved" else TaskStatus.rejected
+    new_status = (TaskStatus.in_progress if task.claimed_by_id else TaskStatus.active) if req.status == "approved" else TaskStatus.rejected
     task.status = new_status
     task.approved_by_id = current_user.id
     task.approved_at = datetime.utcnow()
+
+    # Update associated post status
+    post_res = await db.execute(select(Post).where(Post.task_id == task_id).order_by(Post.created_at.desc()))
+    post = post_res.scalars().first()
+    if post:
+        from app.models.post import PostStatus
+        post.status = PostStatus.approved if req.status == "approved" else PostStatus.rejected
+        post.approved_by_id = current_user.id
+        post.review_comment = req.comment or ""
 
     # Update approval record
     appr_result = await db.execute(select(TaskApproval).where(TaskApproval.task_id == task_id, TaskApproval.status == "pending"))
@@ -170,7 +183,7 @@ async def approve_task(
     # Notify creator
     db.add(Notification(
         id=str(uuid.uuid4()),
-        user_id=task.created_by_id,
+        user_id=task.created_by_id or current_user.id,
         type=f"task_{req.status}",
         title=f"Task {req.status}: {task.title}",
         body=req.comment or f"Your task was {req.status} by {current_user.full_name}",
@@ -342,9 +355,77 @@ async def update_task_status(
     return await _task_dict(task, db)
 
 
+@router.post("/{task_id}/accept")
+async def accept_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Verify if user is assigned to this task
+    assign_result = await db.execute(select(TaskAssignment).where(TaskAssignment.task_id == task_id, TaskAssignment.agent_id == current_user.id))
+    if not assign_result.scalars().all():
+        raise HTTPException(status_code=403, detail="You are not assigned to this task")
+
+    if task.claimed_by_id:
+        raise HTTPException(status_code=400, detail="Task has already been taken by another agent")
+
+    task.claimed_by_id = current_user.id
+    task.status = TaskStatus.in_progress
+    
+    # Notify admins/managers that task is in progress
+    admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
+    for admin in admins.scalars():
+        db.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=admin.id,
+            type="task_accepted",
+            title=f"Task taken: {task.title}",
+            body=f"Claimed by {current_user.full_name}",
+            reference_id=task.id,
+            reference_type="task",
+        ))
+
+    db.add(ActivityLog(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        action="accept_task",
+        entity_type="task",
+        entity_id=task.id,
+    ))
+    await db.commit()
+    return await _task_dict(task, db)
+
+
 async def _task_dict(task: Task, db: AsyncSession) -> dict:
     assignments = await db.execute(select(TaskAssignment).where(TaskAssignment.task_id == task.id))
     assign_list = [{"agent_id": a.agent_id} for a in assignments.scalars()]
+
+    claimed_by_name = None
+    if task.claimed_by_id:
+        claimed_user_res = await db.execute(select(User).where(User.id == task.claimed_by_id))
+        claimed_user = claimed_user_res.scalar_one_or_none()
+        if claimed_user:
+            claimed_by_name = claimed_user.full_name
+
+    post_res = await db.execute(select(Post).where(Post.task_id == task.id).order_by(Post.created_at.desc()))
+    post = post_res.scalars().first()
+    post_info = None
+    if post:
+        post_info = {
+            "id": post.id,
+            "title": post.title,
+            "content": post.content,
+            "status": post.status.value if hasattr(post.status, "value") else str(post.status),
+            "tone": post.tone,
+            "hashtags": post.hashtags,
+            "image_url": post.image_url,
+        }
+
     return {
         "id": task.id,
         "title": task.title,
@@ -357,4 +438,7 @@ async def _task_dict(task: Task, db: AsyncSession) -> dict:
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "assignments": assign_list,
+        "claimed_by_id": task.claimed_by_id,
+        "claimed_by_name": claimed_by_name,
+        "post": post_info,
     }

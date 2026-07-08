@@ -18,6 +18,31 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AnalyticsHubView } from './AnalyticsHubView';
 
+export const getTaskStatusInfo = (t: Task) => {
+    if (t.status === 'completed') {
+        return { label: 'Published & Completed', className: 'badge-success', dotClass: 'muted' };
+    }
+    if (t.post?.status === 'approved') {
+        return { label: `Approved (${t.claimed_by_name || 'Agent'})`, className: 'badge-purple', dotClass: 'active' };
+    }
+    if (t.status === 'pending_approval') {
+        return { label: 'Sent for Approval', className: 'badge-warning', dotClass: 'warning' };
+    }
+    if (t.status === 'in_progress') {
+        return { label: `Ongoing (${t.claimed_by_name || 'Agent'})`, className: 'badge-info', dotClass: 'active' };
+    }
+    if (t.status === 'active') {
+        if (t.claimed_by_id) {
+            return { label: `Accepted (${t.claimed_by_name || 'Agent'})`, className: 'badge-purple', dotClass: 'active' };
+        }
+        return { label: 'Open (Unclaimed)', className: 'badge-accent', dotClass: 'active' };
+    }
+    if (t.status === 'rejected' || t.post?.status === 'rejected') {
+        return { label: 'Needs Revision', className: 'badge-danger', dotClass: 'danger' };
+    }
+    return { label: t.status.replace('_', ' '), className: 'badge-gray', dotClass: 'muted' };
+};
+
 // ── Login Popup ────────────────────────────────────────────────────────────
 const LoginPopup: React.FC<{ onClose: () => void; user: User; tasks: Task[]; pendingApprovals: Task[] }> = ({ onClose, user, tasks, pendingApprovals }) => {
     const dueTodayTasks = tasks.filter(t =>
@@ -201,27 +226,30 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
                     </button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
-                    {selectedDayTasks.map(t => (
-                        <div
-                            key={t.id}
-                            onClick={() => onNavigateToTask(t.id)}
-                            style={{
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                padding: '6px 8px', background: '#fff', borderRadius: 6,
-                                borderLeft: `3px solid ${statusColor[t.status] || 'var(--border)'}`,
-                                cursor: 'pointer', transition: 'all 0.12s',
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-glow)'}
-                            onMouseLeave={e => e.currentTarget.style.background = '#fff'}
-                        >
-                            <span style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>
-                                {t.title}
-                            </span>
-                            <span className={`badge ${t.status === 'completed' ? 'badge-success' : t.status === 'active' ? 'badge-accent' : t.status === 'pending_approval' ? 'badge-warning' : 'badge-muted'}`} style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
-                                {t.status.replace('_', ' ')}
-                            </span>
-                        </div>
-                    ))}
+                    {selectedDayTasks.map(t => {
+                        const statusInfo = getTaskStatusInfo(t);
+                        return (
+                            <div
+                                key={t.id}
+                                onClick={() => onNavigateToTask(t.id)}
+                                style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    padding: '6px 8px', background: '#fff', borderRadius: 6,
+                                    borderLeft: `3px solid ${statusColor[t.status] || 'var(--border)'}`,
+                                    cursor: 'pointer', transition: 'all 0.12s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-glow)'}
+                                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                            >
+                                <span style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
+                                    {t.title}
+                                </span>
+                                <span className={`badge ${statusInfo.className}`} style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                                    {statusInfo.label}
+                                </span>
+                            </div>
+                        );
+                    })}
                     {selectedDayTasks.length === 0 && (
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>
                             No tasks scheduled this day
@@ -252,7 +280,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     });
     const [loading, setLoading] = useState(true);
     const [showAddTask, setShowAddTask] = useState(false);
-    const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_id: '' });
+    const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_ids: [] as string[] });
     const isAdmin = user?.role === 'admin';
     const initialLoaded = useRef(false);
 
@@ -310,7 +338,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
             await tasksApi.create({ ...newTask, region });
             toast.success(isAdmin ? 'Task created!' : 'Task submitted for approval');
             setShowAddTask(false);
-            setNewTask({ title: '', description: '', due_date: '', assigned_to_id: '' });
+            setNewTask({ title: '', description: '', due_date: '', assigned_to_ids: [] });
             loadAll(true);
         } catch { toast.error('Failed to create task'); }
     };
@@ -413,15 +441,40 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                         <label className="form-label">Due Date</label>
                                         <input className="input" type="datetime-local" value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} />
                                     </div>
-                                    {isAdmin && agents.length > 0 && (
+                                    {isAdmin && (
                                         <div className="form-group">
-                                            <label className="form-label">Assign To (optional)</label>
-                                            <select className="select" value={newTask.assigned_to_id} onChange={e => setNewTask(p => ({ ...p, assigned_to_id: e.target.value }))}>
-                                                <option value="">Unassigned (anyone)</option>
+                                            <label className="form-label">Assign To Agents</label>
+                                            <div style={{
+                                                maxHeight: '120px',
+                                                overflowY: 'auto',
+                                                background: 'var(--surface)',
+                                                border: '1px solid var(--border)',
+                                                borderRadius: '8px',
+                                                padding: '8px 12px',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '8px'
+                                            }}>
                                                 {agents.map(a => (
-                                                    <option key={a.id} value={a.id}>{a.full_name} ({a.region})</option>
+                                                    <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={newTask.assigned_to_ids.includes(a.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setNewTask(p => ({ ...p, assigned_to_ids: [...p.assigned_to_ids, a.id] }));
+                                                                } else {
+                                                                    setNewTask(p => ({ ...p, assigned_to_ids: p.assigned_to_ids.filter(id => id !== a.id) }));
+                                                                }
+                                                            }}
+                                                        />
+                                                        {a.full_name} ({a.region})
+                                                    </label>
                                                 ))}
-                                            </select>
+                                                {agents.length === 0 && (
+                                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No agents available</div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
                                     {!isAdmin && <div className="badge badge-warning" style={{ alignSelf: 'flex-start' }}>Requires admin approval</div>}
@@ -599,22 +652,37 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                             )}
 
                             <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                {filteredTasks.slice(0, 10).map(t => (
-                                    <div key={t.id}
-                                        onClick={() => navigate(`/workspace?taskId=${t.id}`)}
-                                        className="glass-card glass-card-hover"
-                                        style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
-                                    >
-                                        <div className={`status-dot dot-${t.status === 'completed' ? 'completed' : t.status === 'active' ? 'active' : t.status === 'pending_approval' ? 'pending' : 'draft'}`} />
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 500 }} className="truncate">{t.title}</div>
-                                            {t.due_date && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Due: {new Date(t.due_date).toLocaleDateString()}</div>}
+                                {filteredTasks.slice(0, 10).map(t => {
+                                    const statusInfo = getTaskStatusInfo(t);
+                                    return (
+                                        <div key={t.id}
+                                            onClick={() => navigate(`/workspace?taskId=${t.id}`)}
+                                            className="glass-card glass-card-hover"
+                                            style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+                                        >
+                                            <div className={`status-dot ${statusInfo.dotClass}`} />
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '0.8rem', fontWeight: 500 }} className="truncate">{t.title}</div>
+                                                {t.due_date && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Due: {new Date(t.due_date).toLocaleDateString()}</div>}
+                                            </div>
+                                            {t.post?.status === 'approved' && t.claimed_by_id === user?.id && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/workspace?taskId=${t.id}&tab=composer&action=publish`);
+                                                    }}
+                                                    className="btn btn-sm btn-primary"
+                                                    style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                                >
+                                                    Publish
+                                                </button>
+                                            )}
+                                            <span className={`badge ${statusInfo.className}`}>
+                                                {statusInfo.label}
+                                            </span>
                                         </div>
-                                        <span className={`badge ${t.status === 'completed' ? 'badge-success' : t.status === 'active' ? 'badge-accent' : t.status === 'pending_approval' ? 'badge-warning' : 'badge-muted'}`}>
-                                            {t.status.replace('_', ' ')}
-                                        </span>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                                 {filteredTasks.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No tasks found</div>}
                             </div>
                         </div>

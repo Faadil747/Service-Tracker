@@ -29,6 +29,7 @@ class Task(Base):
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=True)
     created_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     approved_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    claimed_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     approved_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -36,6 +37,7 @@ class Task(Base):
 
     creator = relationship("User", foreign_keys=[created_by_id], back_populates="tasks_created")
     approver = relationship("User", foreign_keys=[approved_by_id])
+    claimed_by = relationship("User", foreign_keys=[claimed_by_id])
     assignments = relationship("TaskAssignment", back_populates="task", cascade="all, delete-orphan")
     completions = relationship("TaskCompletion", back_populates="task", cascade="all, delete-orphan")
     approvals = relationship("TaskApproval", back_populates="task", cascade="all, delete-orphan")

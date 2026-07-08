@@ -29,8 +29,53 @@ async def get_settings(current_user: User = Depends(get_current_user)):
         "deepseek_model": settings.DEEPSEEK_MODEL,
         "dev_mode": settings.DEV_MODE,
         "deepseek_key_set": bool(settings.DEEPSEEK_API_KEY),
-        "linkedin_key_set": bool(settings.LINKEDIN_CLIENT_ID),
+        "linkedin_client_id_set": bool(settings.LINKEDIN_CLIENT_ID),
+        "linkedin_access_token_set": bool(settings.LINKEDIN_ACCESS_TOKEN),
+        "linkedin_org_id": settings.LINKEDIN_ORG_ID,
     }
+
+
+@router.get("/linkedin-status")
+async def linkedin_connection_status(current_user: User = Depends(get_current_user)):
+    """Test the LinkedIn access token and return connection health details."""
+    from app.services.linkedin_service import linkedin_service
+    result = await linkedin_service.test_connection()
+    return result
+
+
+@router.get("/deepseek-status")
+async def deepseek_connection_status(current_user: User = Depends(get_current_user)):
+    """Test the DeepSeek API key with a minimal completion call."""
+    if not settings.DEEPSEEK_API_KEY:
+        return {"connected": False, "error": "No DeepSeek API key configured"}
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{settings.DEEPSEEK_BASE_URL}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.DEEPSEEK_MODEL,
+                    "messages": [{"role": "user", "content": "Ping"}],
+                    "max_tokens": 5,
+                },
+            )
+            if resp.status_code == 200:
+                return {
+                    "connected": True,
+                    "model": settings.DEEPSEEK_MODEL,
+                    "base_url": settings.DEEPSEEK_BASE_URL,
+                }
+            else:
+                return {
+                    "connected": False,
+                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+                }
+    except Exception as e:
+        return {"connected": False, "error": str(e)}
 
 
 @router.get("/api-config")
@@ -40,7 +85,15 @@ async def list_api_configs(
 ):
     result = await db.execute(select(ApiConfig))
     configs = result.scalars().all()
-    return [{"id": c.id, "key_name": c.key_name, "description": c.description, "updated_at": c.updated_at.isoformat() if c.updated_at else None} for c in configs]
+    return [
+        {
+            "id": c.id,
+            "key_name": c.key_name,
+            "description": c.description,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+        }
+        for c in configs
+    ]
 
 
 @router.post("/api-config")

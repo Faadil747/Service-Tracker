@@ -1,99 +1,455 @@
 """
-LinkedIn Service — OAuth 2.0 auth + org-page publishing + telemetry sync.
-Routes through LINKEDIN_PROXY_URL for dev/test (Developer role).
-Real credentials are stored encrypted in api_config table.
+LinkedIn service — real company-page data only.
+
+Design notes
+------------
+LinkedIn day-throttles the follower/page-statistics endpoints (HTTP 429
+"APPLICATION DAY limit reached"). If we called them on every dashboard poll we
+would exhaust the quota within hours and then get nothing but 429s. So:
+
+  * Every successful fetch is cached (in memory + on disk) as a "snapshot".
+  * We only re-fetch from LinkedIn after LINKEDIN_SYNC_INTERVAL_MIN minutes.
+  * When an endpoint is throttled/unavailable we keep the last REAL value and
+    mark that field `stale` — we never fabricate numbers.
+
+Anything LinkedIn will not give us with the current token (per-post
+likes/comments → 403, day-by-day history → unsupported in this API version) is
+simply reported as unavailable rather than filled with random data.
 """
 import json
+import os
+import time
+import urllib.parse
 from typing import Optional
+
 import httpx
+
 from app.config import settings
+
+# ── Persisted snapshot cache ────────────────────────────────────────────────
+_CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "linkedin_cache.json")
+_SNAPSHOT: dict = {}          # last good snapshot (in-memory)
+_LAST_FETCH_TS: float = 0.0   # epoch seconds of last LinkedIn round-trip
+
+# Static URN → label maps (small, fixed sets — safe to resolve offline).
+_SENIORITY = {
+    "1": "Unpaid", "2": "Training", "3": "Entry", "4": "Senior", "5": "Manager",
+    "6": "Director", "7": "VP", "8": "CXO", "9": "Partner", "10": "Owner",
+}
+_FUNCTION = {
+    "1": "Accounting", "2": "Administrative", "3": "Arts & Design", "4": "Business Development",
+    "5": "Community & Social Services", "6": "Consulting", "7": "Education", "8": "Engineering",
+    "9": "Entrepreneurship", "10": "Finance", "11": "Healthcare Services", "12": "Human Resources",
+    "13": "Information Technology", "14": "Legal", "15": "Marketing", "16": "Media & Communication",
+    "17": "Military & Protective", "18": "Operations", "19": "Product Management",
+    "20": "Program & Project Mgmt", "21": "Purchasing", "22": "Quality Assurance",
+    "23": "Real Estate", "24": "Research", "25": "Sales", "26": "Support",
+}
+
+
+def _load_disk_cache() -> None:
+    global _SNAPSHOT, _LAST_FETCH_TS
+    if _SNAPSHOT:
+        return
+    try:
+        with open(_CACHE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            _SNAPSHOT = data.get("snapshot", {})
+            _LAST_FETCH_TS = data.get("fetched_at", 0.0)
+    except Exception:
+        _SNAPSHOT = {}
+        _LAST_FETCH_TS = 0.0
+
+
+def _save_disk_cache() -> None:
+    try:
+        with open(_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"snapshot": _SNAPSHOT, "fetched_at": _LAST_FETCH_TS}, f)
+    except Exception as e:
+        print(f"LinkedIn cache write failed: {e}")
 
 
 class LinkedInService:
-    def __init__(self, proxy_url: Optional[str] = None, use_proxy: bool = False):
-        self.base_url = "https://api.linkedin.com/v2"
-        self.proxy_url = proxy_url or settings.LINKEDIN_PROXY_URL
-        self.use_proxy = use_proxy
+    def __init__(self):
+        self.base_url = "https://api.linkedin.com/rest"
+        self.api_version = "202606"
 
-    def _get_base(self) -> str:
-        return self.proxy_url if self.use_proxy else self.base_url
+    # ── auth helpers ────────────────────────────────────────────────────────
+    def _access_token(self) -> str:
+        return settings.LINKEDIN_ACCESS_TOKEN
 
-    async def publish_post(self, access_token: str, org_id: str, content: str, image_url: Optional[str] = None) -> dict:
-        """Publish a text (or image) post to a LinkedIn org page."""
-        if not access_token or not settings.LINKEDIN_CLIENT_ID:
-            return self._stub_publish(content)
+    def _has_credentials(self) -> bool:
+        return bool(settings.LINKEDIN_ACCESS_TOKEN and settings.LINKEDIN_ORG_ID)
+
+    def _auth_headers(self, extra: Optional[dict] = None, token: Optional[str] = None) -> dict:
+        t = token or self._access_token()
+        headers = {
+            "Authorization": f"Bearer {t}",
+            "Content-Type": "application/json",
+            "X-Restli-Protocol-Version": "2.0.0",
+            "LinkedIn-Version": self.api_version,
+        }
+        if extra:
+            headers.update(extra)
+        return headers
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Publishing
+    # ──────────────────────────────────────────────────────────────────────────
+    async def publish_post(
+        self,
+        access_token: str,
+        org_id: str,
+        content: str,
+        image_url: Optional[str] = None,
+    ) -> dict:
+        """Publish a text post to a LinkedIn org page via the modern Posts API."""
+        token = access_token or self._access_token()
+        org = org_id or settings.LINKEDIN_ORG_ID
+        if not token or not org:
+            raise RuntimeError("LinkedIn access token or org ID not configured")
 
         post_body = {
-            "author": f"urn:li:organization:{org_id}",
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": content},
-                    "shareMediaCategory": "NONE",
-                }
+            "author": f"urn:li:organization:{org}",
+            "commentary": content,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
             },
-            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+            "lifecycleState": "PUBLISHED",
         }
-
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{self._get_base()}/ugcPosts",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                    "X-Restli-Protocol-Version": "2.0.0",
-                },
+                f"{self.base_url}/posts",
+                headers=self._auth_headers(token=token),
                 json=post_body,
             )
             resp.raise_for_status()
-            data = resp.json()
-            return {"linkedin_post_id": data.get("id", ""), "status": "published"}
+            post_id = resp.headers.get("x-restli-id", "")
+            if not post_id:
+                location = resp.headers.get("Location", "")
+                if "/posts/" in location:
+                    post_id = urllib.parse.unquote(location.split("/posts/")[-1])
+            return {"linkedin_post_id": post_id, "status": "published"}
 
-    async def get_page_metrics(self, access_token: str, org_id: str, start_date: str, end_date: str) -> dict:
-        """Fetch follower + visitor + engagement metrics for an org page."""
-        if not access_token or not settings.LINKEDIN_CLIENT_ID:
-            return self._stub_metrics()
+    # ──────────────────────────────────────────────────────────────────────────
+    # Real company-page snapshot (cached + throttle-aware)
+    # ──────────────────────────────────────────────────────────────────────────
+    async def get_org_snapshot(self, force: bool = False) -> dict:
+        """
+        Return a cached real snapshot of the company page's public analytics.
+
+        Fields (all real, or omitted/stale when LinkedIn is unavailable):
+          followers, organic_followers, paid_followers,
+          impressions, unique_impressions, clicks, likes, comments, shares,
+          engagement_rate, visitors, demographics{seniority[],function[]}
+        Plus `_meta`: last_updated, rate_limited, stale_fields[], available (bool).
+        """
+        global _SNAPSHOT, _LAST_FETCH_TS
+        _load_disk_cache()
+
+        if not self._has_credentials():
+            return {"_meta": {"available": False, "reason": "LinkedIn token or org ID not configured"}}
+
+        interval = max(1, settings.LINKEDIN_SYNC_INTERVAL_MIN) * 60
+        age = time.time() - _LAST_FETCH_TS
+        if _SNAPSHOT and not force and age < interval:
+            # Serve cached — do not touch LinkedIn (protects the daily quota).
+            meta = dict(_SNAPSHOT.get("_meta", {}))
+            meta["served_from_cache"] = True
+            meta["cache_age_seconds"] = int(age)
+            return {**_SNAPSHOT, "_meta": meta}
+
+        # Time to refresh. Fetch each metric group independently so one throttled
+        # endpoint doesn't wipe out the others.
+        token = self._access_token()
+        org = settings.LINKEDIN_ORG_ID
+        fresh: dict = {}
+        stale_fields: list[str] = []
+        rate_limited = False
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(
-                f"{self._get_base()}/organizationalEntityFollowerStatistics",
-                headers={"Authorization": f"Bearer {access_token}"},
-                params={
-                    "q": "organizationalEntity",
-                    "organizationalEntity": f"urn:li:organization:{org_id}",
-                },
-            )
-            return resp.json() if resp.status_code == 200 else self._stub_metrics()
+            # 1. Share statistics — impressions/clicks/likes/comments/engagement (reliable)
+            try:
+                share = await self._fetch_share_stats(client, token, org)
+                fresh.update(share)
+            except _Throttled:
+                rate_limited = True
+                stale_fields += ["impressions", "unique_impressions", "clicks", "likes", "comments", "shares", "engagement_rate"]
+            except Exception as e:
+                print(f"LinkedIn share-stats error: {e}")
+                stale_fields += ["impressions", "clicks", "likes", "comments", "engagement_rate"]
 
-    async def get_post_metrics(self, access_token: str, post_id: str) -> dict:
-        """Get likes, comments, shares, impressions for a specific post."""
-        if not access_token:
-            return self._stub_post_metrics()
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(
-                f"{self._get_base()}/socialMetadata/{post_id}",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            return resp.json() if resp.status_code == 200 else self._stub_post_metrics()
+            # 2. Follower count + organic/paid split + raw demographics
+            try:
+                foll = await self._fetch_follower_stats(client, token, org)
+                fresh.update(foll)
+            except _Throttled:
+                rate_limited = True
+                stale_fields += ["followers", "organic_followers", "paid_followers", "demographics"]
+            except Exception as e:
+                print(f"LinkedIn follower-stats error: {e}")
+                stale_fields += ["followers", "demographics"]
 
-    def _stub_publish(self, content: str) -> dict:
-        import uuid
-        return {
-            "linkedin_post_id": f"stub_{uuid.uuid4().hex[:8]}",
-            "status": "published (stub)",
-            "content_preview": content[:100],
+            # Fallback total-follower source if follower-stats didn't yield one.
+            if not fresh.get("followers"):
+                try:
+                    total = await self._fetch_follower_count(client, token, org)
+                    if total:
+                        fresh["followers"] = total
+                        if "followers" in stale_fields:
+                            stale_fields.remove("followers")
+                except _Throttled:
+                    rate_limited = True
+                except Exception as e:
+                    print(f"LinkedIn networkSizes error: {e}")
+
+            # 3. Page visitors
+            try:
+                fresh["visitors"] = await self._fetch_page_stats(client, token, org)
+            except _Throttled:
+                rate_limited = True
+                stale_fields.append("visitors")
+            except Exception as e:
+                print(f"LinkedIn page-stats error: {e}")
+                stale_fields.append("visitors")
+
+        # Merge fresh over last-good; keep previous real values for stale fields.
+        merged = {k: v for k, v in _SNAPSHOT.items() if k != "_meta"}
+        merged.update({k: v for k, v in fresh.items() if v is not None})
+
+        got_anything = bool(fresh)
+        merged["_meta"] = {
+            "available": bool(merged) and any(k != "_meta" for k in merged),
+            "rate_limited": rate_limited,
+            "stale_fields": sorted(set(f for f in stale_fields if f in merged)),
+            "last_updated": _iso_now(),
+            "org_id": org,
         }
 
-    def _stub_metrics(self) -> dict:
+        if got_anything:
+            _SNAPSHOT = merged
+            _LAST_FETCH_TS = time.time()
+            _save_disk_cache()
+            return _SNAPSHOT
+
+        # Nothing fresh at all (fully throttled). Return last-good, flagged stale.
+        if _SNAPSHOT:
+            meta = dict(_SNAPSHOT.get("_meta", {}))
+            meta.update({"rate_limited": rate_limited, "served_from_cache": True,
+                         "stale_fields": [k for k in _SNAPSHOT if k != "_meta"]})
+            return {**_SNAPSHOT, "_meta": meta}
+        return {"_meta": {"available": False, "rate_limited": rate_limited,
+                          "reason": "LinkedIn API throttled and no cached data yet"}}
+
+    # ── individual fetchers (raise _Throttled on 429) ───────────────────────
+    async def _fetch_share_stats(self, client: httpx.AsyncClient, token: str, org: str) -> dict:
+        org_urn = f"urn:li:organization:{org}"
+        resp = await client.get(
+            f"{self.base_url}/organizationalEntityShareStatistics",
+            headers=self._auth_headers(token=token),
+            params={"q": "organizationalEntity", "organizationalEntity": org_urn},
+        )
+        if resp.status_code == 429:
+            raise _Throttled()
+        resp.raise_for_status()
+        elements = resp.json().get("elements", [])
+        if not elements:
+            return {}
+        ts = elements[0].get("totalShareStatistics", {})
+        eng = ts.get("engagement", 0.0) or 0.0
         return {
-            "follower_counts": {"organicFollowerCount": 12450, "paidFollowerCount": 380},
-            "follower_gained": 47,
-            "follower_lost": 3,
-            "visitor_count": 2340,
+            "impressions": int(ts.get("impressionCount", 0) or 0),
+            "unique_impressions": int(ts.get("uniqueImpressionsCount", 0) or 0),
+            "clicks": int(ts.get("clickCount", 0) or 0),
+            "likes": int(ts.get("likeCount", 0) or 0),
+            "comments": int(ts.get("commentCount", 0) or 0),
+            "shares": max(0, int(ts.get("shareCount", 0) or 0)),
+            "engagement_rate": round(eng * 100, 2),
         }
 
-    def _stub_post_metrics(self) -> dict:
-        return {"impressions": 3200, "likes": 142, "comments": 28, "shares": 19, "clicks": 87}
+    async def _fetch_follower_stats(self, client: httpx.AsyncClient, token: str, org: str) -> dict:
+        org_urn = f"urn:li:organization:{org}"
+        resp = await client.get(
+            f"{self.base_url}/organizationalEntityFollowerStatistics",
+            headers=self._auth_headers(token=token),
+            params={"q": "organizationalEntity", "organizationalEntity": org_urn},
+        )
+        if resp.status_code == 429:
+            raise _Throttled()
+        resp.raise_for_status()
+        elements = resp.json().get("elements", [])
+        if not elements:
+            return {}
+        item = elements[0]
+        out: dict = {}
+
+        total_fc = item.get("totalFollowerCounts") or {}
+        if total_fc:
+            organic = int(total_fc.get("organicFollowerCount", 0) or 0)
+            paid = int(total_fc.get("paidFollowerCount", 0) or 0)
+            out["organic_followers"] = organic
+            out["paid_followers"] = paid
+            out["followers"] = organic + paid
+
+        # Real demographic breakdowns (only labels we can resolve offline).
+        demographics: dict = {}
+        seniority = _resolve_buckets(item.get("followerCountsBySeniority"), "seniority", _SENIORITY)
+        if seniority:
+            demographics["seniority"] = seniority
+        function = _resolve_buckets(item.get("followerCountsByFunction"), "function", _FUNCTION)
+        if function:
+            demographics["function"] = function
+        if demographics:
+            out["demographics"] = demographics
+        return out
+
+    async def _fetch_follower_count(self, client: httpx.AsyncClient, token: str, org: str) -> int:
+        org_urn = f"urn:li:organization:{org}"
+        enc = urllib.parse.quote_plus(org_urn)
+        resp = await client.get(
+            f"{self.base_url}/networkSizes/{enc}",
+            headers=self._auth_headers(token=token),
+            params={"edgeType": "COMPANY_FOLLOWED_BY_MEMBER"},
+        )
+        if resp.status_code == 429:
+            raise _Throttled()
+        resp.raise_for_status()
+        return int(resp.json().get("firstDegreeSize", 0) or 0)
+
+    async def _fetch_page_stats(self, client: httpx.AsyncClient, token: str, org: str) -> int:
+        org_urn = f"urn:li:organization:{org}"
+        resp = await client.get(
+            f"{self.base_url}/organizationPageStatistics",
+            headers=self._auth_headers(token=token),
+            params={"q": "organization", "organization": org_urn},
+        )
+        if resp.status_code == 429:
+            raise _Throttled()
+        resp.raise_for_status()
+        elements = resp.json().get("elements", [])
+        total = 0
+        for el in elements:
+            views = el.get("totalPageStatistics", {}).get("views", {})
+            total += sum(v.get("pageViews", 0) for v in views.values() if isinstance(v, dict))
+        return total
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Recent real posts published on the company page
+    # ──────────────────────────────────────────────────────────────────────────
+    async def get_org_posts(self, count: int = 20) -> dict:
+        """Return recent real posts from the company page (content + link only —
+        per-post engagement metrics require Community-Management access we lack)."""
+        if not self._has_credentials():
+            return {"available": False, "posts": []}
+        token = self._access_token()
+        org = settings.LINKEDIN_ORG_ID
+        org_urn = f"urn:li:organization:{org}"
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(
+                    f"{self.base_url}/posts",
+                    headers=self._auth_headers(token=token),
+                    params={"q": "author", "author": org_urn, "count": count},
+                )
+                if resp.status_code == 429:
+                    return {"available": False, "rate_limited": True, "posts": []}
+                resp.raise_for_status()
+                data = resp.json()
+                posts = []
+                for el in data.get("elements", []):
+                    urn = el.get("id", "")
+                    posts.append({
+                        "urn": urn,
+                        "content": el.get("commentary", ""),
+                        "published_at": el.get("publishedAt"),
+                        "url": f"https://www.linkedin.com/feed/update/{urn}" if urn else None,
+                        "has_media": bool(el.get("content", {}).get("media")),
+                    })
+                return {"available": True, "total": data.get("paging", {}).get("total", len(posts)), "posts": posts}
+        except Exception as e:
+            print(f"LinkedIn posts fetch error: {e}")
+            return {"available": False, "posts": []}
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Connectivity test (used by settings/linkedin-status)
+    # ──────────────────────────────────────────────────────────────────────────
+    async def test_connection(self) -> dict:
+        """Validate the token via introspection (cheap, not day-throttled)."""
+        token = self._access_token()
+        org = settings.LINKEDIN_ORG_ID
+        if not token:
+            return {"connected": False, "error": "No access token configured"}
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Token introspection is the reliable, non-throttled health check.
+            try:
+                intro = await client.post(
+                    "https://www.linkedin.com/oauth/v2/introspectToken",
+                    data={
+                        "client_id": settings.LINKEDIN_CLIENT_ID,
+                        "client_secret": settings.LINKEDIN_CLIENT_SECRET,
+                        "token": token,
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+                if intro.status_code == 200:
+                    d = intro.json()
+                    active = d.get("active") and d.get("status") == "active"
+                    if not active:
+                        return {"connected": False, "error": f"Token status: {d.get('status', 'inactive')}"}
+                    return {
+                        "connected": True,
+                        "account_name": f"Org {org}" if org else "LinkedIn",
+                        "org_id": org,
+                        "scopes": d.get("scope", ""),
+                        "expires_at": d.get("expires_at"),
+                    }
+            except Exception as e:
+                print(f"LinkedIn introspection error: {e}")
+
+            # Fallback: try org lookup (may be day-throttled → treat 429 as "connected").
+            if org:
+                r = await client.get(f"{self.base_url}/organizations/{org}", headers=self._auth_headers())
+                if r.status_code == 200:
+                    name = r.json().get("localizedName", f"Org {org}")
+                    return {"connected": True, "account_name": name, "org_id": org}
+                if r.status_code == 429:
+                    return {"connected": True, "account_name": f"Org {org}", "org_id": org, "rate_limited": True}
+                return {"connected": False, "error": f"Org HTTP {r.status_code}: {r.text[:180]}"}
+            return {"connected": False, "error": "Token could not be validated"}
+
+
+# ── helpers ─────────────────────────────────────────────────────────────────
+class _Throttled(Exception):
+    """Raised when a LinkedIn endpoint returns HTTP 429 (daily quota reached)."""
+
+
+def _iso_now() -> str:
+    # time.gmtime avoids importing datetime just for a timestamp string.
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _resolve_buckets(buckets, urn_kind: str, label_map: dict) -> list:
+    """Turn LinkedIn's URN-keyed follower buckets into labelled {name,value} rows.
+    Buckets whose URN we can't resolve offline are skipped (never shown raw)."""
+    if not buckets:
+        return []
+    rows = []
+    for b in buckets:
+        urn = b.get(urn_kind, "")
+        code = urn.rsplit(":", 1)[-1] if urn else ""
+        label = label_map.get(code)
+        if not label:
+            continue
+        counts = b.get("followerCounts", {}) or {}
+        value = int(counts.get("organicFollowerCount", 0) or 0) + int(counts.get("paidFollowerCount", 0) or 0)
+        if value > 0:
+            rows.append({"name": label, "value": value})
+    rows.sort(key=lambda r: r["value"], reverse=True)
+    return rows
 
 
 linkedin_service = LinkedInService()

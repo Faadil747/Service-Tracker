@@ -191,13 +191,14 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [predictedReach, setPredictedReach] = useState<any>(null);
     const [savingPost, setSavingPost] = useState(false);
     const [editingPostId, setEditingPostId] = useState<string | null>(null);
+    const [publishDirectly, setPublishDirectly] = useState(false);
     const [hoveredCell, setHoveredCell] = useState<{ day: string; hour: number; engagement: number; x: number; y: number } | null>(null);
 
     // Published Posts History
     const [composerSubTab, setComposerSubTab] = useState<'create' | 'history'>('create');
     const [publishedPosts, setPublishedPosts] = useState<Post[]>([]);
     const [selectedHistoryPost, setSelectedHistoryPost] = useState<Post | null>(null);
-    const [historyPostMetrics, setHistoryPostMetrics] = useState<any>({ likes: 0, comments: 0, shares: 0, clicks: 0, impressions: 0 });
+    const [historyPostMetrics, setHistoryPostMetrics] = useState<any>({ available: false });
     const [historySearch, setHistorySearch] = useState('');
     const [historyFromDate, setHistoryFromDate] = useState('');
     const [historyToDate, setHistoryToDate] = useState('');
@@ -207,10 +208,6 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     // Task completion
     const [completingTask, setCompletingTask] = useState<string | null>(null);
 
-    const getPostLikes = (p: Post) => (p.id.charCodeAt(0) % 15) + 5;
-    const getPostComments = (p: Post) => (p.id.charCodeAt(1) % 8) + 1;
-    const getPostShares = (p: Post) => (p.id.charCodeAt(2) % 4);
-    const getPostEngagement = (p: Post) => getPostLikes(p) + getPostComments(p) + getPostShares(p);
 
     const filteredHistoryPosts = publishedPosts.filter(p => {
         const matchesSearch = !historySearch || p.content.toLowerCase().includes(historySearch.toLowerCase()) || (p.title && p.title.toLowerCase().includes(historySearch.toLowerCase()));
@@ -223,8 +220,9 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         return matchesSearch && matchesType && matchesFrom && matchesTo;
     });
 
-    const totalEngagement = filteredHistoryPosts.reduce((sum, p) => sum + getPostEngagement(p), 0);
-    const avgEngagement = filteredHistoryPosts.length > 0 ? (totalEngagement / filteredHistoryPosts.length).toFixed(1) : '0.0';
+    // Real, derivable-from-data counts (per-post engagement is not available via the LinkedIn API).
+    const postsWithLink = filteredHistoryPosts.filter(p => !!p.linkedin_post_id).length;
+    const distinctPostTypes = new Set(filteredHistoryPosts.map(p => p.post_type).filter(Boolean)).size;
     const postsThisMonth = filteredHistoryPosts.filter(p => {
         const date = p.published_at ? new Date(p.published_at) : new Date(p.created_at);
         return date.getMonth() === new Date().getMonth() && date.getFullYear() === new Date().getFullYear();
@@ -262,16 +260,18 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
     const loadAll = async () => {
         try {
-            const [tRes, bRes, tmplRes, hmRes] = await Promise.all([
+            const [tRes, bRes, tmplRes, hmRes, pubRes] = await Promise.all([
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
                 postsApi.kanban(region === 'Global' ? undefined : region),
                 postsApi.list({ is_template: true }),
                 metricsApi.bestTime(region === 'Global' ? undefined : region),
+                postsApi.list({ status: 'published', region: region === 'Global' ? undefined : region }),
             ]);
             setTasks(tRes.data);
             setBoard(bRes.data);
             setTemplates(tmplRes.data);
             setHeatmap(hmRes.data.heatmap);
+            setPublishedPosts(pubRes.data);
 
             if (isAdmin) {
                 const [paRes, agRes] = await Promise.all([
@@ -318,19 +318,21 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 region,
                 scheduled_at: scheduledAt || undefined,
                 is_template: false,
-                status: isAdmin ? 'approved' : 'in_review',
-                task_id: selectedTaskId || undefined
+                status: isAdmin ? 'approved' : 'in_review'
             };
+            let createdPost = null;
             if (editingPostId) {
-                await postsApi.update(editingPostId, payload);
-                toast.success('Post updated and submitted for review!');
+                const res = await postsApi.update(editingPostId, payload);
+                createdPost = res.data;
+                toast.success('Post updated!');
                 setEditingPostId(null);
             } else {
-                await postsApi.create(payload);
-                toast.success(isAdmin ? 'Post created and approved!' : 'Post submitted for review!');
+                const res = await postsApi.create(payload);
+                createdPost = res.data;
+                toast.success(isAdmin ? 'Post created and approved!' : 'Post created and submitted for review!');
             }
-            setSelectedTaskId(null);
             setPreviewContent(''); setGeneratedContent(''); setPrompt(''); setScheduledAt('');
+            setPublishDirectly(false);
             loadAll();
         } catch { toast.error('Failed to save post'); }
         setSavingPost(false);
@@ -364,22 +366,13 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         try {
             const res = await metricsApi.posts({ post_id: post.id });
             if (res.data && res.data.length > 0) {
-                setHistoryPostMetrics(res.data[0]);
+                setHistoryPostMetrics({ ...res.data[0], available: true });
             } else {
-                setHistoryPostMetrics({
-                    likes: (post.id.charCodeAt(0) % 15) + 5,
-                    comments: (post.id.charCodeAt(1) % 8) + 1,
-                    shares: (post.id.charCodeAt(2) % 4),
-                    clicks: (post.id.charCodeAt(3) % 25) + 10,
-                });
+                // LinkedIn does not expose per-post engagement to this token — don't fabricate.
+                setHistoryPostMetrics({ available: false });
             }
         } catch {
-            setHistoryPostMetrics({
-                likes: (post.id.charCodeAt(0) % 15) + 5,
-                comments: (post.id.charCodeAt(1) % 8) + 1,
-                shares: (post.id.charCodeAt(2) % 4),
-                clicks: (post.id.charCodeAt(3) % 25) + 10,
-            });
+            setHistoryPostMetrics({ available: false });
         }
     };
 
@@ -387,8 +380,13 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         if (!selectedHistoryPost) return;
         try {
             const res = await postsApi.syncMetrics(selectedHistoryPost.id);
-            setHistoryPostMetrics(res.data);
-            toast.success("Metrics synced from LinkedIn!");
+            if (res.data?.available) {
+                setHistoryPostMetrics({ ...res.data, available: true });
+                toast.success("Metrics synced from LinkedIn");
+            } else {
+                setHistoryPostMetrics({ available: false });
+                toast("Per-post metrics aren't available via the LinkedIn API for this token", { icon: 'ℹ️' });
+            }
         } catch {
             toast.error("Failed to sync metrics.");
         }
@@ -990,29 +988,9 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
                                     </div>
 
-                                    {(() => {
-                                        const activeTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;
-                                        const isApproved = activeTask?.post?.status === 'approved';
-
-                                        if (isApproved && !isAdmin) {
-                                            return (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
-                                                        ✓ This draft was approved by the manager. Click below to publish it live.
-                                                    </div>
-                                                    <button className="btn btn-success w-full" onClick={handlePublishLive} disabled={savingPost}>
-                                                        {savingPost ? 'Publishing...' : '🚀 Publish Live on LinkedIn'}
-                                                    </button>
-                                                </div>
-                                            );
-                                        }
-
-                                        return (
-                                            <button className="btn btn-secondary w-full" style={{ marginTop: 12 }} onClick={handlePublishPost} disabled={savingPost || !previewContent}>
-                                                {savingPost ? 'Saving...' : isAdmin ? '📤 Save & Approve' : '📤 Submit for Review'}
-                                            </button>
-                                        );
-                                    })()}
+                                    <button className="btn btn-secondary w-full" style={{ marginTop: 12 }} onClick={handlePublishPost} disabled={savingPost || !previewContent}>
+                                        {savingPost ? 'Saving...' : isAdmin ? '📤 Save & Approve' : '📤 Submit for Review'}
+                                    </button>
                                 </div>
 
                                 {/* Right: Live Preview */}
@@ -1192,43 +1170,41 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                             {/* Engagement Metrics Card */}
                                             <div className="glass-card" style={{ padding: 18 }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                                                    <div>
-                                                        <h4 style={{ margin: 0 }}>📊 Engagement metrics</h4>
-                                                        {!selectedHistoryPost.linkedin_post_id && (
-                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                                                                Add LinkedIn URL above to enable sync
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                    <h4 style={{ margin: 0 }}>📊 Engagement metrics</h4>
                                                     <button
                                                         className="btn btn-secondary btn-sm"
                                                         disabled={!selectedHistoryPost.linkedin_post_id}
                                                         onClick={handleDemoSync}
                                                     >
-                                                        Demo sync
+                                                        Check LinkedIn
                                                     </button>
                                                 </div>
 
-                                                <div className="grid-3">
-                                                    <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
-                                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>LIKES</div>
-                                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--success)' }}>
-                                                            {historyPostMetrics.likes || 0}
+                                                {historyPostMetrics.available ? (
+                                                    <div className="grid-3">
+                                                        <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>LIKES</div>
+                                                            <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--success)' }}>{historyPostMetrics.likes || 0}</div>
+                                                        </div>
+                                                        <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>COMMENTS</div>
+                                                            <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--accent)' }}>{historyPostMetrics.comments || 0}</div>
+                                                        </div>
+                                                        <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>SHARES</div>
+                                                            <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--info)' }}>{historyPostMetrics.shares || 0}</div>
                                                         </div>
                                                     </div>
-                                                    <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
-                                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>COMMENTS</div>
-                                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--accent)' }}>
-                                                            {historyPostMetrics.comments || 0}
+                                                ) : (
+                                                    <div style={{ background: 'var(--bg-tertiary)', padding: '16px 14px', borderRadius: 8, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                                                        <span style={{ fontSize: '1rem', flexShrink: 0 }}>🔒</span>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                                                            Per-post likes/comments/shares aren't available via the LinkedIn API for this token
+                                                            (it requires Community Management API access). Aggregate company-page engagement is
+                                                            shown live on the <strong>Analytics Hub</strong>.
                                                         </div>
                                                     </div>
-                                                    <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
-                                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>SHARES</div>
-                                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--info)' }}>
-                                                            {historyPostMetrics.shares || 0}
-                                                        </div>
-                                                    </div>
-                                                </div>
+                                                )}
                                             </div>
                                         </div>
 
@@ -1272,14 +1248,14 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Active postings</div>
                                         </div>
                                         <div className="glass-card" style={{ padding: 16 }}>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL ENGAGEMENT</div>
-                                            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{totalEngagement}</div>
-                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Likes + Comments + Shares</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>WITH LINKEDIN LINK</div>
+                                            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{postsWithLink}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Linked to a live post</div>
                                         </div>
                                         <div className="glass-card" style={{ padding: 16 }}>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>AVG PER POST</div>
-                                            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{avgEngagement}</div>
-                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Average engagement</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>CONTENT TYPES</div>
+                                            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{distinctPostTypes}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Distinct post formats</div>
                                         </div>
                                     </div>
 

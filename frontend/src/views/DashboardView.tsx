@@ -1,9 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-    LineChart, Line, AreaChart, Area, BarChart, Bar,
-    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
-} from 'recharts';
-import {
     TrendingUp, Eye, Heart, CheckCircle, Clock,
     AlertTriangle, Search, Plus, X, MessageSquare, CheckSquare
 } from 'lucide-react';
@@ -11,9 +7,9 @@ import {
     format, startOfMonth, endOfMonth, eachDayOfInterval,
     isSameMonth, isToday, startOfWeek, endOfWeek, addMonths, subMonths
 } from 'date-fns';
-import { metricsApi, tasksApi, usersApi } from '../services/api';
+import { metricsApi, tasksApi, usersApi, settingsApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { PageMetric, Task, User } from '../types';
+import { Task, User } from '../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AnalyticsHubView } from './AnalyticsHubView';
@@ -281,7 +277,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const view = searchParams.get('view') === 'analytics' ? 'analytics' : 'dashboard';
-    const [metrics, setMetrics] = useState<PageMetric[]>([]);
+    const [overview, setOverview] = useState<any>(null);
     const [summary, setSummary] = useState<any>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [pendingApprovals, setPendingApprovals] = useState<Task[]>([]);
@@ -294,7 +290,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     });
     const [loading, setLoading] = useState(true);
     const [showAddTask, setShowAddTask] = useState(false);
-    const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_ids: [] as string[] });
+    const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_id: '' });
     const isAdmin = user?.role === 'admin';
     const initialLoaded = useRef(false);
 
@@ -307,12 +303,12 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const loadAll = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         try {
-            const [mRes, sumRes, tRes] = await Promise.all([
-                metricsApi.page({ region: region === 'Global' ? undefined : region, days: 30 }),
-                metricsApi.dashboardSummary(region === 'Global' ? undefined : region),
+            const [oRes, sumRes, tRes] = await Promise.all([
+                metricsApi.linkedinOverview(),
+                metricsApi.dashboardSummary(),
                 tasksApi.list({ region: region === 'Global' ? undefined : region }),
             ]);
-            setMetrics(mRes.data);
+            setOverview(oRes.data);
             setSummary(sumRes.data);
             setTasks(tRes.data);
 
@@ -338,10 +334,24 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
         } else {
             loadAll(false); // region changed — show skeleton
         }
-        // Subsequent polls: silent (no skeleton flicker)
-        const interval = setInterval(() => loadAll(true), 30000);
+        // LinkedIn analytics are day-throttled and update at most daily — poll gently.
+        const interval = setInterval(() => loadAll(true), 5 * 60 * 1000);
         return () => clearInterval(interval);
     }, [region]);
+
+    // Check LinkedIn connection status (admin only, once)
+    useEffect(() => {
+        if (!isAdmin) return;
+        settingsApi.linkedinStatus()
+            .then(r => {
+                setLinkedinConnected(r.data.connected);
+                if (!r.data.connected) setLinkedinError(r.data.error || 'LinkedIn API not connected');
+            })
+            .catch(() => {
+                setLinkedinConnected(false);
+                setLinkedinError('Could not reach LinkedIn API');
+            });
+    }, [isAdmin]);
 
 
 
@@ -361,26 +371,18 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const completedTasks = tasks.filter(t => t.status === 'completed');
     const activeTasks = tasks.filter(t => ['active', 'in_progress'].includes(t.status));
 
-    // Format chart data
-    const chartData = metrics.reduce((acc: any[], m) => {
-        const existing = acc.find(d => d.date === m.metric_date);
-        if (existing) {
-            existing.followers = (existing.followers || 0) + m.followers;
-            existing.visitors = (existing.visitors || 0) + m.visitors;
-            existing.engagement = (existing.engagement || 0) + m.likes + m.comments + m.shares;
-        } else {
-            acc.push({
-                date: m.metric_date.slice(5),
-                followers: m.followers,
-                visitors: m.visitors,
-                likes: m.likes,
-                comments: m.comments,
-                shares: m.shares,
-                engagement: m.likes + m.comments + m.shares,
-            });
-        }
-        return acc;
-    }, []).slice(-14);
+    // Real LinkedIn snapshot values (null when LinkedIn hasn't provided them yet).
+    const li = overview || {};
+    const meta = li._meta || {};
+    const num = (v: any) => (v === null || v === undefined) ? null : Number(v);
+    const kFollowers = num(li.followers);
+    const kImpressions = num(li.impressions);
+    const kReach = num(li.unique_impressions);
+    const kClicks = num(li.clicks);
+    const kLikes = num(li.likes);
+    const kComments = num(li.comments);
+    const kEngagement = num(li.engagement_rate);
+    const showVal = (v: number | null) => v === null ? '—' : v.toLocaleString();
 
     if (loading) {
         return (
@@ -502,8 +504,39 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
 
 
 
-                    {/* ── Hero Signal Tile + KPIs ─────────────────────────────────────── */}
-                    <div className="grid-4" style={{ marginBottom: 20 }}>
+                    {/* ── LinkedIn Token Warning Banner ─────────────────────── */}
+                    {isAdmin && linkedinConnected === false && (
+                        <div style={{
+                            background: 'rgba(239,68,68,0.07)',
+                            border: '1px solid rgba(239,68,68,0.3)',
+                            borderRadius: 12,
+                            padding: '12px 18px',
+                            marginBottom: 16,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            flexWrap: 'wrap',
+                        }}>
+                            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#dc2626', marginBottom: 2 }}>
+                                    LinkedIn API — Token Expired or Invalid
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                    {linkedinError} · Live LinkedIn metrics are unavailable until the token is reconnected — tiles show “—” rather than estimated data.
+                                </div>
+                            </div>
+                            <a
+                                href="/settings"
+                                style={{ fontSize: '0.78rem', fontWeight: 600, color: '#dc2626', textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                            >
+                                Update Token in Settings →
+                            </a>
+                        </div>
+                    )}
+
+                    {/* ── Real LinkedIn Company-Page KPIs ─────────────────────────────── */}
+                    <div className="grid-4" style={{ marginBottom: 16 }}>
                         <div className="glass-card glass-card-hover" style={{ padding: 20 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                                 <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -511,36 +544,23 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                 </div>
                                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL FOLLOWERS</span>
                             </div>
-                            <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{summary?.total_followers?.toLocaleString() || '—'}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                                <span style={{ fontSize: '0.75rem', color: summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
-                                    {summary?.weekly_growth >= 0 ? '+' : ''}{summary?.weekly_growth || 0} this week
-                                </span>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: kFollowers === null ? 'var(--text-muted)' : undefined }}>{showVal(kFollowers)}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                                {summary?.organic_followers != null
+                                    ? `${Number(summary.organic_followers).toLocaleString()} organic · ${Number(summary.paid_followers || 0).toLocaleString()} paid`
+                                    : (kFollowers === null ? 'Syncing after quota reset' : 'Company page total')}
                             </div>
-                            {summary?.sparkline?.length > 0 && (
-                                <ResponsiveContainer width="100%" height={30} style={{ marginTop: 12 }}>
-                                    <AreaChart data={summary.sparkline.slice(-7)}>
-                                        <Tooltip
-                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.75rem', padding: '4px 8px' }}
-                                            formatter={(value: any) => [value, 'Followers']}
-                                            labelStyle={{ display: 'none' }}
-                                            cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '3 3' }}
-                                        />
-                                        <Area type="monotone" dataKey="value" stroke="var(--accent)" fill="var(--accent-glow)" strokeWidth={2} dot={false} />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            )}
                         </div>
 
                         <div className="glass-card glass-card-hover" style={{ padding: 20 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Eye size={18} color="var(--info)" />
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Eye size={18} color="var(--purple)" />
                                 </div>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>PAGE VISITORS</span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>IMPRESSIONS</span>
                             </div>
-                            <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{metrics.reduce((sum, m) => sum + m.visitors, 0).toLocaleString()}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Last 30 days</div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: kImpressions === null ? 'var(--text-muted)' : undefined }}>{showVal(kImpressions)}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Lifetime page impressions</div>
                         </div>
 
                         <div className="glass-card glass-card-hover" style={{ padding: 20 }}>
@@ -559,62 +579,33 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                 <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <Heart size={18} color="var(--warning)" />
                                 </div>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>AVG. ENGAGEMENT</span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>ENGAGEMENT RATE</span>
                             </div>
-                            <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{summary?.avg_engagement_rate || 0}%</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Engagement rate</div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: kEngagement === null ? 'var(--text-muted)' : undefined }}>{kEngagement === null ? '—' : `${kEngagement}%`}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Across all page content</div>
                         </div>
                     </div>
 
-                    {/* ── Charts Row ──────────────────────────────────────────────────── */}
-                    <div className="grid-2" style={{ marginBottom: 20 }}>
-                        <div className="chart-container">
-                            <div className="chart-title">📈 Follower Growth</div>
-                            <ResponsiveContainer width="100%" height={200}>
-                                <AreaChart data={chartData}>
-                                    <defs>
-                                        <linearGradient id="followGrad" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                                    <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                                    <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                                    <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                                    <Area type="monotone" dataKey="followers" stroke="var(--accent)" fill="url(#followGrad)" strokeWidth={2} dot={false} />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-
-                        <div className="chart-container">
-                            <div className="chart-title">👁 Page Visitors</div>
-                            <ResponsiveContainer width="100%" height={200}>
-                                <LineChart data={chartData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                                    <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                                    <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                                    <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                                    <Line type="monotone" dataKey="visitors" stroke="var(--purple)" strokeWidth={2} dot={false} />
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
+                    {/* ── Real engagement sub-metrics ─────────────────────────────────── */}
+                    <div className="grid-4" style={{ marginBottom: 8 }}>
+                        {[
+                            { label: 'UNIQUE REACH', value: kReach },
+                            { label: 'POST CLICKS', value: kClicks },
+                            { label: 'REACTIONS', value: kLikes },
+                            { label: 'COMMENTS', value: kComments },
+                        ].map(s => (
+                            <div key={s.label} className="glass-card" style={{ padding: '14px 18px' }}>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>{s.label}</div>
+                                <div style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: 4, color: s.value === null ? 'var(--text-muted)' : undefined }}>{showVal(s.value)}</div>
+                            </div>
+                        ))}
                     </div>
 
-                    <div className="chart-container" style={{ marginBottom: 20 }}>
-                        <div className="chart-title">💬 Post Interaction Trends</div>
-                        <ResponsiveContainer width="100%" height={180}>
-                            <BarChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                                <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                                <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                                <Legend wrapperStyle={{ fontSize: 11 }} />
-                                <Bar dataKey="likes" fill="var(--accent)" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="comments" fill="var(--purple)" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="shares" fill="var(--info)" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                    {/* Honest note about what's live vs. pending the daily-quota reset */}
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {meta.available
+                            ? <>Live LinkedIn data{meta.last_updated ? ` · updated ${new Date(meta.last_updated).toLocaleString()}` : ''}{meta.rate_limited ? ' · follower/visitor counts sync after LinkedIn\'s daily quota resets (00:00 UTC)' : ''}. Open the Analytics Hub for the full breakdown.</>
+                            : <>Waiting for the first LinkedIn sync — metrics appear once the API responds.</>}
                     </div>
 
                     {/* ── Task Panel + Calendar ────────────────────────────────────────── */}

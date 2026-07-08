@@ -45,10 +45,20 @@ export const getTaskStatusInfo = (t: Task) => {
 
 // ── Login Popup ────────────────────────────────────────────────────────────
 const LoginPopup: React.FC<{ onClose: () => void; user: User; tasks: Task[]; pendingApprovals: Task[] }> = ({ onClose, user, tasks, pendingApprovals }) => {
+    // For agents, show their pending tasks (tasks that are not completed and are claimed/assigned to them)
+    const agentPendingTasks = tasks.filter(t =>
+        t.status !== 'completed' &&
+        (t.claimed_by_id === user.id || t.assignments?.some(a => a.agent_id === user.id))
+    );
+
+    // For admins, look at due today tasks across all agents
     const dueTodayTasks = tasks.filter(t =>
         t.due_date && new Date(t.due_date).toDateString() === new Date().toDateString() && t.status !== 'completed'
     );
-    const allClear = dueTodayTasks.length === 0 && pendingApprovals.length === 0;
+
+    const allClear = user.role === 'agent'
+        ? agentPendingTasks.length === 0
+        : dueTodayTasks.length === 0 && pendingApprovals.length === 0;
 
     return (
         <div className="modal-overlay" onClick={onClose}>
@@ -66,16 +76,20 @@ const LoginPopup: React.FC<{ onClose: () => void; user: User; tasks: Task[]; pen
                     </div>
                 ) : (
                     <div>
-                        {user.role === 'agent' && dueTodayTasks.length > 0 && (
+                        {user.role === 'agent' && agentPendingTasks.length > 0 && (
                             <div>
                                 <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--warning)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <Clock size={14} /> Tasks Due Today ({dueTodayTasks.length})
+                                    <Clock size={14} /> Your Pending Tasks ({agentPendingTasks.length})
                                 </div>
-                                {dueTodayTasks.map(t => (
+                                {agentPendingTasks.map(t => (
                                     <div key={t.id} className="glass-card" style={{ padding: '10px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
                                         <CheckSquare size={14} color="var(--warning)" />
                                         <span style={{ fontSize: '0.875rem', flex: 1 }}>{t.title}</span>
-                                        <span className="badge badge-warning">Due Today</span>
+                                        {t.due_date && (
+                                            <span className="badge badge-warning">
+                                                Due: {new Date(t.due_date).toLocaleDateString()}
+                                            </span>
+                                        )}
                                     </div>
                                 ))}
                             </div>

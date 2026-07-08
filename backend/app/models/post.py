@@ -40,6 +40,7 @@ class Post(Base):
     hashtags: Mapped[str] = mapped_column(Text, default="")  # JSON string
     tone: Mapped[str] = mapped_column(String(50), default="professional")
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=True)
+    task_id: Mapped[str] = mapped_column(String(36), ForeignKey("tasks.id"), nullable=True)
     created_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     approved_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     review_comment: Mapped[str] = mapped_column(Text, default="", nullable=True)
@@ -52,6 +53,7 @@ class Post(Base):
     creator = relationship("User", foreign_keys=[created_by_id], back_populates="posts")
     approver = relationship("User", foreign_keys=[approved_by_id])
     campaign = relationship("Campaign", back_populates="posts")
+    task = relationship("Task", foreign_keys=[task_id])
     drafts = relationship("PostDraft", back_populates="post", cascade="all, delete-orphan")
     comments = relationship("Comment", primaryjoin="and_(Comment.entity_type=='post', foreign(Comment.entity_id)==Post.id)", overlaps="")
     link_trackings = relationship("LinkTracking", back_populates="post")

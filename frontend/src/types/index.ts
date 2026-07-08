@@ -28,6 +28,17 @@ export interface Task {
     completed_at: string | null;
     created_at: string;
     assignments: { agent_id: string }[];
+    claimed_by_id?: string;
+    claimed_by_name?: string;
+    post?: {
+        id: string;
+        title: string;
+        content: string;
+        status: string;
+        tone?: string;
+        hashtags?: string;
+        image_url?: string;
+    } | null;
 }
 
 export interface Post {
@@ -46,6 +57,7 @@ export interface Post {
     created_by_id: string;
     created_at: string;
     campaign_id: string | null;
+    task_id?: string | null;
     predicted_reach: number;
     review_comment?: string;
     linkedin_post_id?: string;

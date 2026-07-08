@@ -1001,510 +1001,500 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
                                     </div>
 
-<<<<<<< HEAD
-    {/* Publish directly to LinkedIn checkbox */ }
-    <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input
-            type="checkbox"
-            id="publishDirectly"
-            checked={publishDirectly}
-            onChange={e => setPublishDirectly(e.target.checked)}
-            style={{ width: 16, height: 16, cursor: 'pointer' }}
-        />
-        <label htmlFor="publishDirectly" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>
-            🚀 Publish directly to LinkedIn
-        </label>
-    </div>
+                                    {/* Publish directly to LinkedIn checkbox */}
+                                    <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <input
+                                            type="checkbox"
+                                            id="publishDirectly"
+                                            checked={publishDirectly}
+                                            onChange={e => setPublishDirectly(e.target.checked)}
+                                            style={{ width: 16, height: 16, cursor: 'pointer' }}
+                                        />
+                                        <label htmlFor="publishDirectly" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                                            🚀 Publish directly to LinkedIn
+                                        </label>
+                                    </div>
 
-    {
-        (() => {
-            const activeTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;
-            const isApproved = activeTask?.post?.status === 'approved';
+                                    {(() => {
+                                        const activeTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;
+                                        const isApproved = activeTask?.post?.status === 'approved';
 
-            if (isApproved && !isAdmin) {
-                return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
-                            ✓ This draft was approved by the manager. Click below to publish it live.
-                        </div>
-                        <button className="btn btn-success w-full" onClick={handlePublishLive} disabled={savingPost}>
-                            {savingPost ? 'Publishing...' : '🚀 Publish Live on LinkedIn'}
-                        </button>
-                    </div>
-                );
-            }
+                                        if (isApproved && !isAdmin) {
+                                            return (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
+                                                        ✓ This draft was approved by the manager. Click below to publish it live.
+                                                    </div>
+                                                    <button className="btn btn-success w-full" onClick={handlePublishLive} disabled={savingPost}>
+                                                        {savingPost ? 'Publishing...' : '🚀 Publish Live on LinkedIn'}
+                                                    </button>
+                                                </div>
+                                            );
+                                        }
 
-            return (
-                <button
-                    className={`btn w-full ${publishDirectly ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ marginTop: 12 }}
-                    onClick={handlePublishPost}
-                    disabled={savingPost || !previewContent}
-                >
-                    {savingPost ? 'Processing...' : publishDirectly ? '🚀 Publish directly to LinkedIn' : isAdmin ? '📤 Save & Approve' : '📤 Submit for Review'}
-                </button>
-            );
-        })()
-    }
-=======
-                                    <button className="btn btn-secondary w-full" style={{ marginTop: 12 }} onClick={handlePublishPost} disabled={savingPost || !previewContent}>
-                                        {savingPost ? 'Saving...' : isAdmin ? '📤 Save & Approve' : '📤 Submit for Review'}
-                                    </button>
->>>>>>> 4845e36e7601048ef2b2303a8fcb1889066217c9
-                                </div >
+                                        return (
+                                            <button
+                                                className={`btn w-full ${publishDirectly ? 'btn-primary' : 'btn-secondary'}`}
+                                                style={{ marginTop: 12 }}
+                                                onClick={handlePublishPost}
+                                                disabled={savingPost || !previewContent}
+                                            >
+                                                {savingPost ? 'Processing...' : publishDirectly ? '🚀 Publish directly to LinkedIn' : isAdmin ? '📤 Save & Approve' : '📤 Submit for Review'}
+                                            </button>
+                                        );
+                                    })()}
+                                </div>
 
-    {/* Right: Live Preview */ }
-    < div className = "composer-pane" style = {{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <h4 style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Eye size={16} color="var(--purple)" /> Live Preview</h4>
+                                {/* Right: Live Preview */}
+                                <div className="composer-pane" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    <h4 style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Eye size={16} color="var(--purple)" /> Live Preview</h4>
 
-{
-    generatedContent && (
-        <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>EDIT CONTENT</label>
-            <textarea className="textarea" value={previewContent} onChange={e => setPreviewContent(e.target.value)} style={{ minHeight: 140 }} />
-        </div>
-    )
-}
+                                    {generatedContent && (
+                                        <div style={{ marginBottom: 8 }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>EDIT CONTENT</label>
+                                            <textarea className="textarea" value={previewContent} onChange={e => setPreviewContent(e.target.value)} style={{ minHeight: 140 }} />
+                                        </div>
+                                    )}
 
-<LinkedInPreview content={previewContent} hashtags={hashtags} />
+                                    <LinkedInPreview content={previewContent} hashtags={hashtags} />
 
-{
-    heatmap.length > 0 && (
-        <div className="chart-container" style={{ position: 'relative' }}>
-            <div className="chart-title">⏰ Best Time to Post ({region})</div>
-            <div style={{ overflowX: 'auto', padding: '10px 0' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: `32px repeat(24, 1fr)`, gap: 2, minWidth: 500, position: 'relative' }}>
-                    <div />
-                    {Array.from({ length: 24 }, (_, h) => (
-                        <div key={h} style={{ fontSize: '0.6rem', textAlign: 'center', color: 'var(--text-muted)' }}>{h}</div>
-                    ))}
-                    {days.map(day => (
-                        <React.Fragment key={day}>
-                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>{day}</div>
-                            {Array.from({ length: 24 }, (_, h) => {
-                                const cell = heatmap.find(c => c.day === day && c.hour === h);
-                                const intensity = cell ? cell.engagement / maxEngagement : 0;
-                                const isHovered = hoveredCell?.day === day && hoveredCell?.hour === h;
-                                return (
-                                    <div
-                                        key={h}
-                                        className="heatmap-cell"
-                                        onMouseEnter={(e) => {
-                                            const cellEl = e.currentTarget;
-                                            const containerEl = cellEl.closest('.chart-container');
-                                            if (containerEl) {
-                                                const cellRect = cellEl.getBoundingClientRect();
-                                                const containerRect = containerEl.getBoundingClientRect();
-                                                setHoveredCell({
-                                                    day,
-                                                    hour: h,
-                                                    engagement: cell?.engagement || 0,
-                                                    x: cellRect.left - containerRect.left + cellRect.width / 2,
-                                                    y: cellRect.top - containerRect.top
-                                                });
-                                            }
-                                        }}
-                                        onMouseLeave={() => setHoveredCell(null)}
-                                        onClick={() => handleHeatmapCellClick(day, h)}
-                                        style={{
-                                            background: `rgba(0, 198, 167, ${intensity * 0.9 + 0.05})`,
-                                            aspectRatio: '1',
-                                            borderRadius: '3px',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.15s ease',
-                                            transform: isHovered ? 'scale(1.25)' : 'scale(1)',
-                                            boxShadow: isHovered ? '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)' : 'none',
-                                            border: isHovered ? '2px solid #fff' : '1px solid rgba(255,255,255,0.05)',
-                                            zIndex: isHovered ? 10 : 1,
-                                            position: 'relative'
-                                        }}
-                                    />
-                                );
-                            })}
-                        </React.Fragment>
-                    ))}
-                </div>
-            </div>
-            {hoveredCell && (
-                <div style={{
-                    position: 'absolute',
-                    left: hoveredCell.x,
-                    top: hoveredCell.y,
-                    transform: 'translate(-50%, -125%)',
-                    background: '#0f172a',
-                    color: '#fff',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    pointerEvents: 'none',
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5)',
-                    zIndex: 9999,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 4,
-                    border: '1px solid rgba(255,255,255,0.1)'
-                }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>
-                        📅 {hoveredCell.day} at {hoveredCell.hour}:00
-                    </div>
-                    <div style={{ color: '#2dd4bf', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        🔥 {hoveredCell.engagement} engagement
-                    </div>
-                    <div style={{ color: '#94a3b8', fontSize: '0.62rem', fontWeight: 400, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4, marginTop: 2 }}>
-                        ⚡ Click to schedule post
-                    </div>
-                    <div style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        width: 0,
-                        height: 0,
-                        borderLeft: '6px solid transparent',
-                        borderRight: '6px solid transparent',
-                        borderTop: '6px solid #0f172a',
-                    }} />
-                </div>
-            )}
-        </div>
-    )
-}
+                                    {
+                                        heatmap.length > 0 && (
+                                            <div className="chart-container" style={{ position: 'relative' }}>
+                                                <div className="chart-title">⏰ Best Time to Post ({region})</div>
+                                                <div style={{ overflowX: 'auto', padding: '10px 0' }}>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: `32px repeat(24, 1fr)`, gap: 2, minWidth: 500, position: 'relative' }}>
+                                                        <div />
+                                                        {Array.from({ length: 24 }, (_, h) => (
+                                                            <div key={h} style={{ fontSize: '0.6rem', textAlign: 'center', color: 'var(--text-muted)' }}>{h}</div>
+                                                        ))}
+                                                        {days.map(day => (
+                                                            <React.Fragment key={day}>
+                                                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>{day}</div>
+                                                                {Array.from({ length: 24 }, (_, h) => {
+                                                                    const cell = heatmap.find(c => c.day === day && c.hour === h);
+                                                                    const intensity = cell ? cell.engagement / maxEngagement : 0;
+                                                                    const isHovered = hoveredCell?.day === day && hoveredCell?.hour === h;
+                                                                    return (
+                                                                        <div
+                                                                            key={h}
+                                                                            className="heatmap-cell"
+                                                                            onMouseEnter={(e) => {
+                                                                                const cellEl = e.currentTarget;
+                                                                                const containerEl = cellEl.closest('.chart-container');
+                                                                                if (containerEl) {
+                                                                                    const cellRect = cellEl.getBoundingClientRect();
+                                                                                    const containerRect = containerEl.getBoundingClientRect();
+                                                                                    setHoveredCell({
+                                                                                        day,
+                                                                                        hour: h,
+                                                                                        engagement: cell?.engagement || 0,
+                                                                                        x: cellRect.left - containerRect.left + cellRect.width / 2,
+                                                                                        y: cellRect.top - containerRect.top
+                                                                                    });
+                                                                                }
+                                                                            }}
+                                                                            onMouseLeave={() => setHoveredCell(null)}
+                                                                            onClick={() => handleHeatmapCellClick(day, h)}
+                                                                            style={{
+                                                                                background: `rgba(0, 198, 167, ${intensity * 0.9 + 0.05})`,
+                                                                                aspectRatio: '1',
+                                                                                borderRadius: '3px',
+                                                                                cursor: 'pointer',
+                                                                                transition: 'all 0.15s ease',
+                                                                                transform: isHovered ? 'scale(1.25)' : 'scale(1)',
+                                                                                boxShadow: isHovered ? '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)' : 'none',
+                                                                                border: isHovered ? '2px solid #fff' : '1px solid rgba(255,255,255,0.05)',
+                                                                                zIndex: isHovered ? 10 : 1,
+                                                                                position: 'relative'
+                                                                            }}
+                                                                        />
+                                                                    );
+                                                                })}
+                                                            </React.Fragment>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                {hoveredCell && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        left: hoveredCell.x,
+                                                        top: hoveredCell.y,
+                                                        transform: 'translate(-50%, -125%)',
+                                                        background: '#0f172a',
+                                                        color: '#fff',
+                                                        padding: '8px 12px',
+                                                        borderRadius: '8px',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 600,
+                                                        pointerEvents: 'none',
+                                                        whiteSpace: 'nowrap',
+                                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5)',
+                                                        zIndex: 9999,
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        gap: 4,
+                                                        border: '1px solid rgba(255,255,255,0.1)'
+                                                    }}>
+                                                        <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                                                            📅 {hoveredCell.day} at {hoveredCell.hour}:00
+                                                        </div>
+                                                        <div style={{ color: '#2dd4bf', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                            🔥 {hoveredCell.engagement} engagement
+                                                        </div>
+                                                        <div style={{ color: '#94a3b8', fontSize: '0.62rem', fontWeight: 400, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4, marginTop: 2 }}>
+                                                            ⚡ Click to schedule post
+                                                        </div>
+                                                        <div style={{
+                                                            position: 'absolute',
+                                                            top: '100%',
+                                                            left: '50%',
+                                                            transform: 'translateX(-50%)',
+                                                            width: 0,
+                                                            height: 0,
+                                                            borderLeft: '6px solid transparent',
+                                                            borderRight: '6px solid transparent',
+                                                            borderTop: '6px solid #0f172a',
+                                                        }} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    }
                                 </div >
                             </div >
                         </div >
                     ) : (
-    /* Published Posts History view */
-    <div>
-        {selectedHistoryPost ? (
-            /* Detailed view */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setSelectedHistoryPost(null)}
-                    style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                >
-                    ← Back to posts
-                </button>
+                        /* Published Posts History view */
+                        <div>
+                            {selectedHistoryPost ? (
+                                /* Detailed view */
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => setSelectedHistoryPost(null)}
+                                        style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                    >
+                                        ← Back to posts
+                                    </button>
 
-                <div className="split-pane">
-                    {/* Left Column */}
-                    <div className="composer-pane" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <div className="glass-card" style={{ padding: 18 }}>
-                            <h4 style={{ margin: 0, marginBottom: 12 }}>Post Content</h4>
-                            <div style={{
-                                fontSize: '0.85rem',
-                                color: 'var(--text-primary)',
-                                background: 'var(--bg-tertiary)',
-                                padding: 12,
-                                borderRadius: 6,
-                                whiteSpace: 'pre-wrap',
-                                lineHeight: 1.6,
-                                maxHeight: 250,
-                                overflowY: 'auto'
-                            }}>
-                                {selectedHistoryPost.content}
-                            </div>
-                        </div>
+                                    <div className="split-pane">
+                                        {/* Left Column */}
+                                        <div className="composer-pane" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                            <div className="glass-card" style={{ padding: 18 }}>
+                                                <h4 style={{ margin: 0, marginBottom: 12 }}>Post Content</h4>
+                                                <div style={{
+                                                    fontSize: '0.85rem',
+                                                    color: 'var(--text-primary)',
+                                                    background: 'var(--bg-tertiary)',
+                                                    padding: 12,
+                                                    borderRadius: 6,
+                                                    whiteSpace: 'pre-wrap',
+                                                    lineHeight: 1.6,
+                                                    maxHeight: 250,
+                                                    overflowY: 'auto'
+                                                }}>
+                                                    {selectedHistoryPost.content}
+                                                </div>
+                                            </div>
 
-                        {/* LinkedIn Post Link Card */}
-                        <div className="glass-card" style={{ padding: 18 }}>
-                            <h4 style={{ margin: 0, marginBottom: 6 }}>🔗 LinkedIn post link</h4>
-                            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                <input
-                                    className="input"
-                                    placeholder="https://www.linkedin.com/feed/update/urn:li:share:..."
-                                    value={editingLinkUrl}
-                                    onChange={e => setEditingLinkUrl(e.target.value)}
-                                />
-                                <button
-                                    className="btn btn-primary"
-                                    onClick={() => handleSaveLinkedInLink(editingLinkUrl)}
-                                >
-                                    Save
-                                </button>
-                            </div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 6 }}>
-                                Paste the LinkedIn URL here to enable sync and preview.
-                            </div>
-                        </div>
+                                            {/* LinkedIn Post Link Card */}
+                                            <div className="glass-card" style={{ padding: 18 }}>
+                                                <h4 style={{ margin: 0, marginBottom: 6 }}>🔗 LinkedIn post link</h4>
+                                                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                                    <input
+                                                        className="input"
+                                                        placeholder="https://www.linkedin.com/feed/update/urn:li:share:..."
+                                                        value={editingLinkUrl}
+                                                        onChange={e => setEditingLinkUrl(e.target.value)}
+                                                    />
+                                                    <button
+                                                        className="btn btn-primary"
+                                                        onClick={() => handleSaveLinkedInLink(editingLinkUrl)}
+                                                    >
+                                                        Save
+                                                    </button>
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 6 }}>
+                                                    Paste the LinkedIn URL here to enable sync and preview.
+                                                </div>
+                                            </div>
 
-                        {/* Engagement Metrics Card */}
-                        <div className="glass-card" style={{ padding: 18 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                                <h4 style={{ margin: 0 }}>📊 Engagement metrics</h4>
-                                <button
-                                    className="btn btn-secondary btn-sm"
-                                    disabled={!selectedHistoryPost.linkedin_post_id}
-                                    onClick={handleDemoSync}
-                                >
-                                    Check LinkedIn
-                                </button>
-                            </div>
+                                            {/* Engagement Metrics Card */}
+                                            <div className="glass-card" style={{ padding: 18 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                                                    <h4 style={{ margin: 0 }}>📊 Engagement metrics</h4>
+                                                    <button
+                                                        className="btn btn-secondary btn-sm"
+                                                        disabled={!selectedHistoryPost.linkedin_post_id}
+                                                        onClick={handleDemoSync}
+                                                    >
+                                                        Check LinkedIn
+                                                    </button>
+                                                </div>
 
-                            {historyPostMetrics.available ? (
-                                <div className="grid-3">
-                                    <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>LIKES</div>
-                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--success)' }}>{historyPostMetrics.likes || 0}</div>
-                                    </div>
-                                    <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>COMMENTS</div>
-                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--accent)' }}>{historyPostMetrics.comments || 0}</div>
-                                    </div>
-                                    <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>SHARES</div>
-                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--info)' }}>{historyPostMetrics.shares || 0}</div>
+                                                {historyPostMetrics.available ? (
+                                                    <div className="grid-3">
+                                                        <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>LIKES</div>
+                                                            <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--success)' }}>{historyPostMetrics.likes || 0}</div>
+                                                        </div>
+                                                        <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>COMMENTS</div>
+                                                            <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--accent)' }}>{historyPostMetrics.comments || 0}</div>
+                                                        </div>
+                                                        <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>SHARES</div>
+                                                            <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--info)' }}>{historyPostMetrics.shares || 0}</div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ background: 'var(--bg-tertiary)', padding: '16px 14px', borderRadius: 8, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                                                        <span style={{ fontSize: '1rem', flexShrink: 0 }}>🔒</span>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                                                            Per-post likes/comments/shares aren't available via the LinkedIn API for this token
+                                                            (it requires Community Management API access). Aggregate company-page engagement is
+                                                            shown live on the <strong>Analytics Hub</strong>.
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Right Column */}
+                                        <div className="composer-pane" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                            <h4 style={{ marginBottom: 0 }}>LinkedIn Live Preview</h4>
+
+                                            <LinkedInPreview
+                                                content={selectedHistoryPost.content}
+                                                hashtags={selectedHistoryPost.hashtags}
+                                            />
+
+                                            {selectedHistoryPost.hashtags && (
+                                                <div className="glass-card" style={{ padding: 14 }}>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>HASHTAGS USED</div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                                        {selectedHistoryPost.hashtags.split(/\s+/).map((h, i) => (
+                                                            <span key={i} className="badge badge-accent" style={{ fontSize: '0.7rem' }}>
+                                                                {h}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             ) : (
-                                <div style={{ background: 'var(--bg-tertiary)', padding: '16px 14px', borderRadius: 8, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                                    <span style={{ fontSize: '1rem', flexShrink: 0 }}>🔒</span>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                                        Per-post likes/comments/shares aren't available via the LinkedIn API for this token
-                                        (it requires Community Management API access). Aggregate company-page engagement is
-                                        shown live on the <strong>Analytics Hub</strong>.
+                                /* List view */
+                                <div>
+                                    {/* KPI Summary Cards */}
+                                    <div className="grid-4" style={{ marginBottom: 20 }}>
+                                        <div className="glass-card" style={{ padding: 16 }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL POSTS</div>
+                                            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{publishedPosts.length}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>{filteredHistoryPosts.length} filtered</div>
+                                        </div>
+                                        <div className="glass-card" style={{ padding: 16 }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>THIS MONTH</div>
+                                            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{postsThisMonth}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Active postings</div>
+                                        </div>
+                                        <div className="glass-card" style={{ padding: 16 }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>WITH LINKEDIN LINK</div>
+                                            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{postsWithLink}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Linked to a live post</div>
+                                        </div>
+                                        <div className="glass-card" style={{ padding: 16 }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>CONTENT TYPES</div>
+                                            <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{distinctPostTypes}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Distinct post formats</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Filters panel */}
+                                    <div className="glass-card" style={{ padding: 16, marginBottom: 20 }}>
+                                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                                            <div style={{ flex: 1, minWidth: 200 }}>
+                                                <input
+                                                    className="input"
+                                                    placeholder="Search posts..."
+                                                    value={historySearch}
+                                                    onChange={e => setHistorySearch(e.target.value)}
+                                                />
+                                            </div>
+                                            <div>
+                                                <select className="select" value={historyType} onChange={e => setHistoryType(e.target.value)}>
+                                                    <option value="all">All types</option>
+                                                    <option value="job_posting">Job posting</option>
+                                                    <option value="jd_post">JD post</option>
+                                                    <option value="industry_tip">Industry tip</option>
+                                                    <option value="ai_carousel">AI Carousel</option>
+                                                    <option value="resume_advice">Resume advice</option>
+                                                    <option value="general">General</option>
+                                                </select>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>From:</span>
+                                                <input className="input" type="date" value={historyFromDate} onChange={e => setHistoryFromDate(e.target.value)} style={{ width: 'auto' }} />
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>To:</span>
+                                                <input className="input" type="date" value={historyToDate} onChange={e => setHistoryToDate(e.target.value)} style={{ width: 'auto' }} />
+                                            </div>
+                                            {(historySearch || historyFromDate || historyToDate || historyType !== 'all') && (
+                                                <button
+                                                    className="btn btn-ghost btn-sm"
+                                                    onClick={() => {
+                                                        setHistorySearch('');
+                                                        setHistoryFromDate('');
+                                                        setHistoryToDate('');
+                                                        setHistoryType('all');
+                                                    }}
+                                                    style={{ color: 'var(--danger)' }}
+                                                >
+                                                    Clear Filters
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Posts Scrollable Container */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
+                                        {filteredHistoryPosts.length === 0 && (
+                                            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: 8 }}>
+                                                No published posts found 📭
+                                            </div>
+                                        )}
+                                        {filteredHistoryPosts.map(p => {
+                                            return (
+                                                <div
+                                                    key={p.id}
+                                                    className="glass-card hover-glow"
+                                                    style={{
+                                                        padding: 16,
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center',
+                                                        gap: 16,
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div
+                                                            style={{
+                                                                fontSize: '0.88rem',
+                                                                color: 'var(--text-primary)',
+                                                                lineHeight: 1.5,
+                                                                whiteSpace: 'pre-wrap'
+                                                            }}
+                                                            className="truncate"
+                                                            title={p.content}
+                                                        >
+                                                            {p.content.length > 220 ? p.content.slice(0, 220) + '...' : p.content}
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                                                            <span className="badge badge-accent" style={{ fontSize: '0.62rem' }}>
+                                                                {p.linkedin_post_id ? 'Link Synced 🔗' : 'Text Post'}
+                                                            </span>
+                                                            <span className="badge badge-purple" style={{ fontSize: '0.62rem' }}>{p.region}</span>
+                                                            <span className="badge badge-gray" style={{ fontSize: '0.62rem' }}>
+                                                                {p.published_at ? new Date(p.published_at).toLocaleDateString() : new Date(p.created_at).toLocaleDateString()}
+                                                            </span>
+                                                            {p.linkedin_post_id && (
+                                                                <a
+                                                                    href={p.linkedin_post_id}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    style={{ fontSize: '0.73rem', color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                                                >
+                                                                    Open ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                                                        <button
+                                                            className="btn btn-secondary btn-sm"
+                                                            onClick={() => handleViewPostDetails(p)}
+                                                        >
+                                                            View
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-ghost btn-icon btn-sm"
+                                                            style={{ color: 'var(--danger)' }}
+                                                            onClick={() => handleDeleteHistoryPost(p.id)}
+                                                        >
+                                                            🗑️
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
                         </div>
-                    </div>
-
-                    {/* Right Column */}
-                    <div className="composer-pane" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <h4 style={{ marginBottom: 0 }}>LinkedIn Live Preview</h4>
-
-                        <LinkedInPreview
-                            content={selectedHistoryPost.content}
-                            hashtags={selectedHistoryPost.hashtags}
-                        />
-
-                        {selectedHistoryPost.hashtags && (
-                            <div className="glass-card" style={{ padding: 14 }}>
-                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>HASHTAGS USED</div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                    {selectedHistoryPost.hashtags.split(/\s+/).map((h, i) => (
-                                        <span key={i} className="badge badge-accent" style={{ fontSize: '0.7rem' }}>
-                                            {h}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        ) : (
-            /* List view */
-            <div>
-                {/* KPI Summary Cards */}
-                <div className="grid-4" style={{ marginBottom: 20 }}>
-                    <div className="glass-card" style={{ padding: 16 }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL POSTS</div>
-                        <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{publishedPosts.length}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>{filteredHistoryPosts.length} filtered</div>
-                    </div>
-                    <div className="glass-card" style={{ padding: 16 }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>THIS MONTH</div>
-                        <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{postsThisMonth}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Active postings</div>
-                    </div>
-                    <div className="glass-card" style={{ padding: 16 }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>WITH LINKEDIN LINK</div>
-                        <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{postsWithLink}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Linked to a live post</div>
-                    </div>
-                    <div className="glass-card" style={{ padding: 16 }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>CONTENT TYPES</div>
-                        <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{distinctPostTypes}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Distinct post formats</div>
-                    </div>
-                </div>
-
-                {/* Filters panel */}
-                <div className="glass-card" style={{ padding: 16, marginBottom: 20 }}>
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <div style={{ flex: 1, minWidth: 200 }}>
-                            <input
-                                className="input"
-                                placeholder="Search posts..."
-                                value={historySearch}
-                                onChange={e => setHistorySearch(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <select className="select" value={historyType} onChange={e => setHistoryType(e.target.value)}>
-                                <option value="all">All types</option>
-                                <option value="job_posting">Job posting</option>
-                                <option value="jd_post">JD post</option>
-                                <option value="industry_tip">Industry tip</option>
-                                <option value="ai_carousel">AI Carousel</option>
-                                <option value="resume_advice">Resume advice</option>
-                                <option value="general">General</option>
-                            </select>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>From:</span>
-                            <input className="input" type="date" value={historyFromDate} onChange={e => setHistoryFromDate(e.target.value)} style={{ width: 'auto' }} />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>To:</span>
-                            <input className="input" type="date" value={historyToDate} onChange={e => setHistoryToDate(e.target.value)} style={{ width: 'auto' }} />
-                        </div>
-                        {(historySearch || historyFromDate || historyToDate || historyType !== 'all') && (
-                            <button
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => {
-                                    setHistorySearch('');
-                                    setHistoryFromDate('');
-                                    setHistoryToDate('');
-                                    setHistoryType('all');
-                                }}
-                                style={{ color: 'var(--danger)' }}
-                            >
-                                Clear Filters
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                {/* Posts Scrollable Container */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
-                    {filteredHistoryPosts.length === 0 && (
-                        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: 8 }}>
-                            No published posts found 📭
-                        </div>
                     )}
-                    {filteredHistoryPosts.map(p => {
-                        return (
-                            <div
-                                key={p.id}
-                                className="glass-card hover-glow"
-                                style={{
-                                    padding: 16,
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    gap: 16,
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div
-                                        style={{
-                                            fontSize: '0.88rem',
-                                            color: 'var(--text-primary)',
-                                            lineHeight: 1.5,
-                                            whiteSpace: 'pre-wrap'
-                                        }}
-                                        className="truncate"
-                                        title={p.content}
-                                    >
-                                        {p.content.length > 220 ? p.content.slice(0, 220) + '...' : p.content}
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                                        <span className="badge badge-accent" style={{ fontSize: '0.62rem' }}>
-                                            {p.linkedin_post_id ? 'Link Synced 🔗' : 'Text Post'}
-                                        </span>
-                                        <span className="badge badge-purple" style={{ fontSize: '0.62rem' }}>{p.region}</span>
-                                        <span className="badge badge-gray" style={{ fontSize: '0.62rem' }}>
-                                            {p.published_at ? new Date(p.published_at).toLocaleDateString() : new Date(p.created_at).toLocaleDateString()}
-                                        </span>
-                                        {p.linkedin_post_id && (
-                                            <a
-                                                href={p.linkedin_post_id}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                style={{ fontSize: '0.73rem', color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                            >
-                                                Open ↗
-                                            </a>
-                                        )}
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                                    <button
-                                        className="btn btn-secondary btn-sm"
-                                        onClick={() => handleViewPostDetails(p)}
-                                    >
-                                        View
-                                    </button>
-                                    <button
-                                        className="btn btn-ghost btn-icon btn-sm"
-                                        style={{ color: 'var(--danger)' }}
-                                        onClick={() => handleDeleteHistoryPost(p.id)}
-                                    >
-                                        🗑️
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        )}
-    </div>
-)}
                 </div >
             )}
 
-{/* ── Kanban Tab ────────────────────────────────────────────────── */ }
-{
-    tab === 'kanban' && (
-        <div>
-            <div style={{ marginBottom: 16 }}>
-                <h4>Approval Pipeline</h4>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Drag posts through the review process</p>
-            </div>
-            <KanbanBoardView board={board} onRefresh={loadAll} />
-        </div>
-    )
-}
-
-{/* ── Library Tab ───────────────────────────────────────────────── */ }
-{
-    tab === 'library' && (
-        <div>
-            <div style={{ marginBottom: 16 }}>
-                <h4>📚 Post Templates & Library</h4>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Reuse successful posts as templates for new content</p>
-            </div>
-            {templates.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
-                    <FileText size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-                    <p>No templates yet. Save a post as a template from the composer.</p>
-                </div>
-            ) : (
-                <div className="grid-auto">
-                    {templates.map(p => (
-                        <div key={p.id} className="glass-card glass-card-hover" style={{ padding: 16, cursor: 'pointer' }} onClick={() => {
-                            setPreviewContent(p.content);
-                            setGeneratedContent(p.content);
-                            setHashtags(p.hashtags);
-                            setPostType(p.post_type);
-                            setTone(p.tone);
-                            setTab('composer');
-                        }}>
-                            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                                <span className="badge badge-muted">{p.post_type.replace('_', ' ')}</span>
-                                <span className="badge badge-accent">{p.region}</span>
-                            </div>
-                            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }} className="truncate">
-                                {p.content.slice(0, 120)}...
-                            </p>
-                            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{p.predicted_reach.toLocaleString()} predicted reach</span>
-                                <button className="btn btn-sm btn-ghost">Use Template →</button>
-                            </div>
+            {/* ── Kanban Tab ────────────────────────────────────────────────── */}
+            {
+                tab === 'kanban' && (
+                    <div>
+                        <div style={{ marginBottom: 16 }}>
+                            <h4>Approval Pipeline</h4>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Drag posts through the review process</p>
                         </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    )
-}
+                        <KanbanBoardView board={board} onRefresh={loadAll} />
+                    </div>
+                )
+            }
+
+            {/* ── Library Tab ───────────────────────────────────────────────── */}
+            {
+                tab === 'library' && (
+                    <div>
+                        <div style={{ marginBottom: 16 }}>
+                            <h4>📚 Post Templates & Library</h4>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Reuse successful posts as templates for new content</p>
+                        </div>
+                        {templates.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
+                                <FileText size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+                                <p>No templates yet. Save a post as a template from the composer.</p>
+                            </div>
+                        ) : (
+                            <div className="grid-auto">
+                                {templates.map(p => (
+                                    <div key={p.id} className="glass-card glass-card-hover" style={{ padding: 16, cursor: 'pointer' }} onClick={() => {
+                                        setPreviewContent(p.content);
+                                        setGeneratedContent(p.content);
+                                        setHashtags(p.hashtags);
+                                        setPostType(p.post_type);
+                                        setTone(p.tone);
+                                        setTab('composer');
+                                    }}>
+                                        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                                            <span className="badge badge-muted">{p.post_type.replace('_', ' ')}</span>
+                                            <span className="badge badge-accent">{p.region}</span>
+                                        </div>
+                                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }} className="truncate">
+                                            {p.content.slice(0, 120)}...
+                                        </p>
+                                        <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{p.predicted_reach.toLocaleString()} predicted reach</span>
+                                            <button className="btn btn-sm btn-ghost">Use Template →</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )
+            }
 
 
         </div >

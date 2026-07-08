@@ -13,6 +13,7 @@ import { Task, User } from '../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AnalyticsHubView } from './AnalyticsHubView';
+import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 export const getTaskStatusInfo = (t: Task) => {
     if (t.status === 'completed') {
@@ -546,12 +547,28 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                 </div>
                                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL FOLLOWERS</span>
                             </div>
-                            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: kFollowers === null ? 'var(--text-muted)' : undefined }}>{showVal(kFollowers)}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                                {summary?.organic_followers != null
-                                    ? `${Number(summary.organic_followers).toLocaleString()} organic · ${Number(summary.paid_followers || 0).toLocaleString()} paid`
-                                    : (kFollowers === null ? 'Syncing after quota reset' : 'Company page total')}
+                            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: kFollowers === null ? 'var(--text-muted)' : undefined }}>
+                                {kFollowers !== null ? showVal(kFollowers) : (summary?.total_followers?.toLocaleString() || '—')}
                             </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                                <TrendingUp size={14} color={summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)'} />
+                                <span style={{ fontSize: '0.8rem', color: summary?.weekly_growth >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
+                                    {summary?.weekly_growth >= 0 ? '+' : ''}{summary?.weekly_growth || 0} this week
+                                </span>
+                            </div>
+                            {summary?.sparkline?.length > 0 ? (
+                                <ResponsiveContainer width="100%" height={40} style={{ marginTop: 8 }}>
+                                    <AreaChart data={summary.sparkline.slice(-7)}>
+                                        <Area type="monotone" dataKey="value" stroke="var(--accent)" fill="var(--accent-glow)" strokeWidth={2} dot={false} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                                    {summary?.organic_followers != null
+                                        ? `${Number(summary.organic_followers).toLocaleString()} organic · ${Number(summary.paid_followers || 0).toLocaleString()} paid`
+                                        : (kFollowers === null ? 'Syncing after quota reset' : 'Company page total')}
+                                </div>
+                            )}
                         </div>
 
                         <div className="glass-card glass-card-hover" style={{ padding: 20 }}>
@@ -706,7 +723,6 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                     </div>
                 </>
             )}
-
         </div>
     );
 };

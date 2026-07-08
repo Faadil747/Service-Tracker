@@ -393,10 +393,24 @@ a {
 }
 
 .glass-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 30px -4px rgba(15, 23, 42, 0.03), 0 4px 12px -2px rgba(15, 23, 42, 0.02);
+  transition: all var(--transition);
+}
+
+.glass-card-hover {
+  transition: all var(--transition);
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(37, 99, 235, 0.25);
+  box-shadow: 0 12px 30px -4px rgba(37, 99, 235, 0.08), 0 4px 12px -2px rgba(37, 99, 235, 0.04);
 }
 
 .stat-card {
@@ -1306,7 +1320,7 @@ a {
 }
 
 .kanban-col {
-  background: var(--bg-secondary);
+  background: rgba(248, 250, 252, 0.45);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 14px;
@@ -1315,7 +1329,7 @@ a {
   gap: 12px;
   min-height: 500px;
   background-clip: padding-box;
-  transition: all var(--transition-normal);
+  transition: all var(--transition);
 }
 
 .kanban-col.drag-over {
@@ -1335,20 +1349,23 @@ a {
 }
 
 .kanban-card {
-  background: #ffffff;
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: var(--radius-md);
   padding: 14px;
   cursor: grab;
-  transition: all var(--transition-normal);
-  box-shadow: var(--shadow-sm);
+  transition: all var(--transition);
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.03);
   will-change: transform, box-shadow;
 }
 
 .kanban-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--accent);
+  box-shadow: 0 8px 24px -4px rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.6);
+  background: #ffffff;
 }
 
 .kanban-card:active {
@@ -1359,215 +1376,4 @@ a {
   opacity: 0.45;
   transform: scale(0.96);
   border: 2px dashed var(--accent);
-}
-
-/* ─── Responsive Team Management & Link Tracking ────────────────────────── */
-.team-member-card {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.team-member-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--accent-glow);
-  border: 1px solid var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  color: var(--accent);
-  font-size: 0.9rem;
-  flex-shrink: 0;
-}
-
-.team-member-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.team-member-name {
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-
-.team-member-email {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  word-break: break-all;
-}
-
-.team-member-badges {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.team-member-delete {
-  flex-shrink: 0;
-}
-
-@media (max-width: 640px) {
-  .team-member-card {
-    display: grid;
-    grid-template-areas: 
-      "avatar info delete"
-      "badges badges badges";
-    grid-template-columns: auto 1fr auto;
-    gap: 12px;
-    padding: 16px;
-  }
-
-  .team-member-avatar {
-    grid-area: avatar;
-  }
-
-  .team-member-info {
-    grid-area: info;
-  }
-
-  .team-member-delete {
-    grid-area: delete;
-    align-self: center;
-  }
-
-  .team-member-badges {
-    grid-area: badges;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-  }
-}
-
-.link-tracking-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.link-tracking-stats-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-@media (max-width: 640px) {
-  .link-tracking-card {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .link-tracking-stats-actions {
-    justify-content: space-between;
-    border-top: 1px solid var(--border);
-    padding-top: 8px;
-  }
-}
-
-/* ─── Header Responsiveness ────────────────────────────────────────── */
-.desktop-nav {
-  display: flex;
-}
-
-.mobile-menu-btn {
-  display: none;
-}
-
-@media (max-width: 1024px) {
-  .desktop-nav {
-    display: none;
-  }
-  .mobile-menu-btn {
-    display: inline-flex;
-  }
-}
-
-@media (max-width: 560px) {
-  .profile-name-text {
-    display: none;
-  }
-}
-
-/* ─── Alerts Sidebar & Alert Boxes ──────────────────────────────────── */
-.alerts-sidebar {
-  position: fixed;
-  top: 0;
-  right: -380px;
-  width: 360px;
-  height: 100vh;
-  background: #ffffff;
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-xl);
-  z-index: 2100;
-  display: flex;
-  flex-direction: column;
-  transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.alerts-sidebar.open {
-  right: 0;
-}
-
-.alerts-sidebar-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.2);
-  backdrop-filter: blur(2px);
-  z-index: 2050;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-}
-
-.alerts-sidebar-overlay.open {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.alerts-sidebar-header {
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--bg-primary);
-}
-
-.alerts-sidebar-content {
-  padding: 20px;
-  overflow-y: auto;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.alert-critical {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  background: rgba(239, 68, 68, 0.04);
-  border: 1px solid rgba(239, 68, 68, 0.15);
-  border-radius: var(--radius);
-  transition: all var(--transition);
-}
-
-.alert-high {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  background: rgba(245, 158, 11, 0.04);
-  border: 1px solid rgba(245, 158, 11, 0.15);
-  border-radius: var(--radius);
-  transition: all var(--transition);
 }

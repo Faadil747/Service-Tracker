@@ -53,6 +53,7 @@ interface Props { region: string; }
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
     draft: { label: 'Draft', color: '#94a3b8', bg: '#f1f5f9' },
     pending_review: { label: 'Pending Review', color: '#b45309', bg: '#fef3c7' },
+    pending_approval: { label: 'In Review', color: '#b45309', bg: '#fef3c7' },
     approved: { label: 'Approved', color: '#0891b2', bg: '#e0f2fe' },
     scheduled: { label: 'Scheduled', color: '#7c3aed', bg: '#f5f3ff' },
     published: { label: 'Published', color: '#10b981', bg: '#d1fae5' },
@@ -61,10 +62,12 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
 
 const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
     pending: { label: 'Pending', color: '#94a3b8', bg: '#f1f5f9' },
+    active: { label: 'Active', color: '#2563eb', bg: '#eff6ff' },
     in_progress: { label: 'In Progress', color: '#2563eb', bg: '#eff6ff' },
     pending_approval: { label: 'In Review', color: '#b45309', bg: '#fef3c7' },
     completed: { label: 'Done', color: '#10b981', bg: '#d1fae5' },
     overdue: { label: 'Overdue', color: '#ef4444', bg: '#fee2e2' },
+    on_hold: { label: 'On Hold', color: '#f59e0b', bg: '#fef3c7' },
 };
 
 type ViewMode = 'month' | 'week' | 'list';
@@ -327,8 +330,10 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
     const holidayMap = buildHolidayMap(currentDate.getFullYear());
 
     const getHolidaysForDay = (day: Date) => {
-        const key = format(day, 'yyyy-MM-dd');
-        return holidayMap[key] || [];
+        const key = safeFormat(day, 'yyyy-MM-dd');
+        const all = holidayMap[key] || [];
+        if (filterRegion === 'Global') return all;
+        return all.filter(h => h.region === filterRegion || h.region === 'Global');
     };
 
     const handleSelectPost = (p: any) => {
@@ -529,7 +534,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
 
     const handleDayClick = (day: Date) => {
         setSelectedDate(day);
-        const sch = format(day, "yyyy-MM-dd'T'HH:mm");
+        const sch = safeFormat(day, "yyyy-MM-dd'T'HH:mm");
         setNewPost(p => ({ ...p, scheduled_at: sch }));
         setNewTask(() => ({
             title: '',
@@ -632,7 +637,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                         background: isToday(day) ? 'var(--accent)' : 'transparent',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                     }}>
-                                        {format(day, 'd')}
+                                        {safeFormat(day, 'd')}
                                     </span>
                                     <div style={{ display: 'flex', gap: 3 }}>
                                         {dayPosts.length > 0 && (
@@ -744,8 +749,8 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                     fontSize: '0.78rem', fontWeight: 700,
                                     borderBottom: '1px solid var(--border)',
                                 }}>
-                                    <div style={{ textTransform: 'uppercase', fontSize: '0.62rem', letterSpacing: '0.08em', opacity: 0.8 }}>{format(day, 'EEE')}</div>
-                                    <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>{format(day, 'd')}</div>
+                                    <div style={{ textTransform: 'uppercase', fontSize: '0.62rem', letterSpacing: '0.08em', opacity: 0.8 }}>{safeFormat(day, 'EEE')}</div>
+                                    <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>{safeFormat(day, 'd')}</div>
                                 </div>
                                 <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
                                     {/* Holidays */}
@@ -873,11 +878,11 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
     };
 
     const getViewLabel = () => {
-        if (viewMode === 'month') return format(currentDate, 'MMMM yyyy');
+        if (viewMode === 'month') return safeFormat(currentDate, 'MMMM yyyy');
         if (viewMode === 'week') {
             const ws = startOfWk(currentDate, { weekStartsOn: 1 });
             const we = endOfWk(currentDate, { weekStartsOn: 1 });
-            return `${format(ws, 'MMM d')} – ${format(we, 'MMM d, yyyy')}`;
+            return `${safeFormat(ws, 'MMM d')} – ${safeFormat(we, 'MMM d, yyyy')}`;
         }
         return 'All Posts';
     };
@@ -975,10 +980,10 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                         }}>
                             <div>
                                 <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                                    {format(selectedDate, 'MMMM d, yyyy')}
+                                    {safeFormat(selectedDate, 'MMMM d, yyyy')}
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                                    {format(selectedDate, 'EEEE')}
+                                    {safeFormat(selectedDate, 'EEEE')}
                                 </div>
                             </div>
                             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowDayPanel(false)}>
@@ -1022,10 +1027,10 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                 </div>
                                 {dayPanelPosts.length === 0 ? (
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>No posts scheduled</div>
-                                ) : dayPanelPosts.map(p => {
-                                    const cfg = STATUS_CONFIG[p.status] || STATUS_CONFIG.draft;
+                                ) : dayPanelPosts.map((p, idx) => {
+                                    const cfg = STATUS_CONFIG[p.status] || STATUS_CONFIG.draft || { label: 'Draft', color: '#94a3b8', bg: '#f1f5f9' };
                                     return (
-                                        <div key={p.id} style={{
+                                        <div key={p.id || idx} style={{
                                             padding: '8px 10px', marginBottom: 6, borderRadius: 7,
                                             background: cfg.bg, border: `1px solid ${cfg.color}30`,
                                             cursor: 'pointer',
@@ -1175,11 +1180,11 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
 
                                 {dayPanelTasks.length === 0 && !showTaskForm ? (
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>No tasks due</div>
-                                ) : dayPanelTasks.map(t => {
-                                    const cfg = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.pending;
+                                ) : dayPanelTasks.map((t, idx) => {
+                                    const cfg = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.pending || { label: 'Pending', color: '#94a3b8', bg: '#f1f5f9' };
                                     const priorityColor = t.priority === 'high' ? '#ef4444' : t.priority === 'medium' ? '#f59e0b' : '#94a3b8';
                                     return (
-                                        <div key={t.id} style={{
+                                        <div key={t.id || idx} style={{
                                             padding: '8px 10px', marginBottom: 6, borderRadius: 7,
                                             background: cfg.bg, border: `1px solid ${cfg.color}30`,
                                             display: 'flex', alignItems: 'flex-start', gap: 8,
@@ -1306,11 +1311,27 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                         <div style={{ background: 'var(--bg-tertiary)', borderRadius: 8, padding: '14px', fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
                                             {selectedPost.content}
                                         </div>
-                                        {selectedPost.hashtags?.length > 0 && (
-                                            <div style={{ fontSize: '0.82rem', color: 'var(--accent)', fontWeight: 600 }}>
-                                                {selectedPost.hashtags.join(' ')}
-                                            </div>
-                                        )}
+                                        {(() => {
+                                            if (!selectedPost.hashtags) return null;
+                                            let tags: string[] = [];
+                                            if (Array.isArray(selectedPost.hashtags)) {
+                                                tags = selectedPost.hashtags;
+                                            } else if (typeof selectedPost.hashtags === 'string') {
+                                                try {
+                                                    const parsed = JSON.parse(selectedPost.hashtags);
+                                                    if (Array.isArray(parsed)) tags = parsed;
+                                                    else tags = selectedPost.hashtags.split(/[ ,]+/).filter(Boolean);
+                                                } catch {
+                                                    tags = selectedPost.hashtags.split(/[ ,]+/).filter(Boolean);
+                                                }
+                                            }
+                                            if (tags.length === 0) return null;
+                                            return (
+                                                <div style={{ fontSize: '0.82rem', color: 'var(--accent)', fontWeight: 600 }}>
+                                                    {tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ')}
+                                                </div>
+                                            );
+                                        })()}
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                                             <div>
                                                 <div className="form-label">Scheduled At</div>
@@ -1586,7 +1607,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
 
                             {selectedDate && (
                                 <div style={{ padding: '10px 14px', background: 'var(--accent-glow)', borderRadius: 8, border: '1px solid rgba(37,99,235,0.2)', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <Calendar size={14} /> Scheduling for {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+                                    <Calendar size={14} /> Scheduling for {safeFormat(selectedDate, 'EEEE, MMMM d, yyyy')}
                                 </div>
                             )}
 

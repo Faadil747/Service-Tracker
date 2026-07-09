@@ -20,6 +20,7 @@ import json
 import os
 import time
 import urllib.parse
+from datetime import date
 from typing import Optional
 
 import httpx
@@ -233,6 +234,16 @@ class LinkedInService:
             _SNAPSHOT = merged
             _LAST_FETCH_TS = time.time()
             _save_disk_cache()
+            # Persist today's follower count for daily/weekly delta tracking.
+            if merged.get("followers") is not None:
+                try:
+                    await self._save_follower_snapshot(
+                        int(merged["followers"]),
+                        int(merged.get("organic_followers") or 0),
+                        int(merged.get("paid_followers") or 0),
+                    )
+                except Exception as e:
+                    print(f"[LinkedIn] follower snapshot save failed: {e}")
             return _SNAPSHOT
 
         # Nothing fresh at all (fully throttled). Return last-good, flagged stale.
@@ -243,6 +254,33 @@ class LinkedInService:
             return {**_SNAPSHOT, "_meta": meta}
         return {"_meta": {"available": False, "rate_limited": rate_limited,
                           "reason": "LinkedIn API throttled and no cached data yet"}}
+
+    async def _save_follower_snapshot(self, followers: int, organic: int, paid: int) -> None:
+        """Upsert today's FollowerSnapshot row in the database.
+        If a row for today already exists it is updated in-place (last sync wins)."""
+        from app.database import AsyncSessionLocal
+        from app.models import FollowerSnapshot
+        from sqlalchemy import select
+
+        today = date.today()
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(FollowerSnapshot).where(FollowerSnapshot.snapshot_date == today)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                row = FollowerSnapshot(
+                    snapshot_date=today,
+                    followers=followers,
+                    organic_followers=organic,
+                    paid_followers=paid,
+                )
+                session.add(row)
+            else:
+                row.followers = followers
+                row.organic_followers = organic
+                row.paid_followers = paid
+            await session.commit()
 
     # ── individual fetchers (raise _Throttled on 429) ───────────────────────
     async def _fetch_share_stats(self, client: httpx.AsyncClient, token: str, org: str) -> dict:

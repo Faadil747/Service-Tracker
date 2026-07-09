@@ -14,7 +14,12 @@ import { Task, User } from '../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AnalyticsHubView } from './AnalyticsHubView';
-import { ResponsiveContainer, AreaChart, Area } from 'recharts';
+import {
+    ResponsiveContainer, AreaChart, Area,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+    PieChart, Pie, Cell, Legend,
+    LineChart, Line
+} from 'recharts';
 
 export const getTaskStatusInfo = (t: Task) => {
     if (t.status === 'completed') {
@@ -296,6 +301,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const [taskRecurrence, setTaskRecurrence] = useState<{ type: RecurrenceType; count: number }>({ type: 'none', count: 4 });
     const [linkedinConnected, setLinkedinConnected] = useState<boolean | null>(null);
     const [linkedinError, setLinkedinError] = useState<string>('');
+    const [followerHistory, setFollowerHistory] = useState<any>(null);
     const isAdmin = user?.role === 'admin';
     const initialLoaded = useRef(false);
 
@@ -318,6 +324,12 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
             if (oRes.status === 'fulfilled') setOverview(oRes.value.data);
             if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data);
             if (tRes.status === 'fulfilled') setTasks(tRes.value.data);
+
+            // Follower history (our own DB — always available after first sync)
+            try {
+                const fhRes = await metricsApi.followerHistory(30);
+                setFollowerHistory(fhRes.data);
+            } catch { /* non-fatal */ }
 
             if (isAdmin) {
                 const [paRes, ovRes, agRes] = await Promise.allSettled([
@@ -658,9 +670,271 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                     {/* Honest note about what's live vs. pending the daily-quota reset */}
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 6 }}>
                         {meta.available
-                            ? <>Live LinkedIn data{meta.last_updated ? ` · updated ${new Date(meta.last_updated).toLocaleString()}` : ''}{meta.rate_limited ? ' · follower/visitor counts sync after LinkedIn\'s daily quota resets (00:00 UTC)' : ''}. Open the Analytics Hub for the full breakdown.</>
+                            ? <>Live LinkedIn data{meta.last_updated ? ` · updated ${new Date(meta.last_updated).toLocaleString()}` : ''}{meta.rate_limited ? ' · follower/visitor counts sync after LinkedIn\'s daily quota resets (00:00 UTC)' : ''}.</>
                             : <>Waiting for the first LinkedIn sync — metrics appear once the API responds.</>}
                     </div>
+
+                    {/* ── Followers Growth Tracker ─────────────────────────────────────── */}
+                    <div style={{ marginBottom: 24 }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: 14 }}>👥 FOLLOWERS GROWTH TRACKER</div>
+
+                        {!followerHistory || followerHistory.snapshot_count === 0 ? (
+                            // No snapshots yet — first sync hasn't happened
+                            <div className="glass-card" style={{ padding: 24, textAlign: 'center' }}>
+                                <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>⏳</div>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>Accumulating follower history…</div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>A snapshot is saved each time LinkedIn syncs. Daily and weekly growth will appear here once we have at least two days of data.</div>
+                            </div>
+                        ) : (
+                            <div>
+                                {/* Delta Cards Row */}
+                                <div className="grid-4" style={{ marginBottom: 16 }}>
+
+                                    {/* Daily — Followed */}
+                                    <div className="glass-card" style={{ padding: '16px 20px', borderLeft: '3px solid var(--success)' }}>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>FOLLOWED YESTERDAY</div>
+                                        <div style={{ fontSize: '1.6rem', fontWeight: 700, color: followerHistory.daily_gained !== null ? 'var(--success)' : 'var(--text-muted)' }}>
+                                            {followerHistory.daily_gained !== null ? `+${followerHistory.daily_gained.toLocaleString()}` : '—'}
+                                        </div>
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                            {followerHistory.daily_gained !== null ? 'new followers (vs prev day)' : 'Need yesterday\'s snapshot'}
+                                        </div>
+                                    </div>
+
+                                    {/* Daily — Unfollowed */}
+                                    <div className="glass-card" style={{ padding: '16px 20px', borderLeft: '3px solid var(--danger)' }}>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>UNFOLLOWED YESTERDAY</div>
+                                        <div style={{ fontSize: '1.6rem', fontWeight: 700, color: followerHistory.daily_lost !== null && followerHistory.daily_lost > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                            {followerHistory.daily_lost !== null ? `-${followerHistory.daily_lost.toLocaleString()}` : '—'}
+                                        </div>
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                            {followerHistory.daily_lost !== null ? 'unfollows (vs prev day)' : 'Need yesterday\'s snapshot'}
+                                        </div>
+                                    </div>
+
+                                    {/* Weekly — Followed */}
+                                    <div className="glass-card" style={{ padding: '16px 20px', borderLeft: '3px solid #7c3aed' }}>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>FOLLOWED THIS WEEK</div>
+                                        <div style={{ fontSize: '1.6rem', fontWeight: 700, color: followerHistory.weekly_gained !== null ? '#7c3aed' : 'var(--text-muted)' }}>
+                                            {followerHistory.weekly_gained !== null ? `+${followerHistory.weekly_gained.toLocaleString()}` : '—'}
+                                        </div>
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>since Monday</div>
+                                    </div>
+
+                                    {/* Weekly — Unfollowed */}
+                                    <div className="glass-card" style={{ padding: '16px 20px', borderLeft: '3px solid #f59e0b' }}>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>UNFOLLOWED THIS WEEK</div>
+                                        <div style={{ fontSize: '1.6rem', fontWeight: 700, color: followerHistory.weekly_lost !== null && followerHistory.weekly_lost > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
+                                            {followerHistory.weekly_lost !== null ? `-${followerHistory.weekly_lost.toLocaleString()}` : '—'}
+                                        </div>
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>since Monday</div>
+                                    </div>
+                                </div>
+
+                                {/* Follower count line chart */}
+                                {followerHistory.history.length >= 2 && (
+                                    <div className="chart-container">
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                            <div className="chart-title" style={{ margin: 0 }}>Follower Count Over Time</div>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                                {followerHistory.snapshot_count} day{followerHistory.snapshot_count !== 1 ? 's' : ''} of data · grows daily
+                                            </div>
+                                        </div>
+                                        {(() => {
+                                            const data = followerHistory.history.map((h: any) => ({
+                                                date: h.date.slice(5), // MM-DD
+                                                followers: h.followers,
+                                            }));
+                                            const minF = Math.min(...data.map((d: any) => d.followers));
+                                            const maxF = Math.max(...data.map((d: any) => d.followers));
+                                            const pad = Math.max(10, Math.round((maxF - minF) * 0.1));
+                                            return (
+                                                <ResponsiveContainer width="100%" height={180}>
+                                                    <LineChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                                                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                                                        <YAxis
+                                                            domain={[minF - pad, maxF + pad]}
+                                                            tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                                                            tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
+                                                        />
+                                                        <Tooltip
+                                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
+                                                            formatter={(v: any) => [v.toLocaleString(), 'Followers']}
+                                                        />
+                                                        <Line type="monotone" dataKey="followers" stroke="#2563eb" strokeWidth={2} dot={{ r: 3, fill: '#2563eb' }} activeDot={{ r: 5 }} />
+                                                    </LineChart>
+                                                </ResponsiveContainer>
+                                            );
+                                        })()}
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8, textAlign: 'center' }}>
+                                            Daily delta = today's count − yesterday's count. Weekly = today − Monday. No estimates or fabricated data.
+                                        </div>
+                                    </div>
+                                )}
+
+                                {followerHistory.history.length < 2 && (
+                                    <div className="glass-card" style={{ padding: 16, textAlign: 'center' }}>
+                                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>📅 Line chart appears once 2+ daily snapshots are saved. Come back tomorrow!</div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── LinkedIn Analytics Charts ─────────────────────────────────────── */}
+                    {meta.available && (
+                        <div style={{ marginBottom: 24 }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: 14 }}>📊 LINKEDIN ANALYTICS — LIVE</div>
+
+                            {/* Row 1: Engagement Bar Chart + Followers Split Donut */}
+                            <div className="grid-2" style={{ marginBottom: 16 }}>
+
+                                {/* Engagement Metrics Bar Chart */}
+                                <div className="chart-container">
+                                    <div className="chart-title" style={{ marginBottom: 16 }}>Engagement Breakdown</div>
+                                    {(() => {
+                                        const engData = [
+                                            ...(kImpressions !== null ? [{ name: 'Impressions', value: kImpressions, fill: '#2563eb' }] : []),
+                                            ...(kReach !== null ? [{ name: 'Unique Reach', value: kReach, fill: '#7c3aed' }] : []),
+                                            ...(kClicks !== null ? [{ name: 'Clicks', value: kClicks, fill: '#0891b2' }] : []),
+                                            ...(kLikes !== null ? [{ name: 'Reactions', value: kLikes, fill: '#10b981' }] : []),
+                                            ...(kComments !== null ? [{ name: 'Comments', value: kComments, fill: '#f59e0b' }] : []),
+                                        ];
+                                        if (!engData.length) return <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)', fontSize: '0.8rem' }}>No engagement data available</div>;
+                                        return (
+                                            <ResponsiveContainer width="100%" height={200}>
+                                                <BarChart data={engData} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                                                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                                                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
+                                                    <Tooltip
+                                                        contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
+                                                        formatter={(v: any) => [v.toLocaleString(), '']}
+                                                    />
+                                                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                                                        {engData.map((entry, i) => (
+                                                            <Cell key={i} fill={entry.fill} />
+                                                        ))}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        );
+                                    })()}
+                                </div>
+
+                                {/* Organic vs Paid Followers Donut */}
+                                <div className="chart-container">
+                                    <div className="chart-title" style={{ marginBottom: 16 }}>Followers — Organic vs Paid</div>
+                                    {(() => {
+                                        const organic = num(li.organic_followers);
+                                        const paid = num(li.paid_followers);
+                                        if (organic === null && paid === null) {
+                                            return (
+                                                <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                                    Follower breakdown syncs after LinkedIn's daily quota resets (00:00 UTC)
+                                                </div>
+                                            );
+                                        }
+                                        const pieData = [
+                                            ...(organic !== null ? [{ name: 'Organic', value: organic }] : []),
+                                            ...(paid !== null && paid > 0 ? [{ name: 'Paid', value: paid }] : []),
+                                        ];
+                                        const PIE_COLORS = ['#2563eb', '#10b981'];
+                                        return (
+                                            <>
+                                                <ResponsiveContainer width="100%" height={180}>
+                                                    <PieChart>
+                                                        <Pie
+                                                            data={pieData}
+                                                            cx="50%" cy="50%"
+                                                            innerRadius={50} outerRadius={75}
+                                                            paddingAngle={3}
+                                                            dataKey="value"
+                                                        >
+                                                            {pieData.map((_, i) => (
+                                                                <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                                                            ))}
+                                                        </Pie>
+                                                        <Tooltip
+                                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
+                                                            formatter={(v: any) => [v.toLocaleString(), '']}
+                                                        />
+                                                        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '0.78rem' }} />
+                                                    </PieChart>
+                                                </ResponsiveContainer>
+                                                <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 4 }}>
+                                                    {pieData.map((d, i) => (
+                                                        <div key={d.name} style={{ textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: PIE_COLORS[i] }}>{d.value.toLocaleString()}</div>
+                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{d.name}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+
+                            {/* Row 2: Seniority Demographics + Function Demographics */}
+                            {(() => {
+                                const seniority: any[] = li.demographics?.seniority || [];
+                                const func: any[] = li.demographics?.function || [];
+                                if (!seniority.length && !func.length) return null;
+                                return (
+                                    <div className="grid-2" style={{ marginBottom: 0 }}>
+
+                                        {/* Seniority Breakdown */}
+                                        {seniority.length > 0 && (
+                                            <div className="chart-container">
+                                                <div className="chart-title" style={{ marginBottom: 16 }}>Audience by Seniority</div>
+                                                <ResponsiveContainer width="100%" height={220}>
+                                                    <BarChart
+                                                        layout="vertical"
+                                                        data={seniority.slice(0, 8)}
+                                                        margin={{ top: 2, right: 16, left: 10, bottom: 2 }}
+                                                    >
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                                                        <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
+                                                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={65} />
+                                                        <Tooltip
+                                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
+                                                            formatter={(v: any) => [v.toLocaleString(), 'Followers']}
+                                                        />
+                                                        <Bar dataKey="value" fill="#7c3aed" radius={[0, 4, 4, 0]} />
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        )}
+
+                                        {/* Function Breakdown */}
+                                        {func.length > 0 && (
+                                            <div className="chart-container">
+                                                <div className="chart-title" style={{ marginBottom: 16 }}>Audience by Function</div>
+                                                <ResponsiveContainer width="100%" height={220}>
+                                                    <BarChart
+                                                        layout="vertical"
+                                                        data={func.slice(0, 8)}
+                                                        margin={{ top: 2, right: 16, left: 60, bottom: 2 }}
+                                                    >
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                                                        <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
+                                                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={110} />
+                                                        <Tooltip
+                                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
+                                                            formatter={(v: any) => [v.toLocaleString(), 'Followers']}
+                                                        />
+                                                        <Bar dataKey="value" fill="#0891b2" radius={[0, 4, 4, 0]} />
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    )}
 
                     {/* ── Task Panel + Calendar ────────────────────────────────────────── */}
                     <div className="grid-2" style={{ marginBottom: 20 }}>

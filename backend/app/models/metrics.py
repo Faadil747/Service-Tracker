@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, func, Date
+from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, func, Date, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -57,3 +57,20 @@ class AudienceDemographic(Base):
     follower_count: Mapped[int] = mapped_column(Integer, default=0)
     non_follower_reach: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class FollowerSnapshot(Base):
+    """One row per calendar day — the follower count at the time of the last
+    LinkedIn sync for that day.  Used to compute daily/weekly deltas without
+    needing access to LinkedIn's (unavailable) historical API."""
+
+    __tablename__ = "follower_snapshots"
+    __table_args__ = (UniqueConstraint("snapshot_date", name="uq_follower_snapshot_date"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    snapshot_date: Mapped[datetime] = mapped_column(Date, nullable=False, index=True)
+    followers: Mapped[int] = mapped_column(Integer, nullable=False)
+    organic_followers: Mapped[int] = mapped_column(Integer, default=0)
+    paid_followers: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

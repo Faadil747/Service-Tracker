@@ -158,6 +158,10 @@ class LinkedInService:
         age = time.time() - _LAST_FETCH_TS
         if _SNAPSHOT and not force and age < interval:
             # Serve cached — do not touch LinkedIn (protects the daily quota).
+            # Still record today's follower count in the DB: the growth tracker
+            # reads the DB, and the real count lives in the cache even when we
+            # aren't allowed to re-fetch from LinkedIn right now.
+            await self._maybe_persist_today(_SNAPSHOT)
             meta = dict(_SNAPSHOT.get("_meta", {}))
             meta["served_from_cache"] = True
             meta["cache_age_seconds"] = int(age)
@@ -235,19 +239,14 @@ class LinkedInService:
             _LAST_FETCH_TS = time.time()
             _save_disk_cache()
             # Persist today's follower count for daily/weekly delta tracking.
-            if merged.get("followers") is not None:
-                try:
-                    await self._save_follower_snapshot(
-                        int(merged["followers"]),
-                        int(merged.get("organic_followers") or 0),
-                        int(merged.get("paid_followers") or 0),
-                    )
-                except Exception as e:
-                    print(f"[LinkedIn] follower snapshot save failed: {e}")
+            await self._maybe_persist_today(merged)
             return _SNAPSHOT
 
         # Nothing fresh at all (fully throttled). Return last-good, flagged stale.
         if _SNAPSHOT:
+            # Even fully throttled, record today's row from the last real count
+            # so the growth tracker keeps accumulating daily history.
+            await self._maybe_persist_today(_SNAPSHOT)
             meta = dict(_SNAPSHOT.get("_meta", {}))
             meta.update({"rate_limited": rate_limited, "served_from_cache": True,
                          "stale_fields": [k for k in _SNAPSHOT if k != "_meta"]})
@@ -255,9 +254,28 @@ class LinkedInService:
         return {"_meta": {"available": False, "rate_limited": rate_limited,
                           "reason": "LinkedIn API throttled and no cached data yet"}}
 
+    async def _maybe_persist_today(self, snap: dict) -> None:
+        """Record today's follower count in the DB from any snapshot (fresh OR
+        cached) that carries a real `followers` value. The growth tracker reads
+        the DB, so this must run on every path — including throttled ones — or
+        the tracker never accumulates history. No-op when followers is absent."""
+        followers = snap.get("followers")
+        if followers is None:
+            return
+        try:
+            await self._save_follower_snapshot(
+                int(followers),
+                int(snap.get("organic_followers") or 0),
+                int(snap.get("paid_followers") or 0),
+            )
+        except Exception as e:
+            print(f"[LinkedIn] follower snapshot save failed: {e}")
+
     async def _save_follower_snapshot(self, followers: int, organic: int, paid: int) -> None:
         """Upsert today's FollowerSnapshot row in the database.
-        If a row for today already exists it is updated in-place (last sync wins)."""
+        If a row for today already exists it is updated in-place (last sync wins).
+        Skips the write entirely when today's row already matches, so it is cheap
+        to call on every dashboard poll."""
         from app.database import AsyncSessionLocal
         from app.models import FollowerSnapshot
         from sqlalchemy import select
@@ -276,10 +294,12 @@ class LinkedInService:
                     paid_followers=paid,
                 )
                 session.add(row)
-            else:
+            elif (row.followers, row.organic_followers, row.paid_followers) != (followers, organic, paid):
                 row.followers = followers
                 row.organic_followers = organic
                 row.paid_followers = paid
+            else:
+                return  # unchanged — nothing to write
             await session.commit()
 
     # ── individual fetchers (raise _Throttled on 429) ───────────────────────

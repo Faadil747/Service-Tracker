@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-    Sparkles, RefreshCw, CheckCircle, Eye, FileText, Plus, X, Trash2
+    Sparkles, RefreshCw, CheckCircle, Eye, FileText, Plus, X, Trash2, Edit3
 } from 'lucide-react';
 import { tasksApi, postsApi, aiApi, metricsApi, usersApi, API_BASE_URL } from '../services/api';
 import { useAuthStore } from '../store/authStore';
@@ -33,7 +33,13 @@ const LinkedInPreview: React.FC<{ content: string; hashtags: string; imageUrl?: 
                         {content || <span style={{ color: '#8b9dc3', fontStyle: 'italic' }}>Your post preview will appear here...</span>}
                     </div>
                     {imageUrl && (
-                        <img src={imageUrl} alt="Post attachment" style={{ marginTop: 10, width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }} />
+                        (() => {
+                            const isVideo = /\.(mp4|mov|webm)$/i.test(imageUrl);
+                            if (isVideo) {
+                                return <video src={imageUrl} controls style={{ marginTop: 10, width: '100%', maxHeight: 320, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }} />;
+                            }
+                            return <img src={imageUrl} alt="Post attachment" style={{ marginTop: 10, width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }} />;
+                        })()
                     )}
                     {tags.length > 0 && (
                         <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -186,12 +192,15 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
 
     // AI Composer state
+    const [writeMode, setWriteMode] = useState<'manual' | 'ai'>('ai');
     const [prompt, setPrompt] = useState('');
+    const [manualContent, setManualContent] = useState('');
     const [postType, setPostType] = useState('general');
     const [tone, setTone] = useState('professional');
     const [hashtags, setHashtags] = useState('');
     const [generatedContent, setGeneratedContent] = useState('');
     const [generatingAI, setGeneratingAI] = useState(false);
+    const [enhancingAI, setEnhancingAI] = useState(false);
     const [previewContent, setPreviewContent] = useState('');
     const [scheduledAt, setScheduledAt] = useState('');
     const [predictedReach, setPredictedReach] = useState<any>(null);
@@ -321,6 +330,23 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         setGeneratingAI(false);
     };
 
+    const handleEnhanceAI = async () => {
+        if (!manualContent) return;
+        setEnhancingAI(true);
+        try {
+            const res = await aiApi.improvePost(manualContent, 'engagement');
+            if (res.data.error) throw new Error(res.data.error);
+            setManualContent(res.data.content);
+            setPreviewContent(res.data.content);
+            toast.success('Content enhanced!');
+            
+            // Optionally predict reach
+            const reachRes = await aiApi.predictReach({ content: res.data.content, region });
+            setPredictedReach(reachRes.data);
+        } catch (err: any) { toast.error(err.message || 'AI enhancement failed'); }
+        setEnhancingAI(false);
+    };
+
     const handlePublishPost = async () => {
         if (!previewContent) { toast.error('No content to publish'); return; }
         setSavingPost(true);
@@ -369,16 +395,16 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
     const handleImageUpload = async (file: File | null) => {
         if (!file) return;
-        if (!file.type.startsWith('image/')) { toast.error('Please choose an image file'); return; }
-        if (file.size > 5 * 1024 * 1024) { toast.error('Image too large (max 5 MB)'); return; }
+        if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { toast.error('Please choose an image or video file'); return; }
+        if (file.size > 50 * 1024 * 1024) { toast.error('Media too large (max 50 MB)'); return; }
         setUploadingImage(true);
         try {
-            const res = await postsApi.uploadImage(file);
+            const res = await postsApi.uploadMedia(file);
             // store an absolute URL so the preview and LinkedIn post resolve it anywhere
             setImageUrl(`${API_BASE_URL}${res.data.url}`);
-            toast.success('Image added');
+            toast.success('Media added');
         } catch {
-            toast.error('Image upload failed');
+            toast.error('Media upload failed');
         }
         setUploadingImage(false);
     };
@@ -411,7 +437,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
             await postsApi.publish(task.post.id);
             toast.success("Post published live! Task completed.");
             setSelectedTaskId(null);
-            setPreviewContent(''); setGeneratedContent(''); setPrompt(''); setScheduledAt(''); setImageUrl('');
+            setPreviewContent(''); setGeneratedContent(''); setPrompt(''); setManualContent(''); setScheduledAt(''); setImageUrl('');
             loadAll();
         } catch (err: any) {
             const msg = err.response?.data?.detail || "Failed to publish post.";
@@ -1257,22 +1283,55 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <input className="input" placeholder="Add custom hashtags..." value={hashtags} onChange={e => setHashtags(e.target.value)} />
                                     </div>
 
-                                    {/* Emojis */}
-                                    <div style={{ marginBottom: 16 }}>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>QUICK EMOJIS</label>
-                                        <div style={{ display: 'flex', gap: 6 }}>
-                                            {EMOJIS.map(e => <button key={e} className="btn btn-sm btn-ghost" onClick={() => setPrompt(p => p + e)} style={{ padding: '4px 8px' }}>{e}</button>)}
-                                        </div>
+                                    {/* Mode Toggle */}
+                                    <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                                        <button 
+                                            className={`btn btn-sm ${writeMode === 'ai' ? 'btn-primary' : 'btn-ghost'}`} 
+                                            onClick={() => setWriteMode('ai')}
+                                            style={{ flex: 1 }}
+                                        >
+                                            <Sparkles size={14} /> Generate with AI
+                                        </button>
+                                        <button 
+                                            className={`btn btn-sm ${writeMode === 'manual' ? 'btn-primary' : 'btn-ghost'}`} 
+                                            onClick={() => setWriteMode('manual')}
+                                            style={{ flex: 1 }}
+                                        >
+                                            <Edit3 size={14} /> Write Manually
+                                        </button>
                                     </div>
 
-                                    <div style={{ marginBottom: 16 }}>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>PROMPT / TOPIC</label>
-                                        <textarea className="textarea" placeholder="Describe what you want to post about... e.g. 'We're hiring Senior React developers in Bangalore, hybrid work, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 100 }} />
-                                    </div>
+                                    {writeMode === 'ai' ? (
+                                        <>
+                                            {/* Emojis */}
+                                            <div style={{ marginBottom: 16 }}>
+                                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>QUICK EMOJIS</label>
+                                                <div style={{ display: 'flex', gap: 6 }}>
+                                                    {EMOJIS.map(e => <button key={e} className="btn btn-sm btn-ghost" onClick={() => setPrompt(p => p + e)} style={{ padding: '4px 8px' }}>{e}</button>)}
+                                                </div>
+                                            </div>
 
-                                    <button className="btn btn-primary w-full" onClick={handleGenerateAI} disabled={generatingAI || !prompt}>
-                                        {generatingAI ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</> : <><Sparkles size={14} /> Generate with DeepSeek AI</>}
-                                    </button>
+                                            <div style={{ marginBottom: 16 }}>
+                                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>PROMPT / TOPIC</label>
+                                                <textarea className="textarea" placeholder="Describe what you want to post about... e.g. 'We're hiring Senior React developers in Bangalore, hybrid work, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 100 }} />
+                                            </div>
+
+                                            <button className="btn btn-primary w-full" onClick={handleGenerateAI} disabled={generatingAI || !prompt}>
+                                                {generatingAI ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</> : <><Sparkles size={14} /> Generate Content</>}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div style={{ marginBottom: 16 }}>
+                                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>POST CONTENT</label>
+                                                <textarea className="textarea" placeholder="Write your post here..." value={manualContent} onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }} style={{ minHeight: 140 }} />
+                                            </div>
+
+                                            <button className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+                                                {enhancingAI ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Enhancing...</> : <><Sparkles size={14} /> Enhance with DeepSeek AI</>}
+                                            </button>
+                                        </>
+                                    )}
 
                                     {predictedReach && (
                                         <div className="glass-card" style={{ marginTop: 12, padding: 12 }}>
@@ -1290,24 +1349,28 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
                                     </div>
 
-                                    {/* Image (optional) */}
+                                    {/* Media (optional) */}
                                     <div style={{ marginTop: 16 }}>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>IMAGE (OPTIONAL)</label>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>MEDIA (OPTIONAL)</label>
                                         {imageUrl ? (
-                                            <div style={{ position: 'relative', display: 'inline-block' }}>
-                                                <img src={imageUrl} alt="attachment" style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
-                                                <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} title="Remove image" style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.55)', color: '#fff', padding: 4 }}>
+                                            <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                                                {/\.(mp4|mov|webm)$/i.test(imageUrl) ? (
+                                                    <video src={imageUrl} controls style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                                                ) : (
+                                                    <img src={imageUrl} alt="attachment" style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                                                )}
+                                                <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} title="Remove media" style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.55)', color: '#fff', padding: 4 }}>
                                                     <X size={14} />
                                                 </button>
                                             </div>
                                         ) : (
                                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                                                 <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0 }}>
-                                                    {uploadingImage ? 'Uploading…' : '📎 Upload image'}
-                                                    <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingImage}
+                                                    {uploadingImage ? 'Uploading…' : '📎 Upload media'}
+                                                    <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
                                                         onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
                                                 </label>
-                                                <input className="input" placeholder="…or paste an image URL" style={{ flex: 1, minWidth: 160 }}
+                                                <input className="input" placeholder="…or paste an image/video URL" style={{ flex: 1, minWidth: 160 }}
                                                     onKeyDown={e => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) setImageUrl(v); } }}
                                                     onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
                                             </div>

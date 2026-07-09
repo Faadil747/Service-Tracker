@@ -258,25 +258,26 @@ async def request_review(
     return _post_dict(post)
 
 
-# ── Image upload ────────────────────────────────────────────────────────────
+# ── Media upload ────────────────────────────────────────────────────────────
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
-_ALLOWED_IMG_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+_ALLOWED_MEDIA_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".webm"}
 
 
-@router.post("/upload-image")
-async def upload_image(
+@router.post("/upload-media")
+async def upload_media(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
-    """Store an uploaded image and return a URL to embed in a post."""
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=400, detail="Only image files are allowed")
+    """Store an uploaded image or video and return a URL to embed in a post."""
+    content_type = file.content_type or ""
+    if not (content_type.startswith("image/") or content_type.startswith("video/")):
+        raise HTTPException(status_code=400, detail="Only image and video files are allowed")
     ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in _ALLOWED_IMG_EXT:
-        ext = ".png"
+    if ext not in _ALLOWED_MEDIA_EXT:
+        ext = ".png" if content_type.startswith("image/") else ".mp4"
     data = await file.read()
-    if len(data) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image too large (max 5 MB)")
+    if len(data) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Media too large (max 50 MB)")
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     name = f"{uuid.uuid4().hex}{ext}"
     with open(os.path.join(UPLOAD_DIR, name), "wb") as f:

@@ -1,9 +1,10 @@
+from datetime import date, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models import PostMetric, User
+from app.models import PostMetric, User, FollowerSnapshot
 from app.services.auth_service import get_current_user
 from app.services.linkedin_service import linkedin_service
 
@@ -153,3 +154,86 @@ async def best_time_to_post(
     """Best-time-to-post heatmap requires per-post hourly engagement, which this
     token cannot access. Returns empty instead of a randomly-generated heatmap."""
     return {"region": region, "heatmap": [], "available": False}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Follower history — daily snapshots stored in our own DB.
+#
+# LinkedIn does not expose historical follower data, so we store one row per
+# calendar day every time we successfully sync.  This endpoint returns:
+#   • `history`      – chronological list of {date, followers} for charting
+#   • `daily_delta`  – net change since yesterday (positive = gained, negative = lost)
+#   • `weekly_delta` – net change since Monday of the current week
+#   • `daily_gained` / `daily_lost` – split view of the daily delta
+#   • `has_enough_data` – False when we don't yet have two snapshots to compare
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/follower-history")
+async def follower_history(
+    days: int = 30,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    since = date.today() - timedelta(days=days)
+    result = await db.execute(
+        select(FollowerSnapshot)
+        .where(FollowerSnapshot.snapshot_date >= since)
+        .order_by(FollowerSnapshot.snapshot_date.asc())
+    )
+    rows = result.scalars().all()
+
+    history = [
+        {
+            "date": str(r.snapshot_date),
+            "followers": r.followers,
+            "organic": r.organic_followers,
+            "paid": r.paid_followers,
+        }
+        for r in rows
+    ]
+
+    # ── Daily delta (yesterday → today) ──────────────────────────────────────
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    row_today = next((r for r in rows if r.snapshot_date == today), None)
+    row_yesterday = next((r for r in rows if r.snapshot_date == yesterday), None)
+
+    daily_delta: Optional[int] = None
+    daily_gained: Optional[int] = None
+    daily_lost: Optional[int] = None
+    if row_today and row_yesterday:
+        daily_delta = row_today.followers - row_yesterday.followers
+        daily_gained = max(0, daily_delta)
+        daily_lost = abs(min(0, daily_delta))
+
+    # ── Weekly delta (Monday → today) ────────────────────────────────────────
+    days_since_monday = today.weekday()           # Monday = 0
+    monday = today - timedelta(days=days_since_monday)
+
+    row_monday = next((r for r in rows if r.snapshot_date == monday), None)
+    # Fallback: earliest snapshot this week if Monday itself wasn't captured
+    if row_monday is None:
+        week_rows = [r for r in rows if r.snapshot_date >= monday]
+        row_monday = week_rows[0] if week_rows else None
+
+    weekly_delta: Optional[int] = None
+    weekly_gained: Optional[int] = None
+    weekly_lost: Optional[int] = None
+    if row_today and row_monday and row_monday.snapshot_date != row_today.snapshot_date:
+        weekly_delta = row_today.followers - row_monday.followers
+        weekly_gained = max(0, weekly_delta)
+        weekly_lost = abs(min(0, weekly_delta))
+
+    return {
+        "history": history,
+        "daily_delta": daily_delta,
+        "daily_gained": daily_gained,
+        "daily_lost": daily_lost,
+        "weekly_delta": weekly_delta,
+        "weekly_gained": weekly_gained,
+        "weekly_lost": weekly_lost,
+        "has_enough_data": len(rows) >= 2,
+        "snapshot_count": len(rows),
+        "today": str(today),
+        "monday": str(monday),
+    }

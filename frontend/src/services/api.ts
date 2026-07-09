@@ -101,6 +101,8 @@ export const metricsApi = {
     // Deprecated (LinkedIn exposes no daily history to this token) — kept for compat.
     page: (params?: object) => api.get('/api/metrics/page', { params }),
     bestTime: (region?: string) => api.get('/api/metrics/best-time', { params: { region } }),
+    // Real follower history — built from our own DB snapshots saved each sync.
+    followerHistory: (days?: number) => api.get('/api/metrics/follower-history', { params: { days } }),
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────

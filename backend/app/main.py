@@ -1,6 +1,8 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import init_db
 from app.routers import auth, users, tasks, posts, ai, notifications, alerts, metrics, link_tracking, settings as settings_router
@@ -46,6 +48,11 @@ app.include_router(alerts.router)
 app.include_router(metrics.router)
 app.include_router(link_tracking.router)
 app.include_router(settings_router.router)
+
+# Serve uploaded post images from backend/uploads at /uploads/<file>
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.get("/")

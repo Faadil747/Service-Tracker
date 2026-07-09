@@ -1,9 +1,10 @@
 import uuid
+import os
 import random
 import string
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
 from pydantic import BaseModel
@@ -27,7 +28,7 @@ class CreatePostRequest(BaseModel):
     tone: str = "professional"
     hashtags: str = ""
     scheduled_at: Optional[str] = None
-    image_url: str = ""
+    image_url: Optional[str] = None
     campaign_id: Optional[str] = None
     is_template: bool = False
     status: Optional[str] = None
@@ -101,7 +102,7 @@ async def create_post(
         region=req.region,
         tone=req.tone,
         hashtags=req.hashtags,
-        image_url=req.image_url,
+        image_url=req.image_url or "",
         campaign_id=req.campaign_id,
         task_id=req.task_id,
         scheduled_at=sched,
@@ -214,6 +215,73 @@ async def approve_post(
     )
     await db.commit()
     return _post_dict(post)
+
+
+@router.post("/{post_id}/request-review")
+async def request_review(
+    post_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Agent re-opens an approved (or rejected) post for another admin review,
+    e.g. they spotted something to change before publishing. Bounces the linked
+    task back to pending_approval and notifies the admins."""
+    result = await db.execute(select(Post).where(Post.id == post_id))
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if current_user.role != "admin" and post.created_by_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only re-open your own posts")
+    if post.status == PostStatus.published:
+        raise HTTPException(status_code=400, detail="A published post cannot be sent back for review.")
+
+    post.status = PostStatus.in_review
+    post.approved_by_id = None
+
+    ref_id, ref_type, title = post.id, "post", post.title or (post.content[:60] if post.content else "post")
+    if post.task_id:
+        from app.models.task import Task, TaskStatus
+        task = (await db.execute(select(Task).where(Task.id == post.task_id))).scalar_one_or_none()
+        if task and task.status != TaskStatus.completed:
+            task.status = TaskStatus.pending_approval
+            ref_id, ref_type, title = task.id, "task", task.title
+
+    await notify_admins(
+        db,
+        type="pending_approval",
+        title=f"Review requested again: {title}",
+        body=f"{current_user.full_name} sent the post back for another review.",
+        reference_id=ref_id,
+        reference_type=ref_type,
+    )
+    await db.commit()
+    return _post_dict(post)
+
+
+# ── Image upload ────────────────────────────────────────────────────────────
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+_ALLOWED_IMG_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
+@router.post("/upload-image")
+async def upload_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Store an uploaded image and return a URL to embed in a post."""
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in _ALLOWED_IMG_EXT:
+        ext = ".png"
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large (max 5 MB)")
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    name = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(UPLOAD_DIR, name), "wb") as f:
+        f.write(data)
+    return {"url": f"/uploads/{name}"}
 
 
 async def complete_linked_task(post: Post, db: AsyncSession, current_user: User):
@@ -448,6 +516,8 @@ async def update_post(
     post.hashtags = req.hashtags
     post.tone = req.tone
     post.region = req.region
+    if req.image_url is not None:
+        post.image_url = req.image_url
     if req.scheduled_at:
         post.scheduled_at = datetime.fromisoformat(req.scheduled_at)
 

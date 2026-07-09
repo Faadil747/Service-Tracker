@@ -179,7 +179,7 @@ async def improve_post(
                 },
             )
             resp.raise_for_status()
-            improved = resp.json()["choices"][0]["message"]["content"]
+            improved = ai_service._clean_post(resp.json()["choices"][0]["message"]["content"])
             return {"content": improved, "source": "deepseek"}
     except Exception as e:
         return {"content": content, "source": "unchanged", "error": str(e)}

@@ -7,10 +7,9 @@ import {
 } from 'date-fns';
 import {
     Plus, ChevronLeft, ChevronRight, Calendar,
-    Clock, Edit3, X, Send, Flag, CheckSquare, Trash2, Star,
-    Sparkles, RefreshCw
+    Clock, Edit3, X, Send, Flag, CheckSquare, Trash2, Star
 } from 'lucide-react';
-import { postsApi, tasksApi, usersApi, aiApi } from '../services/api';
+import { postsApi, tasksApi, usersApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -74,8 +73,6 @@ type ViewMode = 'month' | 'week' | 'list';
 
 const REGIONS = ['Global', 'India', 'USA', 'Indonesia'];
 const POST_TYPES = ['All', 'article', 'post', 'video', 'poll', 'document'];
-const TONES = ['professional', 'casual', 'enthusiastic', 'informative', 'inspirational'];
-const EMOJIS = ['🚀', '💡', '✅', '🌟', '🎯', '📊', '💼', '🤝', '🔥', '👋'];
 
 
 
@@ -193,45 +190,18 @@ const REGION_FLAG: Record<string, string> = {
     India: '🇮🇳', USA: '🇺🇸', Indonesia: '🇮🇩', Global: '🌐',
 };
 
-const LinkedInPreview: React.FC<{ content: string; hashtags: string }> = ({ content, hashtags }) => {
-    const tags = hashtags ? hashtags.split(' ').filter(Boolean) : [];
-    return (
-        <div className="linkedin-preview" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-            <div className="linkedin-preview-header" style={{ padding: '8px 12px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border)', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>linkedin.com · Preview Mode</div>
-            <div style={{ padding: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                    <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent)' }}>G</div>
-                    <div>
-                        <div style={{ color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 600 }}>GOrecruitAI</div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Company · Just now</div>
-                    </div>
-                </div>
-                <div className="linkedin-post-card" style={{ padding: '8px 0' }}>
-                    <div className="linkedin-post-content" style={{ fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                        {content || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Your post preview will appear here...</span>}
-                    </div>
-                    {tags.length > 0 && (
-                        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                            {tags.map(t => <span key={t} style={{ color: 'var(--accent)', fontSize: '0.8rem', fontWeight: 600 }}>{t.startsWith('#') ? t : `#${t}`}</span>)}
-                        </div>
-                    )}
-                </div>
-                <div style={{ display: 'flex', gap: 16, padding: '10px 4px', borderTop: '1px solid var(--border)', marginTop: 10 }}>
-                    {['👍 Like', '💬 Comment', '🔁 Repost', '📤 Send'].map(a => (
-                        <span key={a} style={{ color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>{a}</span>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-};
-
 const generateRecurrenceDates = (startDate: Date, config: { type: string; weeklyDay: string; monthlyDay: string; count: number }): Date[] => {
     const dates: Date[] = [];
     let current = new Date(startDate);
     const count = Math.min(Math.max(config.count || 1, 1), 24); // Cap repeating tasks
 
-    if (config.type === 'weekly') {
+    if (config.type === 'daily') {
+        for (let i = 0; i < count; i++) {
+            const temp = new Date(startDate);
+            temp.setDate(temp.getDate() + i);
+            dates.push(temp);
+        }
+    } else if (config.type === 'weekly') {
         const targetDay = parseInt(config.weeklyDay, 10);
         let diff = targetDay - current.getDay();
         if (diff < 0) diff += 7;
@@ -308,12 +278,6 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
         monthlyDay: '1',
         count: 4
     });
-    const [postCreationMode, setPostCreationMode] = useState<'manual' | 'ai'>('manual');
-    const [aiPrompt, setAiPrompt] = useState('');
-    const [aiTone, setAiTone] = useState('professional');
-    const [aiHashtags, setAiHashtags] = useState('');
-    const [generatingAI, setGeneratingAI] = useState(false);
-    const [predictedReach, setPredictedReach] = useState<{ predicted_reach: number; confidence: number; tips?: string[] } | null>(null);
     const [agents, setAgents] = useState<any[]>([]);
     const [showTaskForm, setShowTaskForm] = useState(false);
     const initialLoaded = useRef(false);
@@ -419,34 +383,6 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
         try { return isSameDay(safeParseDate(t.due_date), day); } catch { return false; }
     });
 
-    const handleGenerateAIPost = async () => {
-        if (!aiPrompt.trim()) {
-            toast.error('AI Prompt/Topic is required');
-            return;
-        }
-        setGeneratingAI(true);
-        try {
-            const res = await aiApi.generatePost({
-                prompt: aiPrompt,
-                post_type: newPost.post_type,
-                tone: aiTone,
-                hashtags: aiHashtags.split(' ').filter(Boolean),
-                region: newPost.region === 'Global' ? 'Global' : newPost.region,
-                add_emojis: true,
-            });
-            const generated = typeof res.data.content === 'string' ? res.data.content : JSON.stringify(res.data.content);
-            setNewPost(p => ({ ...p, content: generated }));
-            toast.success('AI post generated successfully!');
-            // Predict reach
-            const reachRes = await aiApi.predictReach({ content: generated, region: newPost.region });
-            setPredictedReach(reachRes.data);
-        } catch {
-            toast.error('AI generation failed');
-        } finally {
-            setGeneratingAI(false);
-        }
-    };
-
     const handleCreatePost = async () => {
         if (!newPost.content.trim()) { toast.error('Content is required'); return; }
         try {
@@ -468,11 +404,6 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
             setShowCreateModal(false);
             setNewPost({ content: '', post_type: 'post', region: region || 'Global', scheduled_at: '', status: 'draft' });
             setPostRecurrence({ type: 'none', weeklyDay: '1', monthlyDay: '1', count: 4 });
-            setPostCreationMode('manual');
-            setAiPrompt('');
-            setAiTone('professional');
-            setAiHashtags('');
-            setPredictedReach(null);
             load(false);
         } catch { toast.error('Failed to create post(s)'); }
     };
@@ -498,7 +429,12 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                 });
             }
 
-            toast.success(taskRecurrence.type !== 'none' ? `Added ${dates.length} tasks successfully!` : 'Task added!');
+            const many = taskRecurrence.type !== 'none';
+            toast.success(
+                isAdmin
+                    ? (many ? `Added ${dates.length} tasks successfully!` : 'Task added!')
+                    : (many ? `Submitted ${dates.length} tasks for approval!` : 'Task submitted for approval!')
+            );
             setNewTask({
                 title: '',
                 description: '',
@@ -1057,16 +993,14 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                     <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                                         ✅ Tasks ({dayPanelTasks.length})
                                     </div>
-                                    {isAdmin && (
-                                        <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7rem', padding: '3px 8px' }}
-                                            onClick={() => setShowTaskForm(v => !v)}>
-                                            <Plus size={11} /> Task
-                                        </button>
-                                    )}
+                                    <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7rem', padding: '3px 8px' }}
+                                        onClick={() => setShowTaskForm(v => !v)}>
+                                        <Plus size={11} /> Task
+                                    </button>
                                 </div>
 
                                 {/* Quick add task form */}
-                                {showTaskForm && isAdmin && (
+                                {showTaskForm && (
                                     <div style={{ padding: '12px', marginBottom: 14, background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                                         <div>
                                             <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Title *</label>
@@ -1107,24 +1041,27 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                                 </select>
                                             </div>
                                         </div>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                                            <div>
-                                                <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Assign To Agent</label>
-                                                <select className="select" style={{ fontSize: '0.75rem' }}
-                                                    value={newTask.assigned_to_id}
-                                                    onChange={e => setNewTask(t => ({ ...t, assigned_to_id: e.target.value }))}>
-                                                    <option value="">Unassigned (Self)</option>
-                                                    {agents.map(a => (
-                                                        <option key={a.id} value={a.id}>{a.full_name} ({a.region})</option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap: 8 }}>
+                                            {isAdmin && (
+                                                <div>
+                                                    <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Assign To Agent</label>
+                                                    <select className="select" style={{ fontSize: '0.75rem' }}
+                                                        value={newTask.assigned_to_id}
+                                                        onChange={e => setNewTask(t => ({ ...t, assigned_to_id: e.target.value }))}>
+                                                        <option value="">Unassigned (Self)</option>
+                                                        {agents.map(a => (
+                                                            <option key={a.id} value={a.id}>{a.full_name} ({a.region})</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
                                             <div>
                                                 <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Recurrence Period</label>
                                                 <select className="select" style={{ fontSize: '0.75rem' }}
                                                     value={taskRecurrence.type}
                                                     onChange={e => setTaskRecurrence(t => ({ ...t, type: e.target.value }))}>
                                                     <option value="none">One-off / None</option>
+                                                    <option value="daily">Daily</option>
                                                     <option value="weekly">Weekly Once</option>
                                                     <option value="monthly">Monthly Once</option>
                                                 </select>
@@ -1171,8 +1108,13 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                                 </div>
                                             </div>
                                         )}
+                                        {!isAdmin && (
+                                            <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                                                📋 This will be submitted to an admin for approval before it becomes active.
+                                            </div>
+                                        )}
                                         <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                                            <button className="btn btn-primary btn-sm" style={{ flex: 1, fontSize: '0.72rem' }} onClick={handleCreateTask}>Add Task</button>
+                                            <button className="btn btn-primary btn-sm" style={{ flex: 1, fontSize: '0.72rem' }} onClick={handleCreateTask}>{isAdmin ? 'Add Task' : 'Submit for Approval'}</button>
                                             <button className="btn btn-ghost btn-sm" onClick={() => setShowTaskForm(false)} style={{ padding: '0 8px' }}><X size={12} /></button>
                                         </div>
                                     </div>
@@ -1377,34 +1319,13 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
             {/* Create Post Modal */}
             {showCreateModal && (
                 <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
-                    <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: postCreationMode === 'ai' ? '950px' : '680px', width: '90%', transition: 'all 0.3s ease' }}>
+                    <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', width: '90%' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                             <h3>Schedule New Post</h3>
                             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowCreateModal(false)}><X size={16} /></button>
                         </div>
 
-                        {/* Tab Selector */}
-                        <div style={{ display: 'flex', gap: 12, borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
-                            <button
-                                type="button"
-                                className={`btn btn-sm ${postCreationMode === 'manual' ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => setPostCreationMode('manual')}
-                                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', padding: '6px 14px' }}
-                            >
-                                <Edit3 size={12} /> Manual Draft
-                            </button>
-                            <button
-                                type="button"
-                                className={`btn btn-sm ${postCreationMode === 'ai' ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => setPostCreationMode('ai')}
-                                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', padding: '6px 14px' }}
-                            >
-                                <Sparkles size={12} /> AI Post Composer (DeepSeek)
-                            </button>
-                        </div>
-
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                            {postCreationMode === 'manual' ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                                     <div className="form-group">
                                         <label className="form-label">Content *</label>
@@ -1440,101 +1361,6 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                         </div>
                                     </div>
                                 </div>
-                            ) : (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20 }}>
-                                    {/* Left Pane: Prompt + Controls */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                                            <div className="form-group">
-                                                <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Post Type</label>
-                                                <select className="select" style={{ fontSize: '0.78rem' }} value={newPost.post_type} onChange={e => setNewPost(p => ({ ...p, post_type: e.target.value }))}>
-                                                    {POST_TYPES.filter(t => t !== 'All').map(t => <option key={t}>{t}</option>)}
-                                                </select>
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Region</label>
-                                                <select className="select" style={{ fontSize: '0.78rem' }} value={newPost.region} onChange={e => setNewPost(p => ({ ...p, region: e.target.value }))}>
-                                                    {REGIONS.map(r => <option key={r}>{r}</option>)}
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Tone</label>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                                {TONES.map(t => (
-                                                    <button key={t} type="button" className="btn btn-sm" onClick={() => setAiTone(t)} style={{ background: aiTone === t ? 'var(--accent-glow)' : 'var(--surface)', color: aiTone === t ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${aiTone === t ? 'var(--accent)' : 'var(--border)'}`, fontSize: '0.72rem', padding: '3px 8px' }}>
-                                                        {t}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Hashtags</label>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
-                                                {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
-                                                    <button key={h} type="button" className="btn btn-sm btn-ghost" onClick={() => setAiHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())} style={{ fontSize: '0.68rem', padding: '2px 6px', background: aiHashtags.includes(h) ? 'var(--accent-glow)' : undefined, color: aiHashtags.includes(h) ? 'var(--accent)' : undefined }}>
-                                                        {h}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            <input className="input" style={{ fontSize: '0.75rem' }} placeholder="Add custom hashtags..." value={aiHashtags} onChange={e => setAiHashtags(e.target.value)} />
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Quick Emojis</label>
-                                            <div style={{ display: 'flex', gap: 4 }}>
-                                                {EMOJIS.map(e => <button key={e} type="button" className="btn btn-sm btn-ghost" onClick={() => setAiPrompt(p => p + e)} style={{ padding: '2px 6px', fontSize: '0.72rem' }}>{e}</button>)}
-                                            </div>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Prompt / Topic *</label>
-                                            <textarea className="textarea" style={{ fontSize: '0.75rem', minHeight: 60 }} placeholder="Describe what you want to post about..." value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
-                                        </div>
-
-                                        <button className="btn btn-primary w-full" type="button" onClick={handleGenerateAIPost} disabled={generatingAI || !aiPrompt} style={{ padding: '8px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                            {generatingAI ? <><RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</> : <><Sparkles size={12} /> Generate with DeepSeek AI</>}
-                                        </button>
-
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                                            <div className="form-group">
-                                                <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Scheduled Date & Time</label>
-                                                <input className="input" style={{ fontSize: '0.75rem' }} type="datetime-local" value={newPost.scheduled_at} onChange={e => setNewPost(p => ({ ...p, scheduled_at: e.target.value }))} />
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4 }}>Status</label>
-                                                <select className="select" style={{ fontSize: '0.75rem' }} value={newPost.status} onChange={e => setNewPost(p => ({ ...p, status: e.target.value }))}>
-                                                    <option value="draft">Draft</option>
-                                                    {isAdmin && <option value="approved">Approved</option>}
-                                                    {isAdmin && <option value="scheduled">Scheduled</option>}
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Right Pane: Live Preview */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                        <div className="form-group">
-                                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><Edit3 size={11} /> Edit Draft</label>
-                                            <textarea className="textarea" style={{ fontSize: '0.75rem', minHeight: 90 }} placeholder="Your generated post content will appear here and can be edited..." value={newPost.content} onChange={e => setNewPost(p => ({ ...p, content: e.target.value }))} />
-                                        </div>
-
-                                        {predictedReach && (
-                                            <div className="glass-card" style={{ padding: 10, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 4, background: 'var(--accent-glow)' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)' }}>PREDICTED REACH</span>
-                                                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--accent)' }}>{predictedReach.predicted_reach?.toLocaleString()}</span>
-                                                </div>
-                                                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Confidence: {predictedReach.confidence}%</div>
-                                            </div>
-                                        )}
-
-                                        <LinkedInPreview content={newPost.content} hashtags={aiHashtags} />
-                                    </div>
-                                </div>
-                            )}
 
                             {/* Recurrence Options */}
                             <div style={{
@@ -1556,6 +1382,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                             value={postRecurrence.type}
                                             onChange={e => setPostRecurrence(p => ({ ...p, type: e.target.value }))}>
                                             <option value="none">One-off / None</option>
+                                            <option value="daily">Daily</option>
                                             <option value="weekly">Weekly Once</option>
                                             <option value="monthly">Monthly Once</option>
                                         </select>

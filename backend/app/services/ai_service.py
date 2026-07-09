@@ -4,15 +4,22 @@ Model is configurable via settings.DEEPSEEK_MODEL (one-line swap).
 When API key is absent, returns realistic stub responses for dev/test.
 """
 import json
+import re
 from typing import Optional
 import httpx
 from app.config import settings
 
 
-SYSTEM_PROMPT = """You are a LinkedIn content expert for GOrecruitAI, a recruiting firm.
-You write compelling, professional LinkedIn posts for HR recruitment purposes.
-Always use appropriate emojis, relevant hashtags, and a tone that matches the request.
-Format the post cleanly for LinkedIn."""
+SYSTEM_PROMPT = """You are an expert LinkedIn copywriter for GOrecruitAI, a recruitment company.
+
+Write ONE ready-to-publish LinkedIn post. Follow these rules strictly:
+- Use clear, professional English with correct spelling and grammar. Proofread before you answer.
+- Output PLAIN text only. Do NOT use any markdown (no **bold**, *italics*, __underline__, backticks, or "#" headings) and do NOT use decorative Unicode fonts (no 𝐛𝐨𝐥𝐝 or 𝘪𝘵𝘢𝘭𝘪𝘤 look-alike characters). Use standard letters only so it renders identically everywhere.
+- Structure it for LinkedIn: a strong one-line hook, then short scannable paragraphs (1-2 sentences) separated by blank lines. Use "• " for any bullet points.
+- Use a few tasteful, relevant emojis — not one on every line.
+- Include a clear call to action.
+- End with 3-6 relevant hashtags on the final line, each starting with "#".
+- Return ONLY the finished post text. No labels, no preamble, no "Here is your post", no explanations."""
 
 
 async def generate_post(
@@ -28,21 +35,17 @@ async def generate_post(
     if not settings.DEEPSEEK_API_KEY:
         return _stub_post(prompt, post_type, tone, hashtags, region)
 
-    hashtag_str = " ".join(f"#{h}" for h in (hashtags or [])) if hashtags else ""
-    user_msg = f"""Write a LinkedIn post with these requirements:
-- Type: {post_type}
-- Tone: {tone}
-- Region focus: {region}
-- {'Include emojis' if add_emojis else 'No emojis'}
-- Hashtags to include: {hashtag_str or 'choose appropriate ones'}
-- Topic/Prompt: {prompt}
+    hashtag_str = " ".join(f"#{h.lstrip('#')}" for h in (hashtags or [])) if hashtags else ""
+    user_msg = f"""Write one LinkedIn post.
 
-Provide:
-1. The post content (ready to publish)
-2. A list of 5 recommended hashtags
-3. Best posting time recommendation for {region}
-4. Predicted engagement score (1-100)
-"""
+Topic: {prompt}
+Post type: {post_type.replace('_', ' ')}
+Tone: {tone}
+Region focus: {region}
+Emojis: {'yes, a few tasteful ones' if add_emojis else 'none'}
+Hashtags to include: {hashtag_str or 'choose 3-6 relevant ones'}
+
+Return only the finished post text, ready to paste into LinkedIn."""
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
@@ -63,7 +66,7 @@ Provide:
         )
         resp.raise_for_status()
         data = resp.json()
-        content = data["choices"][0]["message"]["content"]
+        content = _clean_post(data["choices"][0]["message"]["content"])
         return {"content": content, "source": "deepseek", "model": settings.DEEPSEEK_MODEL}
 
 
@@ -147,29 +150,67 @@ async def score_comment_sentiment(comment: str) -> float:
             return 0.0
 
 
+def _clean_post(text: str) -> str:
+    """Normalise model output into clean, LinkedIn-ready plain text.
+
+    Strips markdown artifacts (**bold**, *italics*, `code`, "#" headings, code
+    fences) and decorative wrappers that render as literal symbols or mismatched
+    fonts on LinkedIn, while preserving real #hashtags and emojis.
+    """
+    if not text:
+        return ""
+    t = text.strip()
+    # Strip surrounding code fences
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\n?", "", t)
+        t = re.sub(r"\n?```$", "", t).strip()
+    # Drop a leading label the model sometimes adds ("Here is your post:", "Post:")
+    t = re.sub(r"^(?:here(?:'|’)?s|here is)\s+(?:your |the )?(?:linkedin )?post\s*[:\-]?\s*", "", t, flags=re.IGNORECASE).strip()
+    t = re.sub(r"^(?:linkedin\s+)?post\s*[:\-]\s+", "", t, flags=re.IGNORECASE).strip()
+    # Remove markdown emphasis markers but keep the words
+    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)
+    t = re.sub(r"__(.+?)__", r"\1", t)
+    t = re.sub(r"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)", r"\1", t)
+    t = re.sub(r"`([^`]+)`", r"\1", t)
+    # Markdown headings ("## Heading") -> plain text; real #hashtags (no space) are kept
+    t = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", t)
+    # Normalise "- " / "* " bullets to "• "
+    t = re.sub(r"(?m)^\s*[-*]\s+", "• ", t)
+    # Collapse 3+ blank lines to a single blank line and trim trailing spaces
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    t = "\n".join(line.rstrip() for line in t.splitlines())
+    return t.strip()
+
+
 def _stub_post(prompt: str, post_type: str, tone: str, hashtags, region: str) -> dict:
-    """Realistic mock response for dev/test when no API key is configured."""
-    region_cta = {"India": "🇮🇳 Bangalore/Mumbai/Delhi", "USA": "🇺🇸 Remote/Hybrid available", "Indonesia": "🇮🇩 Jakarta/Bali"}.get(region, "")
-    content = f"""🚀 Exciting opportunity alert! {region_cta}
+    """Realistic mock response for dev/test when no API key is configured.
 
-We're looking for **talented individuals** to join the GOrecruitAI family.
+    Written as clean plain text (no markdown) so it renders identically on LinkedIn.
+    """
+    region_line = {
+        "India": "📍 Roles across Bangalore, Mumbai and Delhi",
+        "USA": "📍 Remote and hybrid roles across the US",
+        "Indonesia": "📍 Roles in Jakarta and beyond",
+    }.get(region, "")
+    tags = [h.lstrip("#") for h in (hashtags or [])] or ["Hiring", "Jobs", "Recruitment", "GOrecruitAI", "HRTech"]
+    tag_line = " ".join(f"#{h}" for h in tags)
+    content = _clean_post(f"""🚀 We're growing, and we're looking for great people to join us!
 
-{prompt}
+{prompt.strip()}
 
-At GOrecruitAI, we believe in:
-✅ Continuous learning & growth
-✅ Collaborative & inclusive culture  
-✅ Cutting-edge AI-powered recruiting
+At GOrecruitAI, you'll find:
+• A culture built on learning and growth
+• A collaborative, inclusive team
+• The chance to work on AI-powered recruiting
+{(chr(10) + region_line) if region_line else ""}
 
-Ready to take the next step in your career?
+Interested, or know someone who would be a great fit? Send us a message or apply via the link below. 👇
 
-📩 DM us or apply via the link below!
-
-#Hiring #Jobs #Recruitment #GOrecruitAI #CareerOpportunity #LinkedInJobs #HRTech #AIRecruitment"""
+{tag_line}""")
     return {
         "content": content,
-        "hashtags": ["Hiring", "Jobs", "Recruitment", "GOrecruitAI", "HRTech"],
-        "best_time": "Tuesday–Thursday, 9–11 AM local time",
+        "hashtags": tags[:5],
+        "best_time": "Tuesday to Thursday, 9-11 AM local time",
         "predicted_engagement": 74,
         "source": "stub",
     }

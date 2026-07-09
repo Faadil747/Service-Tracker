@@ -77,10 +77,12 @@ export const postsApi = {
     publish: (id: string) => api.post(`/api/posts/${id}/publish`),
     requestReview: (id: string) => api.post(`/api/posts/${id}/request-review`),
     saveLink: (id: string, data: object) => api.post(`/api/posts/${id}/save-link`, data),
-    uploadImage: (file: File) => {
-        const fd = new FormData();
-        fd.append('file', file);
-        return api.post('/api/posts/upload-image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    uploadMedia: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/api/posts/upload-media', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
     },
     syncMetrics: (id: string) => api.post(`/api/posts/${id}/sync-metrics`),
     kanban: (region?: string, agentId?: string) => api.get('/api/posts/kanban', { params: { region, agent_id: agentId } }),
@@ -91,6 +93,7 @@ export const postsApi = {
 // ── AI ────────────────────────────────────────────────────────────────────
 export const aiApi = {
     generatePost: (data: object) => api.post('/api/ai/generate-post', data),
+    improvePost: (content: string, goal?: string) => api.post('/api/ai/improve-post', null, { params: { content, goal } }),
     predictReach: (data: object) => api.post('/api/ai/predict-reach', data),
     hashtags: (topic: string, region?: string) => api.post('/api/ai/hashtags', null, { params: { topic, region } }),
     sentiment: (comment: string) => api.post('/api/ai/sentiment', { comment }),

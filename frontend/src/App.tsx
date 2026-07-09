@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import { Toaster, toast } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
+import { useNotificationStore } from './store/notificationStore';
 import { Header } from './components/shared/Header';
 import { ChatWidget } from './components/shared/ChatWidget';
 import { LoginPage } from './views/LoginPage';
@@ -14,17 +15,45 @@ import { LinkAnalyticsView } from './views/LinkAnalyticsView';
 import { AccountabilityView } from './views/AccountabilityView';
 import './styles/globals.css';
 
-const ProtectedLayout: React.FC<{ children: (region: string) => React.ReactNode }> = ({ children }) => {
-    const { isAuthenticated } = useAuthStore();
+const ProtectedLayout: React.FC<{ roles?: string[]; children: (region: string) => React.ReactNode }> = ({ roles, children }) => {
+    const { isAuthenticated, user } = useAuthStore();
+    const poll = useNotificationStore((s) => s.poll);
     const [region, setRegion] = useState('Global');
+    const firstPoll = useRef(true);
+
+    // Near-realtime notifications: poll every 7s and surface newly arrived ones as toasts.
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        let active = true;
+        const tick = async () => {
+            const fresh = await poll();
+            if (active && !firstPoll.current) {
+                fresh.slice(0, 3).forEach((n) => toast(n.title, { icon: '🔔' }));
+            }
+            firstPoll.current = false;
+        };
+        tick();
+        const id = setInterval(tick, 7000);
+        return () => { active = false; clearInterval(id); };
+    }, [isAuthenticated, poll]);
 
     if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+    const allowed = !roles || (user ? roles.includes(user.role) : false);
 
     return (
         <div className="app-shell">
             <Header region={region} onRegionChange={setRegion} />
             <div className="main-content">
-                {children(region)}
+                {allowed ? children(region) : (
+                    <div className="page-content">
+                        <div className="empty-state" style={{ padding: '80px 24px', textAlign: 'center' }}>
+                            <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🔒</div>
+                            <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 8, color: 'var(--text-primary)' }}>Access restricted</div>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>You don't have permission to view this page.</div>
+                        </div>
+                    </div>
+                )}
             </div>
             <ChatWidget />
         </div>
@@ -68,19 +97,19 @@ const App: React.FC = () => {
                     <ProtectedLayout>{(r) => <ContentCalendarView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/links" element={
-                    <ProtectedLayout>{(r) => <LinkAnalyticsView region={r} />}</ProtectedLayout>
+                    <ProtectedLayout roles={['admin', 'developer', 'ceo']}>{(r) => <LinkAnalyticsView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/progress" element={
                     <ProtectedLayout>{(r) => <AgentProgressView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/accountability" element={
-                    <ProtectedLayout>{(r) => <AccountabilityView region={r} />}</ProtectedLayout>
+                    <ProtectedLayout roles={['admin', 'ceo']}>{(r) => <AccountabilityView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/chat" element={
                     <ProtectedLayout>{() => <Navigate to="/dashboard" replace />}</ProtectedLayout>
                 } />
                 <Route path="/settings" element={
-                    <ProtectedLayout>{() => <SettingsView />}</ProtectedLayout>
+                    <ProtectedLayout roles={['admin', 'developer', 'ceo']}>{() => <SettingsView />}</ProtectedLayout>
                 } />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />

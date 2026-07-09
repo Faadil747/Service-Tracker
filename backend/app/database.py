@@ -60,3 +60,9 @@ async def init_db():
             await conn.execute(text('ALTER TABLE posts ADD task_id VARCHAR(36) NULL'))
         except Exception:
             pass
+
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE posts ADD review_comment TEXT DEFAULT ''"))
+        except Exception:
+            pass

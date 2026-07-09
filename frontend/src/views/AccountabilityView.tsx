@@ -97,7 +97,9 @@ export const AccountabilityView: React.FC<Props> = ({ region }) => {
     // Leaderboard computation
     const leaderboard = agents.map(agent => {
         const stats = agentStats[agent.id] || {};
-        const agentTasks = tasks.filter((t: any) => t.assigned_agent_id === agent.id);
+        const agentTasks = tasks.filter((t: any) =>
+            (t.assignments || []).some((as: any) => as.agent_id === agent.id) || t.claimed_by_id === agent.id
+        );
         const completed = agentTasks.filter((t: any) => t.status === 'completed').length;
         const total = agentTasks.length || 1;
         const overdueCount = agentTasks.filter((t: any) => t.status !== 'completed' && t.due_date && new Date(t.due_date) < new Date()).length;
@@ -110,7 +112,7 @@ export const AccountabilityView: React.FC<Props> = ({ region }) => {
             overdue: overdueCount,
             completionRate,
             score: Math.max(0, Math.round(score)),
-            pending: agentTasks.filter((t: any) => t.status === 'pending').length,
+            pending: agentTasks.filter((t: any) => t.status === 'pending_approval').length,
             inProgress: agentTasks.filter((t: any) => t.status === 'in_progress').length,
             avgScore: stats.avg_performance_score || 0,
         };
@@ -391,7 +393,7 @@ export const AccountabilityView: React.FC<Props> = ({ region }) => {
                                 return (bOv ? 1 : 0) - (aOv ? 1 : 0);
                             }).slice(0, 50).map((t: any) => {
                                 const isOv = t.status !== 'completed' && t.due_date && new Date(t.due_date) < new Date();
-                                const agent = agents.find((a: any) => a.id === t.assigned_agent_id);
+                                const agent = agents.find((a: any) => a.id === (t.claimed_by_id || t.assignments?.[0]?.agent_id));
                                 return (
                                     <tr key={t.id} style={{ background: isOv ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
                                         <td>

@@ -38,6 +38,7 @@ export interface Task {
         tone?: string;
         hashtags?: string;
         image_url?: string;
+        review_comment?: string;
     } | null;
 }
 

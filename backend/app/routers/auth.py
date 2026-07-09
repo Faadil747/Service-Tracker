@@ -55,7 +55,12 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 
 @router.post("/register", status_code=201)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Admin-controlled registration — or used by seed script."""
+    """Public self-registration — always creates a plain agent.
+
+    Privileged accounts (admin/developer) are created only by an existing admin
+    via the admin-gated POST /api/users flow, so this endpoint can never be used
+    to self-escalate to admin.
+    """
     result = await db.execute(select(User).where(User.email == req.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -65,7 +70,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         email=req.email,
         full_name=req.full_name,
         hashed_password=hash_password(req.password),
-        role=req.role,
+        role="agent",  # never honour a caller-supplied privileged role
         region=req.region,
     )
     db.add(user)

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models import Post, PostDraft, PostStatus, Notification, ActivityLog, User, PostMetric, Comment, LinkTracking
 from app.services.auth_service import get_current_user, require_role
+from app.services.notify import notify_admins, notify_users
 
 class UpdateLinkRequest(BaseModel):
     linkedin_url: str
@@ -68,19 +69,29 @@ async def create_post(
     db: AsyncSession = Depends(get_db),
 ):
     sched = datetime.fromisoformat(req.scheduled_at) if req.scheduled_at else None
-    
-    # If it is linked to a task, default to in_review
-    if req.task_id:
-        initial_status = PostStatus.in_review
-    elif req.status:
-        try:
-            initial_status = PostStatus(req.status)
-        except ValueError:
-            initial_status = PostStatus.approved if current_user.role == "admin" else PostStatus.draft
-    else:
-        initial_status = PostStatus.approved if current_user.role == "admin" else PostStatus.draft
+    is_admin = current_user.role == "admin"
 
-    final_status = PostStatus.scheduled if sched and (initial_status == PostStatus.approved or current_user.role == "admin") else initial_status
+    # Resolve the requested status safely.
+    requested = None
+    if req.status:
+        try:
+            requested = PostStatus(req.status)
+        except ValueError:
+            requested = None
+
+    if req.task_id:
+        # A draft attached to a task goes for review (an admin may act directly).
+        initial_status = requested if (is_admin and requested) else PostStatus.in_review
+    elif requested is not None:
+        initial_status = requested
+    else:
+        initial_status = PostStatus.approved if is_admin else PostStatus.draft
+
+    # Agents can never self-approve / schedule / publish — clamp to the review pipeline.
+    if not is_admin and initial_status not in (PostStatus.draft, PostStatus.in_review):
+        initial_status = PostStatus.in_review
+
+    final_status = PostStatus.scheduled if (sched and is_admin and initial_status == PostStatus.approved) else initial_status
 
     post = Post(
         id=str(uuid.uuid4()),
@@ -183,26 +194,24 @@ async def approve_post(
                 # Manager rejects (redo) -> moves task back to in_progress
                 task.status = TaskStatus.in_progress
 
-            decision = "approved" if req.status == "approved" else "requested to redo"
-            db.add(Notification(
-                id=str(uuid.uuid4()),
-                user_id=post.created_by_id,
+            decision = "approved — you can publish it now" if req.status == "approved" else "requested changes"
+            await notify_users(
+                db, [post.created_by_id],
                 type=f"task_{req.status}",
-                title=f"Task Revision Details: {task.title}",
+                title=f"Draft {'approved' if req.status == 'approved' else 'needs revision'}: {task.title}",
                 body=f"Manager {current_user.full_name} {decision}. Comments: {req.comment or 'None'}",
                 reference_id=task.id,
                 reference_type="task",
-            ))
+            )
 
-    db.add(Notification(
-        id=str(uuid.uuid4()),
-        user_id=post.created_by_id,
+    await notify_users(
+        db, [post.created_by_id],
         type=f"post_{req.status}",
         title=f"Post {req.status}",
         body=req.comment or f"Your post was {req.status}",
         reference_id=post.id,
         reference_type="post",
-    ))
+    )
     await db.commit()
     return _post_dict(post)
 
@@ -224,18 +233,15 @@ async def complete_linked_task(post: Post, db: AsyncSession, current_user: User)
                 notes=f"Post published: {post.linkedin_post_id}",
             ))
             
-            # Notify admins of Task completion
-            admins = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
-            for admin in admins.scalars():
-                db.add(Notification(
-                    id=str(uuid.uuid4()),
-                    user_id=admin.id,
-                    type="task_completed",
-                    title=f"Task Completed: {task.title}",
-                    body=f"Completed via post publication by {current_user.full_name}",
-                    reference_id=task.id,
-                    reference_type="task",
-                ))
+            # Notify admins the task is complete.
+            await notify_admins(
+                db,
+                type="task_completed",
+                title=f"Task Completed: {task.title}",
+                body=f"Completed via post publication by {current_user.full_name}",
+                reference_id=task.id,
+                reference_type="task",
+            )
 
 
 @router.post("/{post_id}/publish")
@@ -248,7 +254,17 @@ async def publish_post(
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    
+
+    # Only the author (agent) or an admin may publish.
+    if current_user.role != "admin" and post.created_by_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only publish your own posts")
+
+    # Publishing is gated on admin approval — never allow an unapproved draft to go live.
+    if post.status == PostStatus.published:
+        return _post_dict(post)  # already live — idempotent
+    if post.status not in (PostStatus.approved, PostStatus.scheduled):
+        raise HTTPException(status_code=400, detail="This post must be approved by an admin before it can be published.")
+
     # 1. Publish to LinkedIn using the service
     from app.config import settings
     linkedin_url = None
@@ -319,7 +335,14 @@ async def save_linkedin_link(
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    
+
+    # Only the author (agent) or an admin may attach a live link, and only once the
+    # post has been approved — this path also marks it published + completes the task.
+    if current_user.role != "admin" and post.created_by_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only update your own posts")
+    if post.status not in (PostStatus.approved, PostStatus.scheduled, PostStatus.published):
+        raise HTTPException(status_code=400, detail="This post must be approved by an admin before it can be marked as published.")
+
     # Save the link
     post.linkedin_post_id = req.linkedin_url
     post.status = PostStatus.published
@@ -405,8 +428,15 @@ async def update_post(
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    if current_user.role == "agent" and post.created_by_id != current_user.id:
+
+    is_admin = current_user.role == "admin"
+    if not is_admin and post.created_by_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
+    if not is_admin and post.status == PostStatus.published:
+        raise HTTPException(status_code=400, detail="A published post can no longer be edited.")
+
+    content_changed = req.content is not None and req.content != post.content
+    was_reviewed = post.status in (PostStatus.approved, PostStatus.rejected, PostStatus.scheduled)
 
     # Save new draft version
     draft_count = await db.execute(select(PostDraft).where(PostDraft.post_id == post_id))
@@ -420,6 +450,25 @@ async def update_post(
     post.region = req.region
     if req.scheduled_at:
         post.scheduled_at = datetime.fromisoformat(req.scheduled_at)
+
+    # If an agent edits content that already passed (or failed) review, it must go
+    # back for re-approval — approved content can't be silently swapped before publish.
+    if not is_admin and content_changed and was_reviewed:
+        post.status = PostStatus.in_review
+        post.approved_by_id = None
+        if post.task_id:
+            from app.models.task import Task, TaskStatus
+            task = (await db.execute(select(Task).where(Task.id == post.task_id))).scalar_one_or_none()
+            if task and task.status != TaskStatus.completed:
+                task.status = TaskStatus.pending_approval
+                await notify_admins(
+                    db,
+                    type="pending_approval",
+                    title=f"Draft re-submitted: {task.title}",
+                    body=f"{current_user.full_name} edited the draft — it needs re-approval.",
+                    reference_id=task.id,
+                    reference_type="task",
+                )
     await db.commit()
     return _post_dict(post)
 
@@ -455,7 +504,20 @@ async def move_kanban(
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    post.status = new_status
+
+    try:
+        target = PostStatus(new_status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
+
+    if current_user.role != "admin":
+        if post.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only move your own posts")
+        # Agents move within the drafting stage only; approving/scheduling/publishing is admin-only.
+        if target not in (PostStatus.draft, PostStatus.in_review):
+            raise HTTPException(status_code=403, detail="Only an admin can approve, schedule, or publish posts.")
+
+    post.status = target
     await db.commit()
     return _post_dict(post)
 

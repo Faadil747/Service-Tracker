@@ -205,8 +205,6 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [historyType, setHistoryType] = useState('all');
     const [editingLinkUrl, setEditingLinkUrl] = useState('');
 
-    // Task completion
-    const [completingTask, setCompletingTask] = useState<string | null>(null);
 
 
     const filteredHistoryPosts = publishedPosts.filter(p => {
@@ -228,7 +226,12 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         return date.getMonth() === new Date().getMonth() && date.getFullYear() === new Date().getFullYear();
     }).length;
 
-    useEffect(() => { loadAll(); }, [region]);
+    useEffect(() => {
+        loadAll();
+        // Near-realtime: keep task/approval/kanban state fresh for both roles.
+        const id = setInterval(loadAll, 7000);
+        return () => clearInterval(id);
+    }, [region]);
     useEffect(() => { setPreviewContent(generatedContent); }, [generatedContent]);
 
     useEffect(() => {
@@ -468,17 +471,6 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         }
     };
 
-    const handleCompleteTask = async (taskId: string) => {
-        setCompletingTask(taskId);
-        try {
-            await tasksApi.complete(taskId);
-            toast.success('Task marked complete!');
-            loadAll();
-        } catch { toast.error('Failed to complete task'); }
-        setCompletingTask(null);
-    };
-
-
     const handleRemoveTask = async (taskId: string) => {
         if (!window.confirm('Are you sure you want to delete this task?')) return;
         try {
@@ -623,7 +615,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
                     {/* Active tasks */}
                     {(() => {
-                        const activeTasks = tasks.filter(t => ['active', 'in_progress'].includes(t.status));
+                        // Agents also need to see their drafts awaiting review / sent back for revision.
+                        const activeTasks = tasks.filter(t =>
+                            ['active', 'in_progress'].includes(t.status) ||
+                            (!isAdmin && ['pending_approval', 'rejected'].includes(t.status))
+                        );
                         const completedTasks = tasks.filter(t => t.status === 'completed');
 
                         return (
@@ -661,16 +657,26 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 <span className="badge badge-muted">{t.region}</span>
                                                                 {t.due_date && <span className={`badge ${new Date(t.due_date) < new Date() ? 'badge-danger' : 'badge-accent'}`}>Due: {new Date(t.due_date).toLocaleDateString()}</span>}
 
-                                                                {t.claimed_by_id ? (
-                                                                    <span className="badge badge-purple" style={{ fontSize: '0.68rem', fontWeight: 600 }}>
-                                                                        {isClaimedByMe ? 'Claimed by me (In Progress)' : `Taken by ${t.claimed_by_name || 'other agent'}`}
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="badge badge-gray" style={{ fontSize: '0.68rem' }}>
-                                                                        Unclaimed (Assigned)
-                                                                    </span>
-                                                                )}
+                                                                {(() => {
+                                                                    // One badge that reflects exactly where the task is in the workflow.
+                                                                    if (t.status === 'pending_approval')
+                                                                        return <span className="badge badge-warning" style={{ fontSize: '0.68rem', fontWeight: 600 }}>⏳ Awaiting admin approval</span>;
+                                                                    if (t.post?.status === 'rejected')
+                                                                        return <span className="badge badge-danger" style={{ fontSize: '0.68rem', fontWeight: 600 }}>↩ Needs revision</span>;
+                                                                    if (t.post?.status === 'approved')
+                                                                        return <span className="badge badge-success" style={{ fontSize: '0.68rem', fontWeight: 600 }}>✅ Approved · ready to publish</span>;
+                                                                    if (t.claimed_by_id)
+                                                                        return <span className="badge badge-purple" style={{ fontSize: '0.68rem', fontWeight: 600 }}>{isClaimedByMe ? '🔧 In progress (you)' : `🔒 Taken by ${t.claimed_by_name || 'other agent'}`}</span>;
+                                                                    return <span className="badge badge-gray" style={{ fontSize: '0.68rem' }}>📥 Unclaimed (assigned)</span>;
+                                                                })()}
                                                             </div>
+
+                                                            {/* Manager feedback when a draft was sent back for revision */}
+                                                            {t.post?.status === 'rejected' && t.post?.review_comment && !isAdmin && (
+                                                                <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 6, fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                                                    <strong style={{ color: 'var(--danger)' }}>Revision requested:</strong> {t.post.review_comment}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                                                             {/* Accept Task button */}
@@ -684,8 +690,8 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 </button>
                                                             )}
 
-                                                            {/* Direct to AI Composer button */}
-                                                            {isClaimedByMe && !isAdmin && (
+                                                            {/* Write / Revise button — hidden while a draft is under review or already approved */}
+                                                            {isClaimedByMe && !isAdmin && t.status !== 'pending_approval' && t.post?.status !== 'approved' && (
                                                                 <button
                                                                     className="btn btn-sm"
                                                                     onClick={() => {
@@ -695,20 +701,29 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                     }}
                                                                     style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}
                                                                 >
-                                                                    <Sparkles size={13} /> Write Post
+                                                                    <Sparkles size={13} /> {t.post?.status === 'rejected' ? 'Revise' : 'Write Post'}
                                                                 </button>
                                                             )}
 
-                                                            {/* Complete actions only visible to admin */}
+                                                            {/* Agent: draft is under admin review */}
+                                                            {!isAdmin && isClaimedByMe && t.status === 'pending_approval' && (
+                                                                <span className="badge badge-warning" style={{ fontSize: '0.68rem' }}>Under review</span>
+                                                            )}
+
+                                                            {/* Admin: read-only lifecycle indicator (completion is publish-gated — the
+                                                                task finishes when the agent publishes the approved post) */}
                                                             {isAdmin && (
-                                                                <button
-                                                                    className="btn btn-sm btn-primary"
-                                                                    disabled={completingTask === t.id}
-                                                                    onClick={() => handleCompleteTask(t.id)}
-                                                                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                                                                >
-                                                                    {completingTask === t.id ? '...' : <><CheckCircle size={13} /> Complete</>}
-                                                                </button>
+                                                                <span className="badge" style={{
+                                                                    background: t.post?.status === 'approved' ? 'rgba(16,185,129,0.15)' : 'var(--bg-tertiary)',
+                                                                    color: t.post?.status === 'approved' ? 'var(--success)' : 'var(--text-muted)',
+                                                                    fontSize: '0.68rem', fontWeight: 600
+                                                                }}>
+                                                                    {t.post?.status === 'approved'
+                                                                        ? 'Approved · awaiting publish'
+                                                                        : t.post?.status === 'in_review'
+                                                                            ? 'Draft submitted'
+                                                                            : t.claimed_by_id ? 'In progress' : 'Awaiting agent'}
+                                                                </span>
                                                             )}
 
                                                             {/* Publish button for agent if task's post is approved */}
@@ -786,14 +801,16 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             </div>
                                                         </div>
                                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                            <button
-                                                                className="btn btn-sm btn-ghost"
-                                                                style={{ color: 'var(--danger)', padding: 6 }}
-                                                                onClick={() => handleRemoveTask(t.id)}
-                                                                title="Delete Task"
-                                                            >
-                                                                <Trash2 size={15} />
-                                                            </button>
+                                                            {isAdmin && (
+                                                                <button
+                                                                    className="btn btn-sm btn-ghost"
+                                                                    style={{ color: 'var(--danger)', padding: 6 }}
+                                                                    onClick={() => handleRemoveTask(t.id)}
+                                                                    title="Delete Task"
+                                                                >
+                                                                    <Trash2 size={15} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 );
@@ -1001,19 +1018,22 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
                                     </div>
 
-                                    {/* Publish directly to LinkedIn checkbox */}
-                                    <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <input
-                                            type="checkbox"
-                                            id="publishDirectly"
-                                            checked={publishDirectly}
-                                            onChange={e => setPublishDirectly(e.target.checked)}
-                                            style={{ width: 16, height: 16, cursor: 'pointer' }}
-                                        />
-                                        <label htmlFor="publishDirectly" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                                            🚀 Publish directly to LinkedIn
-                                        </label>
-                                    </div>
+                                    {/* Publish directly to LinkedIn — admins only. Agents must submit for
+                                        approval; publishing is unlocked only after an admin approves. */}
+                                    {isAdmin && (
+                                        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <input
+                                                type="checkbox"
+                                                id="publishDirectly"
+                                                checked={publishDirectly}
+                                                onChange={e => setPublishDirectly(e.target.checked)}
+                                                style={{ width: 16, height: 16, cursor: 'pointer' }}
+                                            />
+                                            <label htmlFor="publishDirectly" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                                                🚀 Publish directly to LinkedIn
+                                            </label>
+                                        </div>
+                                    )}
 
                                     {(() => {
                                         const activeTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;

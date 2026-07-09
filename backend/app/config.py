@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # Public base URL of THIS backend — used to build shareable tracking links
+    # (e.g. UTM short links on published posts) that resolve back to the click
+    # tracker. Set to the deployed API domain in production.
+    BACKEND_PUBLIC_URL: str = "http://localhost:8000"
+
     # Feature flags
     DEV_MODE: bool = True  # enables sandbox / mock data endpoints
 

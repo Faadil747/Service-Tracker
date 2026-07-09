@@ -20,7 +20,7 @@ const getNavItems = (role: string) => [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/workspace', icon: CheckSquare, label: 'Workspace', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/calendar', icon: Calendar, label: 'Calendar', roles: ['admin', 'agent', 'developer', 'ceo'] },
-    { to: '/links', icon: Link2, label: 'Link Analytics', roles: ['admin', 'developer', 'ceo'] },
+    { to: '/links', icon: Link2, label: 'Link Analytics', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/progress', icon: TrendingUp, label: 'Agent Progress', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/accountability', icon: Users, label: 'Accountability', roles: ['admin', 'ceo'] },
     { to: '/settings', icon: Settings, label: 'Settings', roles: ['admin', 'developer', 'ceo'] },

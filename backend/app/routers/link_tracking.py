@@ -5,14 +5,26 @@ import string
 from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import LinkTracking, User
 from app.services.auth_service import get_current_user
+from app.config import settings
 
 router = APIRouter(prefix="/api/links", tags=["link_tracking"])
+
+
+def _classify_source(referer: str) -> str:
+    """Best-effort attribution of where a click came from, based on the referer."""
+    r = (referer or "").lower()
+    if "linkedin.com" in r:
+        return "feed"
+    if not r:
+        return "direct"
+    return "external"
 
 
 class CreateLinkRequest(BaseModel):
@@ -126,7 +138,10 @@ async def track_click(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Record a click event and redirect (simulate geo/device attribution)."""
+    """Public click endpoint: records the click, then 302-redirects the visitor to
+    the destination. This is the URL that is actually shared — every open is
+    counted, so the Link Analytics page reflects clicks in near real time.
+    No auth: anyone who clicks a shared link must be able to reach it."""
     result = await db.execute(select(LinkTracking).where(LinkTracking.short_code == short_code))
     link = result.scalar_one_or_none()
     if not link:
@@ -136,14 +151,18 @@ async def track_click(
         "timestamp": datetime.utcnow().isoformat(),
         "ip": request.client.host if request.client else "unknown",
         "user_agent": request.headers.get("user-agent", ""),
-        "source": "feed",  # feed/profile/dm/external — can be enriched from referrer
+        "source": _classify_source(request.headers.get("referer", "")),
     }
     clicks = json.loads(link.click_data or "[]")
     clicks.append(click_event)
     link.click_data = json.dumps(clicks)
-    link.total_clicks += 1
+    link.total_clicks = (link.total_clicks or 0) + 1
     await db.commit()
-    return {"redirect_to": link.original_url, "total_clicks": link.total_clicks}
+
+    # Send the visitor on to the real destination. Fall back to the app if the
+    # destination is somehow missing so the click is never a dead end.
+    destination = link.original_url or settings.FRONTEND_URL
+    return RedirectResponse(url=destination, status_code=302)
 
 
 @router.get("/{link_id}/analytics")
@@ -165,11 +184,16 @@ async def link_analytics(
 
 
 def _link_dict(l: LinkTracking) -> dict:
+    # The shareable, click-recording URL that resolves back to this backend's
+    # tracker. This — not the vanity short_url — is what should be shared/opened
+    # so that every click is counted in analytics.
+    tracking_url = f"{settings.BACKEND_PUBLIC_URL.rstrip('/')}/api/links/{l.short_code}/track"
     return {
         "id": l.id,
         "post_id": l.post_id,
         "short_code": l.short_code,
         "short_url": l.short_url,
+        "tracking_url": tracking_url,
         "original_url": l.original_url,
         "utm_campaign": l.utm_campaign,
         "utm_source": l.utm_source,

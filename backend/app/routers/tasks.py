@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, delete, update, cast, Date
+from sqlalchemy import select, delete, update
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import Task, TaskAssignment, TaskCompletion, TaskApproval, Notification, ActivityLog, User, TaskStatus, Comment, Post
@@ -36,6 +36,10 @@ class CreateTaskRequest(BaseModel):
 class ApproveTaskRequest(BaseModel):
     status: str  # approved / rejected
     comment: str = ""
+
+
+class BulkDeleteRequest(BaseModel):
+    task_ids: List[str]
 
 
 @router.get("/")
@@ -283,11 +287,12 @@ async def accountability_report(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Who has NOT completed tasks that were due today."""
-    today = datetime.utcnow().date()
+    """Agents responsible for a task that is now past its due date and not finished."""
+    now = datetime.utcnow()
     q = select(Task).where(
         Task.status.in_([TaskStatus.active, TaskStatus.in_progress]),
-        cast(Task.due_date, Date) <= today,
+        Task.due_date.isnot(None),
+        Task.due_date < now,  # strictly overdue — a task due later today is not "missed" yet
     )
     if region and region != "Global":
         q = q.where(Task.region == region)
@@ -296,13 +301,49 @@ async def accountability_report(
 
     missed = []
     for t in overdue:
-        assign_result = await db.execute(select(TaskAssignment).where(TaskAssignment.task_id == t.id))
-        for assign in assign_result.scalars():
-            agent_result = await db.execute(select(User).where(User.id == assign.agent_id))
-            agent = agent_result.scalar_one_or_none()
+        # Blame whoever took the task; if still unclaimed, the assigned agent(s).
+        if t.claimed_by_id:
+            agent_ids = [t.claimed_by_id]
+        else:
+            assigns = await db.execute(select(TaskAssignment).where(TaskAssignment.task_id == t.id))
+            agent_ids = [a.agent_id for a in assigns.scalars()]
+        for aid in agent_ids:
+            agent = (await db.execute(select(User).where(User.id == aid))).scalar_one_or_none()
             if agent:
-                missed.append({"task_id": t.id, "task_title": t.title, "agent_id": agent.id, "agent_name": agent.full_name, "due_date": t.due_date.isoformat() if t.due_date else None})
+                missed.append({
+                    "task_id": t.id,
+                    "task_title": t.title,
+                    "agent_id": agent.id,
+                    "agent_name": agent.full_name,
+                    "claimed": bool(t.claimed_by_id),  # False = assigned but never accepted
+                    "due_date": t.due_date.isoformat() if t.due_date else None,
+                })
     return missed
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_tasks(
+    req: BulkDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete many tasks at once. Admins may delete any task; agents may delete only
+    tasks they created. Tasks the caller isn't allowed to delete are skipped."""
+    deleted, skipped = [], []
+    for tid in req.task_ids:
+        task = (await db.execute(select(Task).where(Task.id == tid))).scalar_one_or_none()
+        if not task:
+            skipped.append(tid)
+            continue
+        if current_user.role != "admin" and task.created_by_id != current_user.id:
+            skipped.append(tid)
+            continue
+        await db.execute(delete(Comment).where(Comment.entity_type == "task", Comment.entity_id == tid))
+        await db.execute(delete(Notification).where(Notification.reference_type == "task", Notification.reference_id == tid))
+        await db.delete(task)
+        deleted.append(tid)
+    await db.commit()
+    return {"deleted": deleted, "skipped": skipped, "deleted_count": len(deleted), "skipped_count": len(skipped)}
 
 
 @router.delete("/{task_id}")

@@ -8,6 +8,7 @@ import {
     isSameMonth, isToday, startOfWeek, endOfWeek, addMonths, subMonths
 } from 'date-fns';
 import { metricsApi, tasksApi, usersApi, settingsApi } from '../services/api';
+import { recurrenceDates, RECURRENCE_OPTIONS, RecurrenceType } from '../utils/recurrence';
 import { useAuthStore } from '../store/authStore';
 import { Task, User } from '../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -292,6 +293,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const [loading, setLoading] = useState(true);
     const [showAddTask, setShowAddTask] = useState(false);
     const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_ids: [] as string[] });
+    const [taskRecurrence, setTaskRecurrence] = useState<{ type: RecurrenceType; count: number }>({ type: 'none', count: 4 });
     const [linkedinConnected, setLinkedinConnected] = useState<boolean | null>(null);
     const [linkedinError, setLinkedinError] = useState<string>('');
     const isAdmin = user?.role === 'admin';
@@ -364,10 +366,23 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const handleAddTask = async () => {
         if (!newTask.title.trim()) return toast.error('Task title is required');
         try {
-            await tasksApi.create({ ...newTask, region });
-            toast.success(isAdmin ? 'Task created!' : 'Task submitted for approval');
+            const base = newTask.due_date ? new Date(newTask.due_date) : new Date();
+            const dates = recurrenceDates(base, taskRecurrence.type, taskRecurrence.count);
+            for (const d of dates) {
+                await tasksApi.create({
+                    ...newTask,
+                    region,
+                    recurrence: taskRecurrence.type,
+                    due_date: newTask.due_date ? format(d, "yyyy-MM-dd'T'HH:mm:ss") : undefined,
+                });
+            }
+            const many = dates.length > 1;
+            toast.success(many
+                ? `${isAdmin ? 'Created' : 'Submitted'} ${dates.length} recurring tasks`
+                : (isAdmin ? 'Task created!' : 'Task submitted for approval'));
             setShowAddTask(false);
             setNewTask({ title: '', description: '', due_date: '', assigned_to_ids: [] });
+            setTaskRecurrence({ type: 'none', count: 4 });
             loadAll(true);
         } catch { toast.error('Failed to create task'); }
     };
@@ -461,6 +476,24 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                     <div className="form-group">
                                         <label className="form-label">Due Date</label>
                                         <input className="input" type="datetime-local" value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">🔁 Recurrence</label>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <select className="select" value={taskRecurrence.type} onChange={e => setTaskRecurrence(p => ({ ...p, type: e.target.value as RecurrenceType }))}>
+                                                {RECURRENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                            </select>
+                                            {taskRecurrence.type !== 'none' && (
+                                                <input className="input" type="number" min={1} max={24} title="Number of occurrences" style={{ width: 90 }}
+                                                    value={taskRecurrence.count}
+                                                    onChange={e => setTaskRecurrence(p => ({ ...p, count: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 24) }))} />
+                                            )}
+                                        </div>
+                                        {taskRecurrence.type !== 'none' && (
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                                                Creates {taskRecurrence.count} tasks, one every {taskRecurrence.type === 'daily' ? 'day' : taskRecurrence.type === 'weekly' ? 'week' : 'month'} from the due date.
+                                            </div>
+                                        )}
                                     </div>
                                     {isAdmin && (
                                         <div className="form-group">
@@ -648,7 +681,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                             {isAdmin && overdue.length > 0 && (
                                 <div style={{ marginBottom: 12 }}>
                                     <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--danger)', marginBottom: 6 }}>
-                                        ⚠ Missed by {overdue.length} agent(s)
+                                        ⚠ {new Set(overdue.map((o: any) => o.task_id)).size} overdue task{new Set(overdue.map((o: any) => o.task_id)).size > 1 ? 's' : ''} · {new Set(overdue.map((o: any) => o.agent_id)).size} agent{new Set(overdue.map((o: any) => o.agent_id)).size > 1 ? 's' : ''}
                                     </div>
                                     {overdue.slice(0, 3).map((o, i) => (
                                         <div key={i}
@@ -660,9 +693,12 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                             <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, color: 'var(--danger)' }}>
                                                 {o.agent_name?.charAt(0)}
                                             </div>
-                                            <div style={{ flex: 1 }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{o.agent_name}</div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{o.task_title}</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                    <span className="truncate">{o.task_title}</span>
+                                                    <span style={{ flexShrink: 0, fontSize: '0.6rem', fontWeight: 700, color: o.claimed ? 'var(--warning)' : 'var(--danger)' }}>· {o.claimed ? 'in progress' : 'not accepted'}</span>
+                                                </div>
                                             </div>
                                             <button
                                                 className="btn btn-sm btn-ghost"

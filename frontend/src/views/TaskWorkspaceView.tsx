@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import {
     Sparkles, RefreshCw, CheckCircle, Eye, FileText, Plus, X, Trash2
 } from 'lucide-react';
-import { tasksApi, postsApi, aiApi, metricsApi, usersApi } from '../services/api';
+import { tasksApi, postsApi, aiApi, metricsApi, usersApi, API_BASE_URL } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { Task, Post, User, KanbanBoard } from '../types';
 import { useSearchParams } from 'react-router-dom';
+import { format } from 'date-fns';
+import { richRecurrenceDates, RICH_RECURRENCE_OPTIONS, WEEKDAY_OPTIONS, RichRecurrenceConfig, RichRecurrenceType } from '../utils/recurrence';
 import toast from 'react-hot-toast';
 
 const POST_TYPES = ['general', 'job_posting', 'jd_post', 'industry_tip', 'ai_carousel', 'resume_advice'];
@@ -13,7 +15,7 @@ const TONES = ['professional', 'casual', 'enthusiastic', 'informative', 'inspira
 const EMOJIS = ['🚀', '💡', '✅', '🌟', '🎯', '📊', '💼', '🤝', '🔥', '👋'];
 
 // ── LinkedIn Post Preview ──────────────────────────────────────────────────
-const LinkedInPreview: React.FC<{ content: string; hashtags: string }> = ({ content, hashtags }) => {
+const LinkedInPreview: React.FC<{ content: string; hashtags: string; imageUrl?: string }> = ({ content, hashtags, imageUrl }) => {
     const tags = hashtags ? hashtags.split(' ').filter(Boolean) : [];
     return (
         <div className="linkedin-preview">
@@ -30,6 +32,9 @@ const LinkedInPreview: React.FC<{ content: string; hashtags: string }> = ({ cont
                     <div className="linkedin-post-content">
                         {content || <span style={{ color: '#8b9dc3', fontStyle: 'italic' }}>Your post preview will appear here...</span>}
                     </div>
+                    {imageUrl && (
+                        <img src={imageUrl} alt="Post attachment" style={{ marginTop: 10, width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }} />
+                    )}
                     {tags.length > 0 && (
                         <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                             {tags.map(t => <span key={t} style={{ color: '#70b5f9', fontSize: '0.8rem' }}>{t.startsWith('#') ? t : `#${t}`}</span>)}
@@ -176,6 +181,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [showAddTask, setShowAddTask] = useState(false);
     const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_id: '' });
     const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+    const [taskRecurrence, setTaskRecurrence] = useState<RichRecurrenceConfig>({ type: 'none', weeklyDay: '1', monthlyDay: '1', count: 4 });
 
 
 
@@ -192,6 +198,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [savingPost, setSavingPost] = useState(false);
     const [editingPostId, setEditingPostId] = useState<string | null>(null);
     const [publishDirectly, setPublishDirectly] = useState(false);
+    const [imageUrl, setImageUrl] = useState('');
+    const [uploadingImage, setUploadingImage] = useState(false);
+    const [reviewComments, setReviewComments] = useState<Record<string, string>>({});
+    const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [hoveredCell, setHoveredCell] = useState<{ day: string; hour: number; engagement: number; x: number; y: number } | null>(null);
 
     // Published Posts History
@@ -257,6 +268,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 setGeneratedContent(activeTask.post.content);
                 setTone(activeTask.post.tone || 'professional');
                 setHashtags(activeTask.post.hashtags || '');
+                setImageUrl(activeTask.post.image_url || '');
             }
         }
     }, [selectedTaskId, tasks]);
@@ -319,6 +331,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 tone,
                 hashtags,
                 region,
+                image_url: imageUrl,
                 scheduled_at: scheduledAt || undefined,
                 is_template: false,
                 status: (publishDirectly || isAdmin) ? 'approved' : 'in_review',
@@ -328,7 +341,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
             if (editingPostId) {
                 const res = await postsApi.update(editingPostId, payload);
                 createdPost = res.data;
-                toast.success('Post updated!');
+                toast.success(isAdmin ? 'Post updated!' : 'Changes saved — sent to admin for review');
                 setEditingPostId(null);
             } else {
                 const res = await postsApi.create(payload);
@@ -348,10 +361,42 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 }
             }
             setPreviewContent(''); setGeneratedContent(''); setPrompt(''); setScheduledAt('');
-            setPublishDirectly(false);
+            setPublishDirectly(false); setImageUrl('');
             loadAll();
         } catch { toast.error('Failed to save post'); }
         setSavingPost(false);
+    };
+
+    const handleImageUpload = async (file: File | null) => {
+        if (!file) return;
+        if (!file.type.startsWith('image/')) { toast.error('Please choose an image file'); return; }
+        if (file.size > 5 * 1024 * 1024) { toast.error('Image too large (max 5 MB)'); return; }
+        setUploadingImage(true);
+        try {
+            const res = await postsApi.uploadImage(file);
+            // store an absolute URL so the preview and LinkedIn post resolve it anywhere
+            setImageUrl(`${API_BASE_URL}${res.data.url}`);
+            toast.success('Image added');
+        } catch {
+            toast.error('Image upload failed');
+        }
+        setUploadingImage(false);
+    };
+
+    // Load an existing post into the composer so the agent can edit it. Saving the
+    // edits re-submits it for admin review (handled by the backend update flow).
+    const openPostForEditing = (t: Task) => {
+        if (!t.post) return;
+        setSelectedTaskId(t.id);
+        setEditingPostId(t.post.id);
+        setPreviewContent(t.post.content);
+        setGeneratedContent(t.post.content);
+        setTone(t.post.tone || 'professional');
+        setHashtags(t.post.hashtags || '');
+        setImageUrl(t.post.image_url || '');
+        setPredictedReach(null);
+        setTab('composer');
+        setDetailTaskId(null);
     };
 
     const handlePublishLive = async () => {
@@ -366,7 +411,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
             await postsApi.publish(task.post.id);
             toast.success("Post published live! Task completed.");
             setSelectedTaskId(null);
-            setPreviewContent(''); setGeneratedContent(''); setPrompt(''); setScheduledAt('');
+            setPreviewContent(''); setGeneratedContent(''); setPrompt(''); setScheduledAt(''); setImageUrl('');
             loadAll();
         } catch (err: any) {
             const msg = err.response?.data?.detail || "Failed to publish post.";
@@ -439,15 +484,25 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const handleAddTask = async () => {
         if (!newTask.title.trim()) return toast.error('Task title is required');
         try {
-            await tasksApi.create({
-                ...newTask,
-                region,
-                assigned_to_ids: selectedAgentIds.length > 0 ? selectedAgentIds : undefined
-            });
-            toast.success(isAdmin ? 'Task created!' : 'Task submitted for approval');
+            const base = newTask.due_date ? new Date(newTask.due_date) : new Date();
+            const dates = richRecurrenceDates(base, taskRecurrence);
+            for (const d of dates) {
+                await tasksApi.create({
+                    ...newTask,
+                    region,
+                    recurrence: taskRecurrence.type,
+                    due_date: newTask.due_date ? format(d, "yyyy-MM-dd'T'HH:mm:ss") : undefined,
+                    assigned_to_ids: selectedAgentIds.length > 0 ? selectedAgentIds : undefined
+                });
+            }
+            const many = dates.length > 1;
+            toast.success(many
+                ? `${isAdmin ? 'Created' : 'Submitted'} ${dates.length} recurring tasks`
+                : (isAdmin ? 'Task created!' : 'Task submitted for approval'));
             setShowAddTask(false);
             setNewTask({ title: '', description: '', due_date: '', assigned_to_id: '' });
             setSelectedAgentIds([]);
+            setTaskRecurrence({ type: 'none', weeklyDay: '1', monthlyDay: '1', count: 4 });
             loadAll();
         } catch { toast.error('Failed to create task'); }
     };
@@ -476,14 +531,38 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         try {
             await tasksApi.delete(taskId);
             toast.success('Task deleted!');
+            setSelectedIds(prev => prev.filter(id => id !== taskId));
             loadAll();
         } catch { toast.error('Failed to delete task'); }
     };
 
-    const handleApproveTask = async (taskId: string, status: string) => {
+    // Admins may delete any task; agents may delete only tasks they created.
+    const canDelete = (t: Task) => isAdmin || t.created_by_id === user?.id;
+    const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.length === 0) return;
+        if (!window.confirm(`Delete ${selectedIds.length} selected task${selectedIds.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
         try {
-            await tasksApi.approve(taskId, { status, comment: `${status === 'approved' ? 'Approved' : 'Rejected'} by ${user?.full_name}` });
-            toast.success(`Task ${status}!`);
+            const res = await tasksApi.bulkDelete(selectedIds);
+            const deleted = res.data?.deleted_count ?? 0;
+            const skipped = res.data?.skipped_count ?? 0;
+            if (deleted > 0) toast.success(`Deleted ${deleted} task${deleted > 1 ? 's' : ''}`);
+            if (skipped > 0) toast(`${skipped} skipped — you can only delete tasks you created`, { icon: 'ℹ️' });
+            if (deleted === 0 && skipped === 0) toast('Nothing to delete', { icon: 'ℹ️' });
+            setSelectedIds([]);
+            loadAll();
+        } catch { toast.error('Bulk delete failed'); }
+    };
+
+    const handleApproveTask = async (taskId: string, status: string, comment?: string) => {
+        const fallback = status === 'approved'
+            ? `Approved by ${user?.full_name}`
+            : `Changes requested by ${user?.full_name}`;
+        try {
+            await tasksApi.approve(taskId, { status, comment: (comment && comment.trim()) || fallback });
+            toast.success(status === 'approved' ? 'Approved — agent can publish' : 'Sent back to the agent for changes');
+            setReviewComments(prev => { const n = { ...prev }; delete n[taskId]; return n; });
             loadAll();
         } catch { toast.error('Action failed'); }
     };
@@ -567,6 +646,19 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                         </button>
                     </div>
 
+                    {/* Bulk selection bar */}
+                    {selectedIds.length > 0 && (
+                        <div className="glass-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', marginBottom: 16, border: '1px solid var(--accent)', background: 'var(--accent-glow)' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedIds.length} task{selectedIds.length > 1 ? 's' : ''} selected</span>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button className="btn btn-sm btn-ghost" onClick={() => setSelectedIds([])}>Clear</button>
+                                <button className="btn btn-sm btn-danger" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <Trash2 size={14} /> Delete selected
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Admin: Pending approvals */}
                     {isAdmin && pendingTasks.length > 0 && (
                         <div className="chart-container" style={{ marginBottom: 20 }}>
@@ -574,19 +666,9 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 {pendingTasks.map(t => (
                                     <div key={t.id} className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{t.title}</div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.description}</div>
-                                            </div>
-                                            <div style={{ display: 'flex', gap: 8 }}>
-                                                <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => handleApproveTask(t.id, 'approved')}>
-                                                    ✓ Approve
-                                                </button>
-                                                <button className="btn btn-sm btn-danger" onClick={() => handleApproveTask(t.id, 'rejected')}>
-                                                    ✗ Reject
-                                                </button>
-                                            </div>
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{t.title}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.description}</div>
                                         </div>
                                         {t.post && (
                                             <div style={{
@@ -595,10 +677,12 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                 borderRadius: '8px',
                                                 borderLeft: '3px solid var(--accent)',
                                                 fontSize: '0.8rem',
-                                                marginTop: 4
                                             }}>
                                                 <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>Draft Content to Review:</div>
                                                 <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>{t.post.content}</div>
+                                                {t.post.image_url && (
+                                                    <img src={t.post.image_url} alt="Draft attachment" style={{ marginTop: 10, maxWidth: '100%', maxHeight: 240, borderRadius: 8, objectFit: 'cover', display: 'block' }} />
+                                                )}
                                                 {(t.post.tone || t.post.hashtags) && (
                                                     <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8, display: 'flex', gap: 10 }}>
                                                         {t.post.tone && <span>Tone: <strong>{t.post.tone}</strong></span>}
@@ -607,6 +691,21 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                 )}
                                             </div>
                                         )}
+                                        <textarea
+                                            className="textarea"
+                                            placeholder="Optional: describe the changes you want. Sent to the agent when you request changes…"
+                                            value={reviewComments[t.id] || ''}
+                                            onChange={e => setReviewComments(prev => ({ ...prev, [t.id]: e.target.value }))}
+                                            style={{ minHeight: 54, fontSize: '0.8rem' }}
+                                        />
+                                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                            <button className="btn btn-sm" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.3)' }} onClick={() => handleApproveTask(t.id, 'rejected', reviewComments[t.id])}>
+                                                ↩ Request Changes
+                                            </button>
+                                            <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => handleApproveTask(t.id, 'approved', reviewComments[t.id])}>
+                                                ✓ Approve
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -625,7 +724,23 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                         return (
                             <>
                                 <div className="chart-container">
-                                    <div className="chart-title">📅 Active Tasks ({activeTasks.length})</div>
+                                    <div className="chart-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span>📅 Active Tasks ({activeTasks.length})</span>
+                                        {(() => {
+                                            const deletable = activeTasks.filter(canDelete);
+                                            if (deletable.length === 0) return null;
+                                            const allSelected = deletable.every(t => selectedIds.includes(t.id));
+                                            return (
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', fontWeight: 500, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                                                    <input type="checkbox" checked={allSelected}
+                                                        onChange={() => setSelectedIds(prev => allSelected
+                                                            ? prev.filter(id => !deletable.some(t => t.id === id))
+                                                            : Array.from(new Set([...prev, ...deletable.map(t => t.id)])))} />
+                                                    Select all
+                                                </label>
+                                            );
+                                        })()}
+                                    </div>
                                     {activeTasks.length === 0 ? (
                                         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
                                             <CheckCircle size={40} style={{ marginBottom: 12, opacity: 0.3 }} />
@@ -649,9 +764,12 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             boxShadow: isSelected ? '0 0 12px rgba(37,99,235,0.15)' : undefined
                                                         }}
                                                     >
+                                                        {canDelete(t) && (
+                                                            <input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => toggleSelect(t.id)} title="Select for bulk delete" style={{ width: 16, height: 16, marginTop: 3, cursor: 'pointer', flexShrink: 0 }} />
+                                                        )}
                                                         <div className={`status-dot ${t.status === 'in_progress' ? 'dot-active' : 'dot-draft'}`} style={{ marginTop: 4 }} />
-                                                        <div style={{ flex: 1 }}>
-                                                            <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: 4 }}>{t.title}</div>
+                                                        <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setDetailTaskId(t.id)} title="Click to view the post">
+                                                            <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>{t.title}<Eye size={13} style={{ opacity: 0.4 }} /></div>
                                                             {t.description && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 6 }}>{t.description}</div>}
                                                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                                                                 <span className="badge badge-muted">{t.region}</span>
@@ -690,8 +808,8 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 </button>
                                                             )}
 
-                                                            {/* Write / Revise button — hidden while a draft is under review or already approved */}
-                                                            {isClaimedByMe && !isAdmin && t.status !== 'pending_approval' && t.post?.status !== 'approved' && (
+                                                            {/* Write a first draft (no post yet) */}
+                                                            {isClaimedByMe && !isAdmin && t.status !== 'pending_approval' && !t.post && (
                                                                 <button
                                                                     className="btn btn-sm"
                                                                     onClick={() => {
@@ -701,7 +819,18 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                     }}
                                                                     style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}
                                                                 >
-                                                                    <Sparkles size={13} /> {t.post?.status === 'rejected' ? 'Revise' : 'Write Post'}
+                                                                    <Sparkles size={13} /> Write Post
+                                                                </button>
+                                                            )}
+
+                                                            {/* Edit a draft that was sent back for revision (saving resubmits it) */}
+                                                            {isClaimedByMe && !isAdmin && t.post?.status === 'rejected' && (
+                                                                <button
+                                                                    className="btn btn-sm"
+                                                                    onClick={() => openPostForEditing(t)}
+                                                                    style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}
+                                                                >
+                                                                    <Sparkles size={13} /> Edit &amp; resubmit
                                                                 </button>
                                                             )}
 
@@ -743,6 +872,18 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                     style={{ display: 'flex', alignItems: 'center', gap: 4 }}
                                                                 >
                                                                     Publish
+                                                                </button>
+                                                            )}
+
+                                                            {/* Agent can edit an approved draft before publishing — saving sends it back for review */}
+                                                            {t.post?.status === 'approved' && isClaimedByMe && !isAdmin && (
+                                                                <button
+                                                                    className="btn btn-sm btn-ghost"
+                                                                    onClick={() => openPostForEditing(t)}
+                                                                    title="Edit the post — saving sends it back to the admin for review"
+                                                                    style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                                                                >
+                                                                    ✏️ Edit
                                                                 </button>
                                                             )}
 
@@ -791,9 +932,12 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             boxShadow: isSelected ? '0 0 12px rgba(37,99,235,0.15)' : undefined
                                                         }}
                                                     >
+                                                        {canDelete(t) && (
+                                                            <input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => toggleSelect(t.id)} title="Select for bulk delete" style={{ width: 16, height: 16, marginTop: 3, cursor: 'pointer', flexShrink: 0 }} />
+                                                        )}
                                                         <div className="status-dot dot-completed" style={{ marginTop: 4 }} />
-                                                        <div style={{ flex: 1 }}>
-                                                            <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: 4, textDecoration: 'line-through' }}>{t.title}</div>
+                                                        <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setDetailTaskId(t.id)} title="Click to view the post">
+                                                            <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: 4, textDecoration: 'line-through', display: 'flex', alignItems: 'center', gap: 6 }}>{t.title}<Eye size={13} style={{ opacity: 0.4, textDecoration: 'none' }} /></div>
                                                             {t.description && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 6 }}>{t.description}</div>}
                                                             <div style={{ display: 'flex', gap: 6 }}>
                                                                 <span className="badge badge-muted">{t.region}</span>
@@ -819,6 +963,97 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                     )}
                                 </div>
                             </>
+                        );
+                    })()}
+
+                    {/* Task Detail — post preview visible to BOTH admins and agents */}
+                    {detailTaskId && (() => {
+                        const t = tasks.find(x => x.id === detailTaskId);
+                        if (!t) return null;
+                        const post = t.post;
+                        const isClaimedByMe = t.claimed_by_id === user?.id;
+                        const isAssigned = t.assignments?.some(a => a.agent_id === user?.id);
+                        const stageBadge = (() => {
+                            if (t.status === 'completed') return <span className="badge badge-success">✅ Completed</span>;
+                            if (t.status === 'pending_approval') return <span className="badge badge-warning">⏳ Awaiting admin approval</span>;
+                            if (post?.status === 'rejected') return <span className="badge badge-danger">↩ Needs revision</span>;
+                            if (post?.status === 'approved') return <span className="badge badge-success">✅ Approved · ready to publish</span>;
+                            if (t.claimed_by_id) return <span className="badge badge-purple">{isClaimedByMe ? '🔧 In progress (you)' : `🔒 Taken by ${t.claimed_by_name || 'agent'}`}</span>;
+                            return <span className="badge badge-gray">📥 Unclaimed</span>;
+                        })();
+                        return (
+                            <div className="modal-overlay" onClick={() => setDetailTaskId(null)}>
+                                <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 620, width: '100%', maxHeight: '88vh', overflowY: 'auto' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+                                        <div>
+                                            <h3 style={{ margin: 0 }}>{t.title}</h3>
+                                            {t.description && <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 4 }}>{t.description}</div>}
+                                            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                                                <span className="badge badge-muted">{t.region}</span>
+                                                {t.due_date && <span className="badge badge-accent">Due: {new Date(t.due_date).toLocaleDateString()}</span>}
+                                                {stageBadge}
+                                            </div>
+                                        </div>
+                                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setDetailTaskId(null)}><X size={16} /></button>
+                                    </div>
+
+                                    {post?.status === 'rejected' && post?.review_comment && (
+                                        <div style={{ marginBottom: 12, padding: '10px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                            <strong style={{ color: 'var(--danger)' }}>Revision requested:</strong> {post.review_comment}
+                                        </div>
+                                    )}
+
+                                    {post ? (
+                                        <>
+                                            <LinkedInPreview content={post.content} hashtags={post.hashtags || ''} imageUrl={post.image_url} />
+                                            {post.tone && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 8 }}>Tone: <strong>{post.tone}</strong></div>}
+                                        </>
+                                    ) : (
+                                        <div style={{ textAlign: 'center', padding: '28px 16px', color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: 8 }}>
+                                            No draft has been written for this task yet.
+                                        </div>
+                                    )}
+
+                                    {/* Admin: review actions when a draft is awaiting approval */}
+                                    {isAdmin && post && post.status === 'in_review' && (
+                                        <div style={{ marginTop: 14 }}>
+                                            <textarea className="textarea" placeholder="Optional: describe the changes you want…" value={reviewComments[t.id] || ''} onChange={e => setReviewComments(prev => ({ ...prev, [t.id]: e.target.value }))} style={{ minHeight: 54, fontSize: '0.8rem' }} />
+                                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                                                <button className="btn btn-sm" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.3)' }} onClick={() => { handleApproveTask(t.id, 'rejected', reviewComments[t.id]); setDetailTaskId(null); }}>↩ Request Changes</button>
+                                                <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => { handleApproveTask(t.id, 'approved', reviewComments[t.id]); setDetailTaskId(null); }}>✓ Approve</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Agent actions */}
+                                    {!isAdmin && (
+                                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
+                                            {!t.claimed_by_id && isAssigned && t.status === 'active' && (
+                                                <button className="btn btn-sm btn-primary" onClick={() => { handleAcceptTask(t.id); setDetailTaskId(null); }}>Accept Task</button>
+                                            )}
+                                            {isClaimedByMe && post && post.status === 'approved' && (
+                                                <>
+                                                    <button className="btn btn-sm btn-success" onClick={() => { setSelectedTaskId(t.id); setTab('composer'); setDetailTaskId(null); }}>Publish</button>
+                                                    <button className="btn btn-sm btn-secondary" style={{ color: 'var(--accent)' }} onClick={() => openPostForEditing(t)}>✏️ Edit</button>
+                                                </>
+                                            )}
+                                            {isClaimedByMe && t.status !== 'pending_approval' && post?.status === 'rejected' && (
+                                                <button className="btn btn-sm" style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => openPostForEditing(t)}>
+                                                    <Sparkles size={13} /> Edit &amp; resubmit
+                                                </button>
+                                            )}
+                                            {isClaimedByMe && t.status !== 'pending_approval' && !post && (
+                                                <button className="btn btn-sm" style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => { setSelectedTaskId(t.id); setPrompt(t.title + (t.description ? `\n\nContext:\n${t.description}` : '')); setTab('composer'); setDetailTaskId(null); }}>
+                                                    <Sparkles size={13} /> Write Post
+                                                </button>
+                                            )}
+                                            {isClaimedByMe && t.status === 'pending_approval' && (
+                                                <span className="badge badge-warning">Under review</span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         );
                     })()}
 
@@ -886,6 +1121,43 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         )}
                                     </div>
 
+                                    <div>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>🔁 RECURRENCE</label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                            <select className="select" value={taskRecurrence.type}
+                                                onChange={e => setTaskRecurrence(p => ({ ...p, type: e.target.value as RichRecurrenceType }))}>
+                                                {RICH_RECURRENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                            </select>
+                                            {taskRecurrence.type === 'weekly' && (
+                                                <select className="select" title="Repeat on day" value={taskRecurrence.weeklyDay}
+                                                    onChange={e => setTaskRecurrence(p => ({ ...p, weeklyDay: e.target.value }))}>
+                                                    {WEEKDAY_OPTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                                                </select>
+                                            )}
+                                            {taskRecurrence.type === 'monthly' && (
+                                                <select className="select" title="Repeat on day of month" value={taskRecurrence.monthlyDay}
+                                                    onChange={e => setTaskRecurrence(p => ({ ...p, monthlyDay: e.target.value }))}>
+                                                    {Array.from({ length: 31 }, (_, idx) => (
+                                                        <option key={idx + 1} value={String(idx + 1)}>{idx + 1}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                            {taskRecurrence.type !== 'none' && (
+                                                <input className="input" type="number" min={1} max={24} title="Number of occurrences"
+                                                    value={taskRecurrence.count}
+                                                    onChange={e => setTaskRecurrence(p => ({ ...p, count: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 24) }))} />
+                                            )}
+                                        </div>
+                                        {taskRecurrence.type !== 'none' && (
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                                                Creates {taskRecurrence.count} {isAdmin ? 'tasks' : 'task proposals'}, one every{' '}
+                                                {taskRecurrence.type === 'daily' ? 'day' : taskRecurrence.type === 'weekly'
+                                                    ? `week on ${WEEKDAY_OPTIONS.find(d => d.value === taskRecurrence.weeklyDay)?.label}`
+                                                    : `month on day ${taskRecurrence.monthlyDay}`}.
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
                                         <button className="btn btn-secondary" onClick={() => setShowAddTask(false)}>Cancel</button>
                                         <button className="btn btn-primary" onClick={handleAddTask}>
@@ -943,7 +1215,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Status: <span style={{ color: activeTask.post?.status === 'approved' ? 'var(--success)' : 'var(--accent)' }}>{activeTask.post?.status === 'approved' ? 'Approved & Ready to Publish' : activeTask.status.replace('_', ' ')}</span></div>
                                             </div>
                                         </div>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => setSelectedTaskId(null)} style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedTaskId(null); setImageUrl(''); }} style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                                             Clear Context
                                         </button>
                                     </div>
@@ -1018,6 +1290,30 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
                                     </div>
 
+                                    {/* Image (optional) */}
+                                    <div style={{ marginTop: 16 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>IMAGE (OPTIONAL)</label>
+                                        {imageUrl ? (
+                                            <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                <img src={imageUrl} alt="attachment" style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                                                <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} title="Remove image" style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.55)', color: '#fff', padding: 4 }}>
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                                <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0 }}>
+                                                    {uploadingImage ? 'Uploading…' : '📎 Upload image'}
+                                                    <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingImage}
+                                                        onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
+                                                </label>
+                                                <input className="input" placeholder="…or paste an image URL" style={{ flex: 1, minWidth: 160 }}
+                                                    onKeyDown={e => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) setImageUrl(v); } }}
+                                                    onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {/* Publish directly to LinkedIn — admins only. Agents must submit for
                                         approval; publishing is unlocked only after an admin approves. */}
                                     {isAdmin && (
@@ -1039,15 +1335,34 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         const activeTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;
                                         const isApproved = activeTask?.post?.status === 'approved';
 
+                                        // Agent editing an existing post — saving re-submits it for review.
+                                        if (editingPostId && !isAdmin) {
+                                            return (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600 }}>
+                                                        ✏️ Editing your post. Saving sends the changes to the admin for review before it can be published.
+                                                    </div>
+                                                    <button className="btn btn-primary w-full" onClick={handlePublishPost} disabled={savingPost || !previewContent}>
+                                                        {savingPost ? 'Saving…' : '💾 Save & send for review'}
+                                                    </button>
+                                                </div>
+                                            );
+                                        }
+
                                         if (isApproved && !isAdmin) {
                                             return (
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
                                                     <div style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
-                                                        ✓ This draft was approved by the manager. Click below to publish it live.
+                                                        ✓ This draft was approved by the manager. Publish it, or edit it to send back for review.
                                                     </div>
                                                     <button className="btn btn-success w-full" onClick={handlePublishLive} disabled={savingPost}>
                                                         {savingPost ? 'Publishing...' : '🚀 Publish Live on LinkedIn'}
                                                     </button>
+                                                    {activeTask && (
+                                                        <button className="btn btn-secondary w-full" onClick={() => openPostForEditing(activeTask)} style={{ color: 'var(--accent)' }}>
+                                                            ✏️ Edit &amp; re-review
+                                                        </button>
+                                                    )}
                                                 </div>
                                             );
                                         }
@@ -1076,7 +1391,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         </div>
                                     )}
 
-                                    <LinkedInPreview content={previewContent} hashtags={hashtags} />
+                                    <LinkedInPreview content={previewContent} hashtags={hashtags} imageUrl={imageUrl} />
 
                                     {
                                         heatmap.length > 0 && (
@@ -1289,6 +1604,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                             <LinkedInPreview
                                                 content={selectedHistoryPost.content}
                                                 hashtags={selectedHistoryPost.hashtags}
+                                                imageUrl={selectedHistoryPost.image_url}
                                             />
 
                                             {selectedHistoryPost.hashtags && (

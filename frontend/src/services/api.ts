@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = BASE_URL;
 
 const api = axios.create({
     baseURL: BASE_URL,
@@ -63,6 +64,7 @@ export const tasksApi = {
     accountability: (region?: string) => api.get('/api/tasks/accountability', { params: { region } }),
     assign: (id: string, agentId: string) => api.post(`/api/tasks/${id}/assign`, null, { params: { agent_id: agentId } }),
     delete: (id: string) => api.delete(`/api/tasks/${id}`),
+    bulkDelete: (ids: string[]) => api.post('/api/tasks/bulk-delete', { task_ids: ids }),
     updateStatus: (id: string, status: string) => api.put(`/api/tasks/${id}/status`, null, { params: { status } }),
 };
 
@@ -73,7 +75,13 @@ export const postsApi = {
     update: (id: string, data: object) => api.put(`/api/posts/${id}`, data),
     approve: (id: string, data: object) => api.post(`/api/posts/${id}/approve`, data),
     publish: (id: string) => api.post(`/api/posts/${id}/publish`),
+    requestReview: (id: string) => api.post(`/api/posts/${id}/request-review`),
     saveLink: (id: string, data: object) => api.post(`/api/posts/${id}/save-link`, data),
+    uploadImage: (file: File) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        return api.post('/api/posts/upload-image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    },
     syncMetrics: (id: string) => api.post(`/api/posts/${id}/sync-metrics`),
     kanban: (region?: string, agentId?: string) => api.get('/api/posts/kanban', { params: { region, agent_id: agentId } }),
     moveKanban: (id: string, status: string) => api.post(`/api/posts/${id}/move-kanban`, null, { params: { new_status: status } }),

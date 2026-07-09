@@ -371,23 +371,27 @@ async def publish_post(
     # Complete linked task
     await complete_linked_task(post, db, current_user)
     
-    # 2. Automagically create a tracking link for this published post
-    short_code = "".join(random.choices(string.ascii_letters + string.digits, k=8))
-    link = LinkTracking(
-        id=str(uuid.uuid4()),
-        post_id=post.id,
-        agent_id=current_user.id,
-        original_url=linkedin_url,
-        short_code=short_code,
-        short_url=f"https://go.gorecruitai.com/{short_code}",
-        utm_source="linkedin",
-        utm_medium="social",
-        utm_campaign=post.campaign_id or "linkedin-post",
-        utm_content=post.id[:8],
-        region=post.region,
-        click_data="[]",
-    )
-    db.add(link)
+    # 2. Automatically generate a UTM tracking link for this published post — but
+    # only once. Attribute it to the post's author so the owning agent sees it in
+    # their Link Analytics (admins see every link regardless).
+    existing = await db.execute(select(LinkTracking).where(LinkTracking.post_id == post.id))
+    if existing.scalar_one_or_none() is None:
+        short_code = "".join(random.choices(string.ascii_letters + string.digits, k=8))
+        link = LinkTracking(
+            id=str(uuid.uuid4()),
+            post_id=post.id,
+            agent_id=post.created_by_id or current_user.id,
+            original_url=linkedin_url,
+            short_code=short_code,
+            short_url=f"https://go.gorecruitai.com/{short_code}",
+            utm_source="linkedin",
+            utm_medium="social",
+            utm_campaign=post.campaign_id or "linkedin-post",
+            utm_content=post.id[:8],
+            region=post.region,
+            click_data="[]",
+        )
+        db.add(link)
     await db.commit()
     return _post_dict(post)
 

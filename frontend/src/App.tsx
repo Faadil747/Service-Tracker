@@ -97,7 +97,7 @@ const App: React.FC = () => {
                     <ProtectedLayout>{(r) => <ContentCalendarView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/links" element={
-                    <ProtectedLayout roles={['admin', 'developer', 'ceo']}>{(r) => <LinkAnalyticsView region={r} />}</ProtectedLayout>
+                    <ProtectedLayout roles={['admin', 'agent', 'developer', 'ceo']}>{(r) => <LinkAnalyticsView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/progress" element={
                     <ProtectedLayout>{(r) => <AgentProgressView region={r} />}</ProtectedLayout>

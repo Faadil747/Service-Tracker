@@ -62,7 +62,8 @@ export const LinkAnalyticsView: React.FC<Props> = ({ region }) => {
         setLoading(false);
     }, [region, period]);
 
-    useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
+    // Poll frequently so clicks on shared tracking links show up in near real time.
+    useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
 
     const totalClicks = links.reduce((s, l) => s + (l.total_clicks || 0), 0);
     const totalLinks = links.length;
@@ -96,7 +97,7 @@ export const LinkAnalyticsView: React.FC<Props> = ({ region }) => {
     });
     const campaignData = Object.entries(campaignMap).map(([name, value]) => ({ name, value }));
 
-    const handleCopy = (url: string) => { navigator.clipboard.writeText(url).then(() => toast.success('Copied!')); };
+    const handleCopy = (url: string) => { navigator.clipboard.writeText(url).then(() => toast.success('Tracking link copied — every click is counted here')); };
 
     const handleCreate = async () => {
         if (!newLink.original_url.trim()) { toast.error('URL is required'); return; }
@@ -252,10 +253,15 @@ export const LinkAnalyticsView: React.FC<Props> = ({ region }) => {
                             ) : links.map(l => (
                                 <tr key={l.id}>
                                     <td>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: 240 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: 260 }}>
                                             <Link2 size={13} color="var(--accent)" style={{ flexShrink: 0 }} />
                                             <span className="truncate" style={{ fontSize: '0.8rem' }}>{l.original_url}</span>
                                         </div>
+                                        {(l.tracking_url || l.short_url) && (
+                                            <div className="truncate" style={{ fontSize: '0.7rem', color: 'var(--accent)', marginTop: 3, fontFamily: 'monospace', maxWidth: 260 }} title={l.tracking_url || l.short_url}>
+                                                🔗 {l.tracking_url || l.short_url}
+                                            </div>
+                                        )}
                                     </td>
                                     <td>{l.utm_campaign ? <span className="badge badge-purple">{l.utm_campaign}</span> : '—'}</td>
                                     <td style={{ fontSize: '0.8rem' }}>{l.utm_source || '—'}</td>
@@ -272,8 +278,8 @@ export const LinkAnalyticsView: React.FC<Props> = ({ region }) => {
                                     <td style={{ fontWeight: 600 }}>{l.ctr ? `${l.ctr.toFixed(2)}%` : '—'}</td>
                                     <td>
                                         <div style={{ display: 'flex', gap: 4 }}>
-                                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleCopy(l.tracking_url || l.original_url)} title="Copy link"><Copy size={13} /></button>
-                                            <a href={l.original_url} target="_blank" rel="noreferrer" className="btn btn-ghost btn-icon btn-sm" title="Open"><ExternalLink size={13} /></a>
+                                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleCopy(l.tracking_url || l.original_url)} title="Copy tracking link"><Copy size={13} /></button>
+                                            <a href={l.tracking_url || l.original_url} target="_blank" rel="noreferrer" className="btn btn-ghost btn-icon btn-sm" title="Open tracking link (records a click)"><ExternalLink size={13} /></a>
                                         </div>
                                     </td>
                                 </tr>

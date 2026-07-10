@@ -644,6 +644,26 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         }
     };
 
+    // Admin publishes an already-approved post directly — no need to hand it back to
+    // the agent. Reuses the per-task in-flight guard so a double-click can't fire two
+    // publishes (the backend also claims the publish atomically).
+    const handleAdminPublishNow = async (taskId: string, postId?: string) => {
+        if (!postId) { toast.error('No approved post to publish.'); return; }
+        if (approvingRef.current.has(taskId)) return;
+        approvingRef.current.add(taskId);
+        setApprovingId(taskId);
+        try {
+            await postsApi.publish(postId);
+            toast.success('Published live to LinkedIn — task completed!');
+            loadAll();
+        } catch (err: any) {
+            toast.error(err?.response?.data?.detail || 'Failed to publish post.');
+        } finally {
+            approvingRef.current.delete(taskId);
+            setApprovingId(prev => (prev === taskId ? null : prev));
+        }
+    };
+
     const handleViewPostDetails = async (post: Post) => {
         setSelectedHistoryPost(post);
         setEditingLinkUrl(post.linkedin_post_id || '');
@@ -1109,19 +1129,28 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 <span className="badge badge-warning" style={{ fontSize: '0.68rem' }}>Under review</span>
                                                             )}
 
-                                                            {/* Admin: read-only lifecycle indicator (completion is publish-gated — the
-                                                                task finishes when the agent publishes the approved post) */}
-                                                            {isAdmin && (
+                                                            {/* Admin: an approved draft can be published directly — no waiting on the agent. */}
+                                                            {isAdmin && t.post?.status === 'approved' && (
+                                                                <button
+                                                                    className="btn btn-sm btn-success"
+                                                                    disabled={approvingId === t.id}
+                                                                    onClick={() => handleAdminPublishNow(t.id, t.post?.id)}
+                                                                    title="Publish this approved post live to LinkedIn now"
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                                                >
+                                                                    {approvingId === t.id ? '⏳ Publishing…' : '🚀 Publish Now'}
+                                                                </button>
+                                                            )}
+                                                            {/* Admin: read-only lifecycle indicator for stages the admin can't act on yet. */}
+                                                            {isAdmin && t.post?.status !== 'approved' && (
                                                                 <span className="badge" style={{
-                                                                    background: t.post?.status === 'approved' ? 'rgba(16,185,129,0.15)' : 'var(--bg-tertiary)',
-                                                                    color: t.post?.status === 'approved' ? 'var(--success)' : 'var(--text-muted)',
+                                                                    background: 'var(--bg-tertiary)',
+                                                                    color: 'var(--text-muted)',
                                                                     fontSize: '0.68rem', fontWeight: 600
                                                                 }}>
-                                                                    {t.post?.status === 'approved'
-                                                                        ? 'Approved · awaiting publish'
-                                                                        : t.post?.status === 'in_review'
-                                                                            ? 'Draft submitted'
-                                                                            : t.claimed_by_id ? 'In progress' : 'Awaiting agent'}
+                                                                    {t.post?.status === 'in_review'
+                                                                        ? 'Draft submitted'
+                                                                        : t.claimed_by_id ? 'In progress' : 'Awaiting agent'}
                                                                 </span>
                                                             )}
 
@@ -1308,6 +1337,20 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                 <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => { handleApproveTask(t.id, 'approved', reviewComments[t.id], false); setDetailTaskId(null); }}>✓ Approve</button>
                                                 <button className="btn btn-sm btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => { handleApproveTask(t.id, 'approved', reviewComments[t.id], true); setDetailTaskId(null); }}>🚀 Approve &amp; Publish</button>
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {/* Admin: an already-approved draft can be published directly from here too. */}
+                                    {isAdmin && post && post.status === 'approved' && (
+                                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
+                                            <button
+                                                className="btn btn-sm btn-success"
+                                                disabled={approvingId === t.id}
+                                                onClick={() => { handleAdminPublishNow(t.id, post.id); setDetailTaskId(null); }}
+                                                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                            >
+                                                {approvingId === t.id ? '⏳ Publishing…' : '🚀 Publish Now'}
+                                            </button>
                                         </div>
                                     )}
 

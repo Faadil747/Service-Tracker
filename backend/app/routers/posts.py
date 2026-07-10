@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
+from sqlalchemy.orm import joinedload
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import Post, PostDraft, PostStatus, Notification, ActivityLog, User, PostMetric, Comment, LinkTracking
@@ -15,6 +16,12 @@ from app.services.notify import notify_admins, notify_users
 
 class UpdateLinkRequest(BaseModel):
     linkedin_url: str
+
+
+class ToggleEngagementRequest(BaseModel):
+    employee_id: str
+    action_type: str
+    state: bool
 
 router = APIRouter(prefix="/api/posts", tags=["posts"])
 require_admin = require_role("admin")
@@ -48,7 +55,7 @@ async def list_posts(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Post)
+    q = select(Post).options(joinedload(Post.creator))
     if current_user.role == "agent":
         q = q.where(Post.created_by_id == current_user.id)
     if status:
@@ -110,6 +117,7 @@ async def create_post(
         created_by_id=current_user.id,
         status=final_status,
     )
+    post.creator = current_user
     db.add(post)
     await db.flush()
 
@@ -172,7 +180,7 @@ async def approve_post(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -226,7 +234,7 @@ async def request_review(
     """Agent re-opens an approved (or rejected) post for another admin review,
     e.g. they spotted something to change before publishing. Bounces the linked
     task back to pending_approval and notifies the admins."""
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -258,25 +266,26 @@ async def request_review(
     return _post_dict(post)
 
 
-# ── Image upload ────────────────────────────────────────────────────────────
+# ── Media upload ────────────────────────────────────────────────────────────
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
-_ALLOWED_IMG_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+_ALLOWED_MEDIA_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".webm"}
 
 
-@router.post("/upload-image")
-async def upload_image(
+@router.post("/upload-media")
+async def upload_media(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
-    """Store an uploaded image and return a URL to embed in a post."""
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=400, detail="Only image files are allowed")
+    """Store an uploaded image or video and return a URL to embed in a post."""
+    content_type = file.content_type or ""
+    if not (content_type.startswith("image/") or content_type.startswith("video/")):
+        raise HTTPException(status_code=400, detail="Only image and video files are allowed")
     ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in _ALLOWED_IMG_EXT:
-        ext = ".png"
+    if ext not in _ALLOWED_MEDIA_EXT:
+        ext = ".png" if content_type.startswith("image/") else ".mp4"
     data = await file.read()
-    if len(data) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image too large (max 5 MB)")
+    if len(data) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Media too large (max 50 MB)")
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     name = f"{uuid.uuid4().hex}{ext}"
     with open(os.path.join(UPLOAD_DIR, name), "wb") as f:
@@ -312,13 +321,92 @@ async def complete_linked_task(post: Post, db: AsyncSession, current_user: User)
             )
 
 
+async def publish_post_to_linkedin(post: Post, db: AsyncSession, current_user: User):
+    """Push a post live to LinkedIn, mark it published, complete the linked task and
+    create its UTM tracking link — exactly once.
+
+    This is the single source of truth for "make a post go live". Both the agent
+    publish endpoint and the admin approve-and-publish flow call it, so the two
+    paths can never diverge. It performs no permission or approval-gate checks —
+    the caller is responsible for those. Idempotent: a post that is already
+    published is left untouched. Does NOT commit; the caller owns the transaction."""
+    if post.status == PostStatus.published:
+        return  # already live — nothing to do
+
+    # Atomically claim the publish so two concurrent requests — e.g. an admin
+    # double-clicking "Approve & Publish" — can't both fire a live LinkedIn post.
+    # Same atomic-claim pattern as accept_task: a second caller's UPDATE blocks
+    # until this transaction commits, then matches 0 rows and returns before posting.
+    claim = await db.execute(
+        update(Post)
+        .where(Post.id == post.id, Post.status != PostStatus.published)
+        .values(status=PostStatus.published, published_at=datetime.utcnow())
+    )
+    if claim.rowcount == 0:
+        return  # another in-flight request already published it
+    post.status = PostStatus.published
+    if post.published_at is None:
+        post.published_at = datetime.utcnow()
+
+    from app.config import settings
+    linkedin_url = None
+
+    if settings.LINKEDIN_ACCESS_TOKEN and settings.LINKEDIN_ORG_ID:
+        try:
+            from app.services.linkedin_service import linkedin_service
+            res = await linkedin_service.publish_post(
+                access_token=settings.LINKEDIN_ACCESS_TOKEN,
+                org_id=settings.LINKEDIN_ORG_ID,
+                content=post.content,
+            )
+            if res and "linkedin_post_id" in res:
+                post_id_raw = res["linkedin_post_id"]
+                if post_id_raw.startswith("stub_"):
+                    pass  # No real token — fall through to stub URL
+                elif post_id_raw.startswith("urn:"):
+                    linkedin_url = f"https://www.linkedin.com/feed/update/{post_id_raw}"
+                else:
+                    linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_raw}"
+        except Exception as e:
+            print(f"LinkedIn publishing error: {e}")
+            raise HTTPException(status_code=400, detail=f"LinkedIn API error: {str(e)}")
+
+    if not linkedin_url:
+        linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{random.randint(1000000000, 9999999999)}"
+    post.linkedin_post_id = linkedin_url  # status/published_at already set by the atomic claim above
+
+    # Complete the linked task (marks it done + notifies admins).
+    await complete_linked_task(post, db, current_user)
+
+    # Auto-generate a UTM tracking link for this published post — but only once.
+    # Attribute it to the post's author so the owning agent sees it in their Link
+    # Analytics (admins see every link regardless).
+    existing = await db.execute(select(LinkTracking).where(LinkTracking.post_id == post.id))
+    if existing.scalar_one_or_none() is None:
+        short_code = "".join(random.choices(string.ascii_letters + string.digits, k=8))
+        db.add(LinkTracking(
+            id=str(uuid.uuid4()),
+            post_id=post.id,
+            agent_id=post.created_by_id or current_user.id,
+            original_url=linkedin_url,
+            short_code=short_code,
+            short_url=f"https://go.gorecruitai.com/{short_code}",
+            utm_source="linkedin",
+            utm_medium="social",
+            utm_campaign=post.campaign_id or "linkedin-post",
+            utm_content=post.id[:8],
+            region=post.region,
+            click_data="[]",
+        ))
+
+
 @router.post("/{post_id}/publish")
 async def publish_post(
     post_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -333,65 +421,8 @@ async def publish_post(
     if post.status not in (PostStatus.approved, PostStatus.scheduled):
         raise HTTPException(status_code=400, detail="This post must be approved by an admin before it can be published.")
 
-    # 1. Publish to LinkedIn using the service
-    from app.config import settings
-    linkedin_url = None
-    post_id_fake = None
-
-    if settings.LINKEDIN_ACCESS_TOKEN and settings.LINKEDIN_ORG_ID:
-        try:
-            from app.services.linkedin_service import linkedin_service
-            res = await linkedin_service.publish_post(
-                access_token=settings.LINKEDIN_ACCESS_TOKEN,
-                org_id=settings.LINKEDIN_ORG_ID,
-                content=post.content,
-            )
-            if res and "linkedin_post_id" in res:
-                post_id_raw = res["linkedin_post_id"]
-                if post_id_raw.startswith("stub_"):
-                    # No real token — fall through to stub URL
-                    post_id_fake = post_id_raw
-                elif post_id_raw.startswith("urn:"):
-                    linkedin_url = f"https://www.linkedin.com/feed/update/{post_id_raw}"
-                    post_id_fake = post_id_raw
-                else:
-                    linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_raw}"
-                    post_id_fake = post_id_raw
-        except Exception as e:
-            print(f"LinkedIn publishing error: {e}")
-            raise HTTPException(status_code=400, detail=f"LinkedIn API error: {str(e)}")
-
-    if not linkedin_url:
-        post_id_fake = f"stub_{uuid.uuid4().hex[:8]}"
-        linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{random.randint(1000000000, 9999999999)}"
-    post.linkedin_post_id = linkedin_url
-    post.status = PostStatus.published
-    post.published_at = datetime.utcnow()
-    
-    # Complete linked task
-    await complete_linked_task(post, db, current_user)
-    
-    # 2. Automatically generate a UTM tracking link for this published post — but
-    # only once. Attribute it to the post's author so the owning agent sees it in
-    # their Link Analytics (admins see every link regardless).
-    existing = await db.execute(select(LinkTracking).where(LinkTracking.post_id == post.id))
-    if existing.scalar_one_or_none() is None:
-        short_code = "".join(random.choices(string.ascii_letters + string.digits, k=8))
-        link = LinkTracking(
-            id=str(uuid.uuid4()),
-            post_id=post.id,
-            agent_id=post.created_by_id or current_user.id,
-            original_url=linkedin_url,
-            short_code=short_code,
-            short_url=f"https://go.gorecruitai.com/{short_code}",
-            utm_source="linkedin",
-            utm_medium="social",
-            utm_campaign=post.campaign_id or "linkedin-post",
-            utm_content=post.id[:8],
-            region=post.region,
-            click_data="[]",
-        )
-        db.add(link)
+    # Push it live via the shared publisher (LinkedIn + task completion + tracking link).
+    await publish_post_to_linkedin(post, db, current_user)
     await db.commit()
     return _post_dict(post)
 
@@ -403,7 +434,7 @@ async def save_linkedin_link(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -451,6 +482,38 @@ async def save_linkedin_link(
     return _post_dict(post)
 
 
+@router.post("/{post_id}/toggle-engagement")
+async def toggle_employee_engagement(
+    post_id: str,
+    req: ToggleEngagementRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import json
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    try:
+        engagement = json.loads(post.employee_engagement or "{}")
+    except Exception:
+        engagement = {}
+
+    emp_id = req.employee_id
+    act_type = req.action_type
+    state = req.state
+
+    if emp_id not in engagement:
+        engagement[emp_id] = {"like": False, "comment": False, "share": False}
+
+    engagement[emp_id][act_type] = state
+
+    post.employee_engagement = json.dumps(engagement)
+    await db.commit()
+    return {"status": "success", "employee_engagement": engagement, "post": _post_dict(post)}
+
+
 @router.post("/{post_id}/sync-metrics")
 async def sync_linkedin_metrics(
     post_id: str,
@@ -496,7 +559,7 @@ async def update_post(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -557,7 +620,7 @@ async def kanban_board(
     statuses = ["draft", "rejected", "in_review", "approved", "scheduled"]
     board = {}
     for s in statuses:
-        q = select(Post).where(Post.status == s)
+        q = select(Post).options(joinedload(Post.creator)).where(Post.status == s)
         if region and region != "Global":
             q = q.where(Post.region == region)
         if current_user.role == "agent":
@@ -602,7 +665,7 @@ async def delete_post(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -630,6 +693,21 @@ async def delete_post(
 
 
 def _post_dict(p: Post) -> dict:
+    import json
+    creator_name = ""
+    creator_avatar = ""
+    try:
+        if p.creator:
+            creator_name = p.creator.full_name
+            creator_avatar = p.creator.avatar_url
+    except Exception:
+        pass
+
+    try:
+        engagement = json.loads(p.employee_engagement or "{}")
+    except Exception:
+        engagement = {}
+
     return {
         "id": p.id,
         "title": p.title,
@@ -644,10 +722,13 @@ def _post_dict(p: Post) -> dict:
         "scheduled_at": p.scheduled_at.isoformat() if p.scheduled_at else None,
         "published_at": p.published_at.isoformat() if p.published_at else None,
         "created_by_id": p.created_by_id,
+        "created_by_name": creator_name,
+        "created_by_avatar": creator_avatar,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "campaign_id": p.campaign_id,
         "task_id": p.task_id,
         "predicted_reach": p.predicted_reach,
         "review_comment": p.review_comment,
         "linkedin_post_id": p.linkedin_post_id,
+        "employee_engagement": engagement,
     }

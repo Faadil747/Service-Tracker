@@ -85,3 +85,16 @@ async def init_db():
                 await conn.execute(_text(f"ALTER TABLE follower_snapshots ADD {_col}"))
             except Exception:
                 pass
+
+        # Task Workspace / AI Composer columns (from the tasks + composer feature set).
+        # Each ALTER is independent so a partially-migrated DB fills only what's missing.
+        for _stmt in (
+            "ALTER TABLE posts ADD employee_engagement TEXT DEFAULT '{}'",
+            "ALTER TABLE posts ADD priority VARCHAR(20) DEFAULT 'medium'",
+            "ALTER TABLE tasks ADD priority VARCHAR(20) DEFAULT 'medium'",
+            "ALTER TABLE tasks ADD recurrence_end_date DATETIME NULL",
+        ):
+            try:
+                await conn.execute(_text(_stmt))
+            except Exception:
+                pass

@@ -3,17 +3,18 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster, toast } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
 import { useNotificationStore } from './store/notificationStore';
+import { shouldShowToast } from './utils/notificationPrefs';
 import { Header } from './components/shared/Header';
 import { ChatWidget } from './components/shared/ChatWidget';
 import { LoginPage } from './views/LoginPage';
 import { DashboardView } from './views/DashboardView';
 import { TaskWorkspaceView } from './views/TaskWorkspaceView';
-import { AgentProgressView } from './views/AgentProgressView';
 import { SettingsView } from './views/SettingsView';
 import { ContentCalendarView } from './views/ContentCalendarView';
 import { LinkAnalyticsView } from './views/LinkAnalyticsView';
 import { ReportsView } from './views/ReportsView';
-import { AccountabilityView } from './views/AccountabilityView';
+import { EngagementView } from './views/EngagementView';
+import { EmployeesView } from './views/EmployeesView';
 import './styles/globals.css';
 
 const ProtectedLayout: React.FC<{ roles?: string[]; children: (region: string) => React.ReactNode }> = ({ roles, children }) => {
@@ -29,7 +30,9 @@ const ProtectedLayout: React.FC<{ roles?: string[]; children: (region: string) =
         const tick = async () => {
             const fresh = await poll();
             if (active && !firstPoll.current) {
-                fresh.slice(0, 3).forEach((n) => toast(n.title, { icon: '🔔' }));
+                fresh.slice(0, 3)
+                    .filter((n) => shouldShowToast((n as any).type || ''))
+                    .forEach((n) => toast(n.title, { icon: '🔔' }));
             }
             firstPoll.current = false;
         };
@@ -103,12 +106,15 @@ const App: React.FC = () => {
                 <Route path="/reports" element={
                     <ProtectedLayout roles={['admin', 'developer', 'ceo']}>{(r) => <ReportsView region={r} />}</ProtectedLayout>
                 } />
-                <Route path="/progress" element={
-                    <ProtectedLayout>{(r) => <AgentProgressView region={r} />}</ProtectedLayout>
+                <Route path="/engagement" element={
+                    <ProtectedLayout>{(r) => <EngagementView region={r} />}</ProtectedLayout>
                 } />
-                <Route path="/accountability" element={
-                    <ProtectedLayout roles={['admin', 'ceo']}>{(r) => <AccountabilityView region={r} />}</ProtectedLayout>
+                <Route path="/employees" element={
+                    <ProtectedLayout roles={['admin']}>{(r) => <EmployeesView region={r} />}</ProtectedLayout>
                 } />
+                {/* Legacy routes → merged into Engagement */}
+                <Route path="/progress" element={<ProtectedLayout>{() => <Navigate to="/engagement" replace />}</ProtectedLayout>} />
+                <Route path="/accountability" element={<ProtectedLayout>{() => <Navigate to="/engagement" replace />}</ProtectedLayout>} />
                 <Route path="/chat" element={
                     <ProtectedLayout>{() => <Navigate to="/dashboard" replace />}</ProtectedLayout>
                 } />

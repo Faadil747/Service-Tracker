@@ -26,6 +26,8 @@ class Task(Base):
     region: Mapped[str] = mapped_column(String(50), default="Global", index=True)
     due_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     recurrence: Mapped[str] = mapped_column(String(50), default="none")  # none/daily/weekly/monthly
+    recurrence_end_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    priority: Mapped[str] = mapped_column(String(20), default="medium", index=True)  # low/medium/high
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=True)
     created_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     approved_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)

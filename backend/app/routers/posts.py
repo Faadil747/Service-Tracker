@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
+from sqlalchemy.orm import joinedload
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import Post, PostDraft, PostStatus, Notification, ActivityLog, User, PostMetric, Comment, LinkTracking
@@ -15,6 +16,12 @@ from app.services.notify import notify_admins, notify_users
 
 class UpdateLinkRequest(BaseModel):
     linkedin_url: str
+
+
+class ToggleEngagementRequest(BaseModel):
+    employee_id: str
+    action_type: str
+    state: bool
 
 router = APIRouter(prefix="/api/posts", tags=["posts"])
 require_admin = require_role("admin")
@@ -48,7 +55,7 @@ async def list_posts(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Post)
+    q = select(Post).options(joinedload(Post.creator))
     if current_user.role == "agent":
         q = q.where(Post.created_by_id == current_user.id)
     if status:
@@ -110,6 +117,7 @@ async def create_post(
         created_by_id=current_user.id,
         status=final_status,
     )
+    post.creator = current_user
     db.add(post)
     await db.flush()
 
@@ -172,7 +180,7 @@ async def approve_post(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -226,7 +234,7 @@ async def request_review(
     """Agent re-opens an approved (or rejected) post for another admin review,
     e.g. they spotted something to change before publishing. Bounces the linked
     task back to pending_approval and notifies the admins."""
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -319,7 +327,7 @@ async def publish_post(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -404,7 +412,7 @@ async def save_linkedin_link(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -452,6 +460,38 @@ async def save_linkedin_link(
     return _post_dict(post)
 
 
+@router.post("/{post_id}/toggle-engagement")
+async def toggle_employee_engagement(
+    post_id: str,
+    req: ToggleEngagementRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import json
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    try:
+        engagement = json.loads(post.employee_engagement or "{}")
+    except Exception:
+        engagement = {}
+
+    emp_id = req.employee_id
+    act_type = req.action_type
+    state = req.state
+
+    if emp_id not in engagement:
+        engagement[emp_id] = {"like": False, "comment": False, "share": False}
+
+    engagement[emp_id][act_type] = state
+
+    post.employee_engagement = json.dumps(engagement)
+    await db.commit()
+    return {"status": "success", "employee_engagement": engagement, "post": _post_dict(post)}
+
+
 @router.post("/{post_id}/sync-metrics")
 async def sync_linkedin_metrics(
     post_id: str,
@@ -497,7 +537,7 @@ async def update_post(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -558,7 +598,7 @@ async def kanban_board(
     statuses = ["draft", "rejected", "in_review", "approved", "scheduled"]
     board = {}
     for s in statuses:
-        q = select(Post).where(Post.status == s)
+        q = select(Post).options(joinedload(Post.creator)).where(Post.status == s)
         if region and region != "Global":
             q = q.where(Post.region == region)
         if current_user.role == "agent":
@@ -603,7 +643,7 @@ async def delete_post(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Post).where(Post.id == post_id))
+    result = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.id == post_id))
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -631,6 +671,21 @@ async def delete_post(
 
 
 def _post_dict(p: Post) -> dict:
+    import json
+    creator_name = ""
+    creator_avatar = ""
+    try:
+        if p.creator:
+            creator_name = p.creator.full_name
+            creator_avatar = p.creator.avatar_url
+    except Exception:
+        pass
+
+    try:
+        engagement = json.loads(p.employee_engagement or "{}")
+    except Exception:
+        engagement = {}
+
     return {
         "id": p.id,
         "title": p.title,
@@ -645,10 +700,13 @@ def _post_dict(p: Post) -> dict:
         "scheduled_at": p.scheduled_at.isoformat() if p.scheduled_at else None,
         "published_at": p.published_at.isoformat() if p.published_at else None,
         "created_by_id": p.created_by_id,
+        "created_by_name": creator_name,
+        "created_by_avatar": creator_avatar,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "campaign_id": p.campaign_id,
         "task_id": p.task_id,
         "predicted_reach": p.predicted_reach,
         "review_comment": p.review_comment,
         "linkedin_post_id": p.linkedin_post_id,
+        "employee_engagement": engagement,
     }

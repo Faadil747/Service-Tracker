@@ -66,3 +66,27 @@ async def init_db():
             await conn.execute(text("ALTER TABLE posts ADD review_comment TEXT DEFAULT ''"))
         except Exception:
             pass
+
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE posts ADD employee_engagement TEXT DEFAULT '{}'"))
+        except Exception:
+            pass
+
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE tasks ADD priority VARCHAR(20) DEFAULT 'medium'"))
+        except Exception:
+            pass
+
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE tasks ADD recurrence_end_date DATETIME NULL"))
+        except Exception:
+            pass
+
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE posts ADD priority VARCHAR(20) DEFAULT 'medium'"))
+        except Exception:
+            pass

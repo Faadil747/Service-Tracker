@@ -24,6 +24,8 @@ export interface Task {
     region: Region | string;
     due_date: string | null;
     recurrence: string;
+    recurrence_end_date?: string | null;
+    priority?: string;
     created_by_id: string;
     completed_at: string | null;
     created_at: string;
@@ -39,6 +41,12 @@ export interface Task {
         hashtags?: string;
         image_url?: string;
         review_comment?: string;
+        linkedin_post_id?: string;
+        employee_engagement?: Record<string, { like: boolean; comment: boolean; share: boolean }>;
+        post_type?: string;
+        published_at?: string | null;
+        created_by_name?: string;
+        created_by_avatar?: string;
     } | null;
 }
 
@@ -56,12 +64,15 @@ export interface Post {
     scheduled_at: string | null;
     published_at: string | null;
     created_by_id: string;
+    created_by_name?: string;
+    created_by_avatar?: string;
     created_at: string;
     campaign_id: string | null;
     task_id?: string | null;
     predicted_reach: number;
     review_comment?: string;
     linkedin_post_id?: string;
+    employee_engagement?: Record<string, { like: boolean; comment: boolean; share: boolean }>;
 }
 
 export interface PageMetric {

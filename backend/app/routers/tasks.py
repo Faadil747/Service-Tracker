@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models import Task, TaskAssignment, TaskCompletion, TaskApproval, Notification, ActivityLog, User, TaskStatus, Comment, Post
 from app.services.auth_service import get_current_user, require_role
 from app.services.notify import notify_admins, notify_users, task_agent_ids
+from sqlalchemy.orm import joinedload
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 require_admin = require_role("admin")
@@ -27,6 +28,8 @@ class CreateTaskRequest(BaseModel):
     region: str = "Global"
     due_date: Optional[str] = None
     recurrence: str = "none"
+    recurrence_end_date: Optional[str] = None
+    priority: Optional[str] = "medium"
     assigned_to: Optional[str] = None
     assigned_to_id: Optional[str] = None
     assigned_to_ids: Optional[List[str]] = None
@@ -36,10 +39,59 @@ class CreateTaskRequest(BaseModel):
 class ApproveTaskRequest(BaseModel):
     status: str  # approved / rejected
     comment: str = ""
+    publish_directly: Optional[bool] = False
 
 
 class BulkDeleteRequest(BaseModel):
     task_ids: List[str]
+
+
+from datetime import timedelta
+
+async def check_due_date_alerts(db: AsyncSession):
+    try:
+        now = datetime.utcnow()
+        two_days_later = now + timedelta(days=2)
+        q = select(Task).where(
+            Task.due_date >= now,
+            Task.due_date <= two_days_later,
+            Task.status.in_([TaskStatus.active, TaskStatus.in_progress])
+        )
+        res = await db.execute(q)
+        tasks_due = res.scalars().all()
+        for task in tasks_due:
+            agents_to_notify = []
+            if task.claimed_by_id:
+                agents_to_notify = [task.claimed_by_id]
+            else:
+                assign_res = await db.execute(select(TaskAssignment).where(TaskAssignment.task_id == task.id))
+                agents_to_notify = [a.agent_id for a in assign_res.scalars()]
+
+            for agent_id in agents_to_notify:
+                existing = await db.execute(
+                    select(Notification).where(
+                        Notification.user_id == agent_id,
+                        Notification.reference_id == task.id,
+                        Notification.type == "due_soon",
+                        Notification.created_at >= now - timedelta(hours=24)
+                    )
+                )
+                if existing.scalars().first():
+                    continue
+
+                notif = Notification(
+                    id=str(uuid.uuid4()),
+                    user_id=agent_id,
+                    type="due_soon",
+                    title=f"⏰ Task deadline approaching: {task.title}",
+                    body=f"This task is due on {task.due_date.strftime('%Y-%m-%d %H:%M')}. Please complete it soon!",
+                    reference_id=task.id,
+                    reference_type="task"
+                )
+                db.add(notif)
+        await db.commit()
+    except Exception as e:
+        print(f"Error checking due alerts: {e}")
 
 
 @router.get("/")
@@ -51,6 +103,7 @@ async def list_tasks(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await check_due_date_alerts(db)
     q = select(Task)
     if current_user.role == "agent":
         # Agents see tasks assigned to them
@@ -76,6 +129,7 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
 ):
     due = datetime.fromisoformat(req.due_date) if req.due_date else None
+    recurrence_end = datetime.fromisoformat(req.recurrence_end_date) if req.recurrence_end_date else None
     initial_status = TaskStatus.active if current_user.role == "admin" else TaskStatus.pending_approval
 
     task = Task(
@@ -85,6 +139,8 @@ async def create_task(
         region=req.region,
         due_date=due,
         recurrence=req.recurrence,
+        recurrence_end_date=recurrence_end,
+        priority=req.priority or "medium",
         campaign_id=req.campaign_id,
         created_by_id=current_user.id,
         status=initial_status,
@@ -182,21 +238,105 @@ async def approve_task(
     post_res = await db.execute(select(Post).where(Post.task_id == task_id).order_by(Post.created_at.desc()))
     post = post_res.scalars().first()
 
-    if approved:
-        # Go-ahead: claimed drafts become "ready to publish"; unclaimed tasks open up.
-        task.status = TaskStatus.in_progress if task.claimed_by_id else TaskStatus.active
+    if approved and req.publish_directly:
+        # Publish directly!
+        task.status = TaskStatus.completed
+        task.completed_at = datetime.utcnow()
+        task.approved_by_id = current_user.id
+        task.approved_at = datetime.utcnow()
+        
+        if post:
+            from app.models.post import PostStatus
+            post.status = PostStatus.published
+            post.published_at = datetime.utcnow()
+            post.approved_by_id = current_user.id
+            post.review_comment = req.comment or ""
+            
+            # Publish to LinkedIn!
+            from app.config import settings
+            import random
+            import string
+            from app.models.link_tracking import LinkTracking
+            
+            linkedin_url = None
+            post_id_fake = None
+            if settings.LINKEDIN_ACCESS_TOKEN and settings.LINKEDIN_ORG_ID:
+                try:
+                    from app.services.linkedin_service import linkedin_service
+                    res = await linkedin_service.publish_post(
+                        access_token=settings.LINKEDIN_ACCESS_TOKEN,
+                        org_id=settings.LINKEDIN_ORG_ID,
+                        content=post.content,
+                    )
+                    if res and "linkedin_post_id" in res:
+                        post_id_raw = res["linkedin_post_id"]
+                        if post_id_raw.startswith("stub_"):
+                            post_id_fake = post_id_raw
+                        elif post_id_raw.startswith("urn:"):
+                            linkedin_url = f"https://www.linkedin.com/feed/update/{post_id_raw}"
+                            post_id_fake = post_id_raw
+                        else:
+                            linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{post_id_raw}"
+                            post_id_fake = post_id_raw
+                except Exception as e:
+                    print(f"LinkedIn publishing error: {e}")
+                    raise HTTPException(status_code=400, detail=f"LinkedIn API error: {str(e)}")
+            
+            if not linkedin_url:
+                post_id_fake = f"stub_{uuid.uuid4().hex[:8]}"
+                linkedin_url = f"https://www.linkedin.com/feed/update/urn:li:share:{random.randint(1000000000, 9999999999)}"
+            post.linkedin_post_id = linkedin_url
+            
+            # Create completion entry
+            db.add(TaskCompletion(
+                id=str(uuid.uuid4()),
+                task_id=task.id,
+                agent_id=post.created_by_id or current_user.id,
+                notes=f"Post published directly by manager: {post.linkedin_post_id}",
+            ))
+            
+            # Generate UTM tracking link
+            existing = await db.execute(select(LinkTracking).where(LinkTracking.post_id == post.id))
+            if existing.scalar_one_or_none() is None:
+                short_code = "".join(random.choices(string.ascii_letters + string.digits, k=8))
+                db.add(LinkTracking(
+                    id=str(uuid.uuid4()),
+                    post_id=post.id,
+                    short_code=short_code,
+                    original_url=linkedin_url,
+                    campaign_id=post.campaign_id,
+                    created_by_id=post.created_by_id or current_user.id,
+                ))
+                
+            # Notify admins the task is complete.
+            await notify_admins(
+                db,
+                type="task_completed",
+                title=f"Task Completed: {task.title}",
+                body=f"Completed via direct publish by manager {current_user.full_name}",
+                reference_id=task.id,
+                reference_type="task",
+            )
+        else:
+            db.add(TaskCompletion(
+                id=str(uuid.uuid4()),
+                task_id=task.id,
+                agent_id=task.claimed_by_id or current_user.id,
+                notes="Task approved and completed directly by manager.",
+            ))
     else:
-        # Rejection of a claimed draft bounces it back for revision (stays in the
-        # agent's active queue). Rejecting an unclaimed proposal declines the task.
-        task.status = TaskStatus.in_progress if (post is not None or task.claimed_by_id) else TaskStatus.rejected
-    task.approved_by_id = current_user.id
-    task.approved_at = datetime.utcnow()
-
-    if post:
-        from app.models.post import PostStatus
-        post.status = PostStatus.approved if approved else PostStatus.rejected
-        post.approved_by_id = current_user.id
-        post.review_comment = req.comment or ""
+        # Standard workflow path
+        if approved:
+            task.status = TaskStatus.in_progress if task.claimed_by_id else TaskStatus.active
+        else:
+            task.status = TaskStatus.in_progress if (post is not None or task.claimed_by_id) else TaskStatus.rejected
+        task.approved_by_id = current_user.id
+        task.approved_at = datetime.utcnow()
+        if post:
+            from app.models.post import PostStatus
+            post.status = PostStatus.approved if approved else PostStatus.rejected
+            post.approved_by_id = current_user.id
+            post.review_comment = req.comment or ""
 
     # Update approval record
     appr_result = await db.execute(select(TaskApproval).where(TaskApproval.task_id == task_id, TaskApproval.status == "pending"))
@@ -209,12 +349,17 @@ async def approve_task(
 
     # Notify the agent(s) working the task — never the approving admin.
     recipients = await task_agent_ids(db, task.id, task.claimed_by_id, task.created_by_id)
-    ready_msg = "Approved — you can publish it now." if post is not None else "Approved — you can start."
+    if approved and req.publish_directly:
+        msg_body = "Your task has been approved and published live directly by the manager!"
+    else:
+        ready_msg = "Approved — you can publish it now." if post is not None else "Approved — you can start."
+        msg_body = req.comment or (ready_msg if approved else f"Sent back for revision by {current_user.full_name}")
+
     await notify_users(
         db, recipients,
         type=f"task_{req.status}",
-        title=f"Task {'approved' if approved else 'needs revision'}: {task.title}",
-        body=req.comment or (ready_msg if approved else f"Sent back for revision by {current_user.full_name}"),
+        title=f"Task {'published directly' if (approved and req.publish_directly) else ('approved' if approved else 'needs revision')}: {task.title}",
+        body=msg_body,
         reference_id=task.id,
         reference_type="task",
     )
@@ -483,6 +628,25 @@ async def accept_task(
         entity_type="task",
         entity_id=task.id,
     ))
+
+    # Auto-initialize an empty post draft for this task if none exists
+    from app.models.post import PostStatus, PostType
+    post_check = await db.execute(select(Post).where(Post.task_id == task_id))
+    if not post_check.scalars().first():
+        empty_post = Post(
+            id=str(uuid.uuid4()),
+            title=task.title,
+            content="",
+            status=PostStatus.draft,
+            post_type=PostType.general,
+            region=task.region,
+            created_by_id=current_user.id,
+            task_id=task.id,
+            employee_engagement="{}",
+        )
+        db.add(empty_post)
+        await db.flush()
+
     await db.commit()
     return await _task_dict(task, db)
 
@@ -498,10 +662,15 @@ async def _task_dict(task: Task, db: AsyncSession) -> dict:
         if claimed_user:
             claimed_by_name = claimed_user.full_name
 
-    post_res = await db.execute(select(Post).where(Post.task_id == task.id).order_by(Post.created_at.desc()))
+    post_res = await db.execute(select(Post).options(joinedload(Post.creator)).where(Post.task_id == task.id).order_by(Post.created_at.desc()))
     post = post_res.scalars().first()
     post_info = None
     if post:
+        import json
+        try:
+            engagement = json.loads(post.employee_engagement or "{}")
+        except Exception:
+            engagement = {}
         post_info = {
             "id": post.id,
             "title": post.title,
@@ -511,6 +680,12 @@ async def _task_dict(task: Task, db: AsyncSession) -> dict:
             "hashtags": post.hashtags,
             "image_url": post.image_url,
             "review_comment": post.review_comment or "",
+            "linkedin_post_id": post.linkedin_post_id,
+            "employee_engagement": engagement,
+            "post_type": post.post_type.value if hasattr(post.post_type, "value") else str(post.post_type),
+            "published_at": post.published_at.isoformat() if post.published_at else None,
+            "created_by_name": post.creator.full_name if post.creator else None,
+            "created_by_avatar": post.creator.avatar_url if post.creator else None,
         }
 
     return {
@@ -521,6 +696,8 @@ async def _task_dict(task: Task, db: AsyncSession) -> dict:
         "region": task.region,
         "due_date": task.due_date.isoformat() if task.due_date else None,
         "recurrence": task.recurrence,
+        "recurrence_end_date": task.recurrence_end_date.isoformat() if task.recurrence_end_date else None,
+        "priority": task.priority,
         "created_by_id": task.created_by_id,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "created_at": task.created_at.isoformat() if task.created_at else None,

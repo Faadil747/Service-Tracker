@@ -8,7 +8,7 @@ import {
     isSameMonth, isToday, startOfWeek, endOfWeek, addMonths, subMonths
 } from 'date-fns';
 import { metricsApi, tasksApi, usersApi, settingsApi } from '../services/api';
-import { recurrenceDates, RECURRENCE_OPTIONS, RecurrenceType } from '../utils/recurrence';
+import { richRecurrenceDates, RICH_RECURRENCE_OPTIONS, WEEKDAY_OPTIONS, RichRecurrenceConfig, RichRecurrenceType } from '../utils/recurrence';
 import { useAuthStore } from '../store/authStore';
 import { Task, User } from '../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -297,8 +297,22 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     });
     const [loading, setLoading] = useState(true);
     const [showAddTask, setShowAddTask] = useState(false);
-    const [newTask, setNewTask] = useState({ title: '', description: '', due_date: '', assigned_to_ids: [] as string[] });
-    const [taskRecurrence, setTaskRecurrence] = useState<{ type: RecurrenceType; count: number }>({ type: 'none', count: 4 });
+    const [newTask, setNewTask] = useState({
+        title: '',
+        description: '',
+        due_date: '',
+        priority: 'medium',
+        region: 'Global'
+    });
+    const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+    const [taskRecurrence, setTaskRecurrence] = useState<RichRecurrenceConfig>({
+        type: 'none',
+        weeklyDay: '1',
+        monthlyDay: '1',
+        customIntervalDays: 3,
+        count: 4,
+        endDate: ''
+    });
     const [linkedinConnected, setLinkedinConnected] = useState<boolean | null>(null);
     const [linkedinError, setLinkedinError] = useState<string>('');
     const [followerHistory, setFollowerHistory] = useState<any>(null);
@@ -379,13 +393,18 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
         if (!newTask.title.trim()) return toast.error('Task title is required');
         try {
             const base = newTask.due_date ? new Date(newTask.due_date) : new Date();
-            const dates = recurrenceDates(base, taskRecurrence.type, taskRecurrence.count);
+            const dates = richRecurrenceDates(base, taskRecurrence);
+            const endVal = taskRecurrence.endDate ? format(new Date(taskRecurrence.endDate), "yyyy-MM-dd'T'23:59:59") : undefined;
             for (const d of dates) {
                 await tasksApi.create({
-                    ...newTask,
-                    region,
+                    title: newTask.title,
+                    description: newTask.description,
+                    priority: newTask.priority,
+                    region: newTask.region,
                     recurrence: taskRecurrence.type,
+                    recurrence_end_date: endVal,
                     due_date: newTask.due_date ? format(d, "yyyy-MM-dd'T'HH:mm:ss") : undefined,
+                    assigned_to_ids: selectedAgentIds.length > 0 ? selectedAgentIds : undefined
                 });
             }
             const many = dates.length > 1;
@@ -393,8 +412,9 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                 ? `${isAdmin ? 'Created' : 'Submitted'} ${dates.length} recurring tasks`
                 : (isAdmin ? 'Task created!' : 'Task submitted for approval'));
             setShowAddTask(false);
-            setNewTask({ title: '', description: '', due_date: '', assigned_to_ids: [] });
-            setTaskRecurrence({ type: 'none', count: 4 });
+            setNewTask({ title: '', description: '', due_date: '', priority: 'medium', region: 'Global' });
+            setSelectedAgentIds([]);
+            setTaskRecurrence({ type: 'none', weeklyDay: '1', monthlyDay: '1', customIntervalDays: 3, count: 4, endDate: '' });
             loadAll(true);
         } catch { toast.error('Failed to create task'); }
     };
@@ -485,68 +505,249 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                         <label className="form-label">Description</label>
                                         <textarea className="textarea" placeholder="Task details..." value={newTask.description} onChange={e => setNewTask(p => ({ ...p, description: e.target.value }))} />
                                     </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Due Date</label>
-                                        <input className="input" type="datetime-local" value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">🔁 Recurrence</label>
-                                        <div style={{ display: 'flex', gap: 8 }}>
-                                            <select className="select" value={taskRecurrence.type} onChange={e => setTaskRecurrence(p => ({ ...p, type: e.target.value as RecurrenceType }))}>
-                                                {RECURRENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                            </select>
-                                            {taskRecurrence.type !== 'none' && (
-                                                <input className="input" type="number" min={1} max={24} title="Number of occurrences" style={{ width: 90 }}
-                                                    value={taskRecurrence.count}
-                                                    onChange={e => setTaskRecurrence(p => ({ ...p, count: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 24) }))} />
-                                            )}
+                                    {/* Priority & Region row */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <div>
+                                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>TASK PRIORITY</label>
+                                            <div style={{ display: 'flex', gap: 6 }}>
+                                                {[
+                                                    { value: 'low', label: '🟢 Low', activeColor: 'rgba(34, 197, 94, 0.15)', borderColor: 'var(--success)' },
+                                                    { value: 'medium', label: '🟡 Medium', activeColor: 'rgba(234, 179, 8, 0.15)', borderColor: 'var(--warning)' },
+                                                    { value: 'high', label: '🔴 High', activeColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'var(--danger)' }
+                                                ].map(p => (
+                                                    <button
+                                                        key={p.value}
+                                                        type="button"
+                                                        className="btn btn-sm"
+                                                        onClick={() => setNewTask(prev => ({ ...prev, priority: p.value }))}
+                                                        style={{
+                                                            flex: 1,
+                                                            fontSize: '0.72rem',
+                                                            background: newTask.priority === p.value ? p.activeColor : 'var(--surface)',
+                                                            color: newTask.priority === p.value ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                                            border: `1px solid ${newTask.priority === p.value ? p.borderColor : 'var(--border)'}`,
+                                                            fontWeight: newTask.priority === p.value ? 700 : 500,
+                                                            padding: '4px 6px'
+                                                        }}
+                                                    >
+                                                        {p.label}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
-                                        {taskRecurrence.type !== 'none' && (
-                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                                                Creates {taskRecurrence.count} tasks, one every {taskRecurrence.type === 'daily' ? 'day' : taskRecurrence.type === 'weekly' ? 'week' : 'month'} from the due date.
+
+                                        <div>
+                                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>TARGET REGION</label>
+                                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                {[
+                                                    { value: 'Global', label: '🌐 Global' },
+                                                    { value: 'India', label: '🇮🇳 India' },
+                                                    { value: 'USA', label: '🇺🇸 USA' },
+                                                    { value: 'Indonesia', label: '🇮🇩 Indo' }
+                                                ].map(r => (
+                                                    <button
+                                                        key={r.value}
+                                                        type="button"
+                                                        className="btn btn-sm"
+                                                        onClick={() => setNewTask(prev => ({ ...prev, region: r.value }))}
+                                                        style={{
+                                                            flex: '1 1 auto',
+                                                            fontSize: '0.72rem',
+                                                            background: newTask.region === r.value ? 'var(--accent-glow)' : 'var(--surface)',
+                                                            color: newTask.region === r.value ? 'var(--accent)' : 'var(--text-secondary)',
+                                                            border: `1px solid ${newTask.region === r.value ? 'var(--accent)' : 'var(--border)'}`,
+                                                            fontWeight: newTask.region === r.value ? 700 : 500,
+                                                            padding: '4px 6px'
+                                                        }}
+                                                    >
+                                                        {r.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Due Date & Assignees */}
+                                    <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <div>
+                                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>DUE DATE</label>
+                                            <input className="input" type="datetime-local" value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} style={{ fontSize: '0.8rem' }} />
+                                        </div>
+
+                                        {isAdmin && (
+                                            <div>
+                                                <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>ASSIGN TO AGENTS</label>
+                                                <div style={{
+                                                    maxHeight: '90px',
+                                                    overflowY: 'auto',
+                                                    background: 'var(--surface)',
+                                                    border: '1px solid var(--border)',
+                                                    borderRadius: '8px',
+                                                    padding: '6px 10px',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '6px'
+                                                }}>
+                                                    {agents.map(a => (
+                                                        <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedAgentIds.includes(a.id)}
+                                                                onChange={(e) => {
+                                                                    if (e.target.checked) {
+                                                                        setSelectedAgentIds([...selectedAgentIds, a.id]);
+                                                                    } else {
+                                                                        setSelectedAgentIds(selectedAgentIds.filter(id => id !== a.id));
+                                                                    }
+                                                                }}
+                                                            />
+                                                            {a.full_name} ({a.region})
+                                                        </label>
+                                                    ))}
+                                                    {agents.length === 0 && (
+                                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>No agents available</div>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
-                                    {isAdmin && (
-                                        <div className="form-group">
-                                            <label className="form-label">Assign To Agents</label>
-                                            <div style={{
-                                                maxHeight: '120px',
-                                                overflowY: 'auto',
-                                                background: 'var(--surface)',
-                                                border: '1px solid var(--border)',
-                                                borderRadius: '8px',
-                                                padding: '8px 12px',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '8px'
-                                            }}>
-                                                {agents.map(a => (
-                                                    <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={newTask.assigned_to_ids.includes(a.id)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) {
-                                                                    setNewTask(p => ({ ...p, assigned_to_ids: [...p.assigned_to_ids, a.id] }));
-                                                                } else {
-                                                                    setNewTask(p => ({ ...p, assigned_to_ids: p.assigned_to_ids.filter(id => id !== a.id) }));
-                                                                }
-                                                            }}
-                                                        />
-                                                        {a.full_name} ({a.region})
-                                                    </label>
-                                                ))}
-                                                {agents.length === 0 && (
-                                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No agents available</div>
-                                                )}
+
+                                    {/* Recurrence Setup */}
+                                    <div className="glass-card" style={{ padding: 12 }}>
+                                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 8, letterSpacing: '0.05em' }}>🔁 RECURRENCE PLANNER</label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                                            <div>
+                                                <label style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>REPEAT PATTERN</label>
+                                                <select className="select" value={taskRecurrence.type}
+                                                    onChange={e => setTaskRecurrence(p => ({ ...p, type: e.target.value as RichRecurrenceType }))} style={{ fontSize: '0.78rem' }}>
+                                                    {RICH_RECURRENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                </select>
                                             </div>
+                                            {(taskRecurrence.type === 'weekly' || taskRecurrence.type === 'biweekly') && (
+                                                <div>
+                                                    <label style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: 2, letterSpacing: '0.05em' }}>REPEAT ON DAYS</label>
+                                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                        {[
+                                                            { value: '1', short: 'M', label: 'Mon' },
+                                                            { value: '2', short: 'T', label: 'Tue' },
+                                                            { value: '3', short: 'W', label: 'Wed' },
+                                                            { value: '4', short: 'T', label: 'Thu' },
+                                                            { value: '5', short: 'F', label: 'Fri' },
+                                                            { value: '6', short: 'S', label: 'Sat' },
+                                                            { value: '0', short: 'S', label: 'Sun' },
+                                                        ].map(d => {
+                                                            const currentDays = taskRecurrence.weeklyDays || [taskRecurrence.weeklyDay || '1'];
+                                                            const active = currentDays.includes(d.value);
+                                                            return (
+                                                                <button
+                                                                    key={d.value}
+                                                                    type="button"
+                                                                    className="btn btn-sm"
+                                                                    title={d.label}
+                                                                    onClick={() => {
+                                                                        let nextDays = [...currentDays];
+                                                                        if (active) {
+                                                                            if (nextDays.length > 1) {
+                                                                                nextDays = nextDays.filter(x => x !== d.value);
+                                                                            }
+                                                                        } else {
+                                                                            nextDays.push(d.value);
+                                                                        }
+                                                                        setTaskRecurrence(p => ({
+                                                                            ...p,
+                                                                            weeklyDays: nextDays,
+                                                                            weeklyDay: nextDays[0] || '1'
+                                                                        }));
+                                                                    }}
+                                                                    style={{
+                                                                        minWidth: 22,
+                                                                        height: 22,
+                                                                        borderRadius: '50%',
+                                                                        padding: 0,
+                                                                        fontSize: '0.68rem',
+                                                                        background: active ? 'var(--accent-glow)' : 'var(--surface)',
+                                                                        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                                                                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                                                                        fontWeight: active ? 700 : 500,
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center',
+                                                                    }}
+                                                                >
+                                                                    {d.short}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {taskRecurrence.type === 'monthly' && (
+                                                <div>
+                                                    <label style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>DAY OF MONTH</label>
+                                                    <select className="select" title="Repeat on day of month" value={taskRecurrence.monthlyDay}
+                                                        onChange={e => setTaskRecurrence(p => ({ ...p, monthlyDay: e.target.value }))} style={{ fontSize: '0.78rem' }}>
+                                                        {Array.from({ length: 31 }, (_, idx) => (
+                                                            <option key={idx + 1} value={String(idx + 1)}>{idx + 1}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+                                            {taskRecurrence.type === 'custom_interval' && (
+                                                <div>
+                                                    <label style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>INTERVAL (DAYS)</label>
+                                                    <input className="input" type="number" min={1} max={365}
+                                                        value={taskRecurrence.customIntervalDays || 3}
+                                                        onChange={e => setTaskRecurrence(p => ({ ...p, customIntervalDays: Math.max(parseInt(e.target.value, 10) || 1, 1) }))} style={{ fontSize: '0.78rem' }} />
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                    {!isAdmin && <div className="badge badge-warning" style={{ alignSelf: 'flex-start' }}>Requires admin approval</div>}
-                                    <button className="btn btn-primary" onClick={handleAddTask} style={{ marginTop: 4 }}>
-                                        {isAdmin ? 'Create Task' : 'Submit for Approval'}
-                                    </button>
+
+                                        {taskRecurrence.type !== 'none' && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                                                <div>
+                                                    <label style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>MAX OCCURRENCES</label>
+                                                    <input className="input" type="number" min={1} max={24} title="Number of occurrences"
+                                                        value={taskRecurrence.count}
+                                                        onChange={e => setTaskRecurrence(p => ({ ...p, count: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 24) }))} style={{ fontSize: '0.78rem' }} />
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>STOP UNTIL (END DATE)</label>
+                                                    <input className="input" type="date" value={taskRecurrence.endDate || ''}
+                                                        onChange={e => setTaskRecurrence(p => ({ ...p, endDate: e.target.value }))} style={{ fontSize: '0.78rem' }} />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {taskRecurrence.type !== 'none' && (
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--accent)', background: 'var(--accent-glow)', padding: '6px 10px', borderRadius: 6, marginTop: 8, border: '1px dashed var(--accent)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <span>🔄</span>
+                                                <span>
+                                                    {(() => {
+                                                        const times = taskRecurrence.count;
+                                                        const endDesc = taskRecurrence.endDate ? ` until ${taskRecurrence.endDate}` : '';
+                                                        if (taskRecurrence.type === 'daily') return `Creates up to ${times} daily tasks${endDesc}.`;
+                                                        if (taskRecurrence.type === 'weekly' || taskRecurrence.type === 'biweekly') {
+                                                            const currentDays = taskRecurrence.weeklyDays || [taskRecurrence.weeklyDay || '1'];
+                                                            const dayNames = currentDays.map(val => WEEKDAY_OPTIONS.find(d => d.value === val)?.label || '').filter(Boolean).join(', ');
+                                                            const prefix = taskRecurrence.type === 'weekly' ? 'weekly' : 'bi-weekly';
+                                                            return `Creates up to ${times} ${prefix} tasks on ${dayNames}${endDesc}.`;
+                                                        }
+                                                        if (taskRecurrence.type === 'monthly') return `Creates up to ${times} monthly tasks on day ${taskRecurrence.monthlyDay}${endDesc}.`;
+                                                        if (taskRecurrence.type === 'custom_interval') return `Creates up to ${times} tasks repeating every ${taskRecurrence.customIntervalDays} days${endDesc}.`;
+                                                        return '';
+                                                    })()}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Action buttons */}
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+                                        <button className="btn btn-secondary" onClick={() => setShowAddTask(false)}>Cancel</button>
+                                        <button className="btn btn-primary" onClick={handleAddTask}>
+                                            {isAdmin ? 'Create Task' : 'Submit for Approval'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

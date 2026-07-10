@@ -50,6 +50,7 @@ export const usersApi = {
     remove: (id: string) => api.delete(`/api/users/${id}`),
     stats: (id: string) => api.get(`/api/users/${id}/stats`),
     updateProfile: (data: object) => api.put('/api/users/me', data),
+    changePassword: (data: { current_password: string; new_password: string }) => api.post('/api/users/me/change-password', data),
     resetCredentials: (id: string) => api.post(`/api/users/${id}/reset-credentials`),
 };
 

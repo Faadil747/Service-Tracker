@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, EyeOff, RefreshCw, CheckCircle, XCircle, Loader, Save, Bell, Link2 } from 'lucide-react';
+import { Eye, EyeOff, RefreshCw, CheckCircle, XCircle, Loader, Save, Bell, Lock } from 'lucide-react';
 import { settingsApi, usersApi, metricsApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
@@ -8,12 +8,28 @@ import { NOTIF_CATEGORIES, getNotifPrefs, setNotifPref, NotifCategory } from '..
 interface SettingsData {
     linkedin_proxy_url: string;
     deepseek_model: string;
+    deepseek_base_url: string;
     dev_mode: boolean;
     deepseek_key_set: boolean;
     linkedin_client_id_set: boolean;
     linkedin_access_token_set: boolean;
     linkedin_org_id: string;
+    configured: Record<string, boolean>;
 }
+
+type KeyDef = { key: string; label: string; secret: boolean; hint: string; placeholder: string };
+const LINKEDIN_KEYS: KeyDef[] = [
+    { key: 'LINKEDIN_ACCESS_TOKEN', label: 'Access Token', secret: true, hint: 'Long-lived token for publishing + metrics', placeholder: 'AQW…' },
+    { key: 'LINKEDIN_ORG_ID', label: 'Organization ID', secret: false, hint: 'Company page id you post to', placeholder: '12345678' },
+    { key: 'LINKEDIN_CLIENT_ID', label: 'Client ID', secret: false, hint: 'OAuth app client id', placeholder: '' },
+    { key: 'LINKEDIN_CLIENT_SECRET', label: 'Client Secret', secret: true, hint: 'OAuth app secret', placeholder: '' },
+    { key: 'LINKEDIN_REFRESH_TOKEN', label: 'Refresh Token', secret: true, hint: 'Auto-renews the access token on expiry', placeholder: '' },
+];
+const DEEPSEEK_KEYS: KeyDef[] = [
+    { key: 'DEEPSEEK_API_KEY', label: 'API Key', secret: true, hint: 'Key used for all AI generation', placeholder: 'sk-…' },
+    { key: 'DEEPSEEK_MODEL', label: 'Model', secret: false, hint: 'e.g. deepseek-chat', placeholder: 'deepseek-chat' },
+    { key: 'DEEPSEEK_BASE_URL', label: 'Base URL', secret: false, hint: 'API endpoint', placeholder: 'https://api.deepseek.com' },
+];
 
 interface ConnectionStatus {
     connected: boolean;
@@ -57,20 +73,46 @@ export const SettingsView: React.FC = () => {
     const [testingDeepseek, setTestingDeepseek] = useState(false);
     const [syncingMetrics, setSyncingMetrics] = useState(false);
 
-    // Form states
-    const [apiKey, setApiKey] = useState('');
-    const [linkedinKey, setLinkedinKey] = useState('');
+    // Integration key inputs (one entry per manageable key)
+    const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+    const [savingKey, setSavingKey] = useState<string | null>(null);
 
     // Editable profile
     const [profile, setProfile] = useState({ full_name: user?.full_name || '', region: user?.region || 'Global', linkedin_url: user?.linkedin_url || '' });
     const [savingProfile, setSavingProfile] = useState(false);
+
+    // Change password (available to every role)
+    const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+    const [savingPassword, setSavingPassword] = useState(false);
+    const handleChangePassword = async () => {
+        if (!pwForm.current || !pwForm.next) { toast.error('Fill in all password fields'); return; }
+        if (pwForm.next.length < 6) { toast.error('New password must be at least 6 characters'); return; }
+        if (pwForm.next !== pwForm.confirm) { toast.error('New passwords do not match'); return; }
+        setSavingPassword(true);
+        try {
+            await usersApi.changePassword({ current_password: pwForm.current, new_password: pwForm.next });
+            toast.success('Password updated');
+            setPwForm({ current: '', next: '', confirm: '' });
+        } catch (err: any) {
+            toast.error(err?.response?.data?.detail || 'Could not update password');
+        } finally { setSavingPassword(false); }
+    };
 
     // Notification prefs (persisted locally, honoured by the toast layer)
     const [notifPrefs, setNotifPrefs] = useState(getNotifPrefs());
 
     useEffect(() => {
         if (tab === 'api' && isAdmin) {
-            settingsApi.get().then(r => setSettings(r.data)).catch(() => { });
+            settingsApi.get().then(r => {
+                setSettings(r.data);
+                // Prefill the non-secret fields with their live values (once).
+                setKeyInputs(prev => ({
+                    LINKEDIN_ORG_ID: prev.LINKEDIN_ORG_ID ?? r.data.linkedin_org_id ?? '',
+                    DEEPSEEK_MODEL: prev.DEEPSEEK_MODEL ?? r.data.deepseek_model ?? '',
+                    DEEPSEEK_BASE_URL: prev.DEEPSEEK_BASE_URL ?? r.data.deepseek_base_url ?? '',
+                    ...prev,
+                }));
+            }).catch(() => { });
             testLinkedIn();
             testDeepSeek();
         }
@@ -97,9 +139,54 @@ export const SettingsView: React.FC = () => {
         finally { setSyncingMetrics(false); }
     };
     const handleSaveApiKey = async (keyName: string, value: string) => {
-        if (!value.trim()) { toast.error('Enter a value first'); return; }
-        try { await settingsApi.upsertApiConfig({ key_name: keyName, value, description: `${keyName} API key` }); toast.success('Saved!'); }
-        catch { toast.error('Failed to save'); }
+        const def = [...LINKEDIN_KEYS, ...DEEPSEEK_KEYS].find(k => k.key === keyName);
+        if (def?.secret && !value.trim()) { toast.error('Enter a value to update this secret'); return; }
+        setSavingKey(keyName);
+        try {
+            await settingsApi.upsertApiConfig({ key_name: keyName, value, description: keyName });
+            toast.success('Saved — applied live');
+            const r = await settingsApi.get();
+            setSettings(r.data);
+            if (def?.secret) setKeyInputs(p => ({ ...p, [keyName]: '' }));  // don't keep secrets on screen
+            if (keyName.startsWith('LINKEDIN')) testLinkedIn();
+            if (keyName.startsWith('DEEPSEEK')) testDeepSeek();
+        } catch (e: any) {
+            toast.error(e?.response?.data?.detail || 'Failed to save');
+        } finally { setSavingKey(null); }
+    };
+
+    const renderKeyField = (f: KeyDef) => {
+        const isSet = settings?.configured?.[f.key];
+        const visible = !f.secret || showApiKey[f.key];
+        return (
+            <div className="key-field" key={f.key}>
+                <div className="key-field-label">
+                    {f.secret && <span className={`key-dot ${isSet ? 'on' : ''}`} title={isSet ? 'Configured' : 'Not set'} />}
+                    <label>{f.label}</label>
+                    <span className="key-hint">{f.hint}</span>
+                </div>
+                <div className="key-field-input">
+                    <div className="key-input-wrap">
+                        <input
+                            className="input"
+                            type={visible ? 'text' : 'password'}
+                            value={keyInputs[f.key] ?? ''}
+                            placeholder={f.secret && isSet ? '•••••••• saved — type to replace' : f.placeholder}
+                            onChange={e => setKeyInputs(p => ({ ...p, [f.key]: e.target.value }))}
+                            style={f.secret ? { paddingRight: 38 } : undefined}
+                        />
+                        {f.secret && (
+                            <button type="button" className="settings-eye" onClick={() => setShowApiKey(p => ({ ...p, [f.key]: !p[f.key] }))}>
+                                {showApiKey[f.key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                        )}
+                    </div>
+                    <button className="btn btn-primary btn-sm" onClick={() => handleSaveApiKey(f.key, keyInputs[f.key] ?? '')} disabled={savingKey === f.key}>
+                        {savingKey === f.key ? 'Saving…' : 'Save'}
+                    </button>
+                </div>
+            </div>
+        );
     };
 
     const handleSaveProfile = async () => {
@@ -156,7 +243,8 @@ export const SettingsView: React.FC = () => {
 
             {/* ── Profile ──────────────────────────────────────────────────── */}
             {tab === 'profile' && user && (
-                <div className="grid-2" style={{ maxWidth: 860 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
+                <div className="grid-2">
                     <div className="chart-container">
                         <div className="chart-title" style={{ marginBottom: 16 }}>My Profile</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 18 }}>
@@ -188,11 +276,35 @@ export const SettingsView: React.FC = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Email</span><span style={{ fontWeight: 600, fontSize: '0.82rem' }}>{user.email}</span></div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Role</span><span style={{ fontWeight: 600, fontSize: '0.82rem', textTransform: 'capitalize' }}>{user.role}</span></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Region</span><span style={{ fontWeight: 600, fontSize: '0.82rem' }}>{user.region}</span></div>
-                            <a href="/links" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', marginTop: 4, borderRadius: 8, background: 'var(--bg-tertiary)', color: 'var(--accent)', fontSize: '0.82rem', fontWeight: 600 }}><Link2 size={14} /> Open Link Analytics</a>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Region</span><span style={{ fontWeight: 600, fontSize: '0.82rem' }}>{user.region}</span></div>
                         </div>
                     </div>
                 </div>
+
+                {/* Change Password — available to admins and agents alike */}
+                <div className="chart-container" style={{ maxWidth: 440 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <Lock size={16} color="var(--accent)" />
+                        <div className="chart-title" style={{ margin: 0 }}>Change Password</div>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
+                        Update your login password. You'll need your current one to confirm it's you.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div className="form-group"><label className="form-label">Current password</label>
+                            <input className="input" type="password" autoComplete="current-password" value={pwForm.current} onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))} /></div>
+                        <div className="form-group"><label className="form-label">New password</label>
+                            <input className="input" type="password" autoComplete="new-password" placeholder="At least 6 characters" value={pwForm.next} onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))} /></div>
+                        <div className="form-group"><label className="form-label">Confirm new password</label>
+                            <input className="input" type="password" autoComplete="new-password" value={pwForm.confirm} onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} /></div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button className="btn btn-primary" onClick={handleChangePassword} disabled={savingPassword} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Lock size={14} /> {savingPassword ? 'Updating…' : 'Update password'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+              </div>
             )}
 
             {/* ── Notifications (functional, persisted) ────────────────────── */}
@@ -219,24 +331,29 @@ export const SettingsView: React.FC = () => {
 
             {/* ── API Keys + Connection Status (Admin only) ────────────────── */}
             {tab === 'api' && isAdmin && (
-                <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 20 }}>
                     {settings && (
-                        <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginRight: 4 }}>SYSTEM STATUS</span>
-                            <span className={`badge ${settings.dev_mode ? 'badge-warning' : 'badge-success'}`}>{settings.dev_mode ? '⚠️ Dev Mode' : '✅ Production'}</span>
-                            <span className={`badge ${settings.deepseek_key_set ? 'badge-success' : 'badge-danger'}`}>🤖 DeepSeek: {settings.deepseek_key_set ? 'Configured' : 'Not Set'}</span>
-                            <span className={`badge ${settings.linkedin_access_token_set ? 'badge-success' : 'badge-danger'}`}>💼 LinkedIn Token: {settings.linkedin_access_token_set ? 'Configured' : 'Not Set'}</span>
-                            {settings.linkedin_org_id && <span className="badge badge-info">🏢 Org ID: {settings.linkedin_org_id}</span>}
+                        <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-muted)', marginRight: 4 }}>SYSTEM STATUS</span>
+                            <span className={`badge ${settings.deepseek_key_set ? 'badge-success' : 'badge-danger'}`}>🤖 DeepSeek {settings.deepseek_key_set ? 'Configured' : 'Not set'}</span>
+                            <span className={`badge ${settings.linkedin_access_token_set ? 'badge-success' : 'badge-danger'}`}>💼 LinkedIn {settings.linkedin_access_token_set ? 'Configured' : 'Not set'}</span>
+                            {settings.linkedin_org_id && <span className="badge badge-info">🏢 Org {settings.linkedin_org_id}</span>}
                         </div>
                     )}
 
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                        Manage integration keys here instead of editing the server's <code>.env</code>. Saved values are applied
+                        immediately and persist across restarts. Secrets are never shown once saved.
+                    </div>
+
+                    {/* LinkedIn */}
                     <div className="chart-container">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(0,119,181,0.12)', border: '1px solid rgba(0,119,181,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>💼</div>
+                        <div className="settings-card-head">
+                            <div className="settings-card-title">
+                                <div className="settings-icon" style={{ background: 'rgba(0,119,181,0.12)', borderColor: 'rgba(0,119,181,0.3)' }}>💼</div>
                                 <div>
                                     <div className="chart-title" style={{ margin: 0 }}>LinkedIn API</div>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Org ID: {settings?.linkedin_org_id || '—'}</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Publishing &amp; page analytics</div>
                                 </div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -246,7 +363,7 @@ export const SettingsView: React.FC = () => {
                         </div>
 
                         {linkedinStatus?.connected && (
-                            <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
+                            <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: 20, marginBottom: 14 }}>
                                 {linkedinStatus.account_name && <div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>ACCOUNT</div><div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{linkedinStatus.account_name}</div></div>}
                                 {linkedinStatus.followers !== undefined && <div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>FOLLOWERS</div><div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent)' }}>{linkedinStatus.followers.toLocaleString()}</div></div>}
                             </div>
@@ -255,31 +372,24 @@ export const SettingsView: React.FC = () => {
                             <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: '0.8rem', color: '#ef4444' }}>❌ {linkedinStatus.error || 'Connection failed'}</div>
                         )}
 
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                            <button className="btn btn-primary btn-sm" onClick={syncPageMetrics} disabled={syncingMetrics} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{syncingMetrics ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />} Sync Page Metrics Now</button>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Manual pull — the only action that calls the LinkedIn API</span>
+                        <div className="key-fields">
+                            {LINKEDIN_KEYS.map(renderKeyField)}
                         </div>
 
-                        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>ACCESS TOKEN (store in DB)</label>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <div style={{ position: 'relative', flex: 1 }}>
-                                    <input className="input" type={showApiKey['li_token'] ? 'text' : 'password'} value={linkedinKey} onChange={e => setLinkedinKey(e.target.value)} placeholder="AQW…" style={{ paddingRight: 40 }} />
-                                    <button onClick={() => setShowApiKey(p => ({ ...p, li_token: !p.li_token }))} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>{showApiKey['li_token'] ? <EyeOff size={14} /> : <Eye size={14} />}</button>
-                                </div>
-                                <button className="btn btn-primary btn-sm" onClick={() => handleSaveApiKey('LINKEDIN_ACCESS_TOKEN', linkedinKey)}>Save</button>
-                            </div>
-                            <p style={{ fontSize: '0.71rem', color: 'var(--text-muted)', marginTop: 5 }}>ℹ️ The active token is loaded from the server's <code>.env</code>. This stores a copy in the database for reference.</p>
+                        <div className="settings-card-foot">
+                            <button className="btn btn-secondary btn-sm" onClick={syncPageMetrics} disabled={syncingMetrics} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{syncingMetrics ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />} Sync Page Metrics Now</button>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Manual pull — the only action that calls the LinkedIn API.</span>
                         </div>
                     </div>
 
+                    {/* DeepSeek */}
                     <div className="chart-container">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>🤖</div>
+                        <div className="settings-card-head">
+                            <div className="settings-card-title">
+                                <div className="settings-icon" style={{ background: 'rgba(99,102,241,0.12)', borderColor: 'rgba(99,102,241,0.3)' }}>🤖</div>
                                 <div>
                                     <div className="chart-title" style={{ margin: 0 }}>DeepSeek AI</div>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{settings?.deepseek_model || 'deepseek-chat'} · api.deepseek.com</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Powers the AI post composer</div>
                                 </div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -290,15 +400,8 @@ export const SettingsView: React.FC = () => {
                         {deepseekStatus && !deepseekStatus.connected && (
                             <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: '0.8rem', color: '#ef4444' }}>❌ {deepseekStatus.error || 'Connection failed'}</div>
                         )}
-                        <div style={{ paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-                            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>API KEY (store in DB)</label>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <div style={{ position: 'relative', flex: 1 }}>
-                                    <input className="input" type={showApiKey['deepseek'] ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-…" style={{ paddingRight: 40 }} />
-                                    <button onClick={() => setShowApiKey(p => ({ ...p, deepseek: !p.deepseek }))} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>{showApiKey['deepseek'] ? <EyeOff size={14} /> : <Eye size={14} />}</button>
-                                </div>
-                                <button className="btn btn-primary btn-sm" onClick={() => handleSaveApiKey('DEEPSEEK_API_KEY', apiKey)}>Save</button>
-                            </div>
+                        <div className="key-fields">
+                            {DEEPSEEK_KEYS.map(renderKeyField)}
                         </div>
                     </div>
                 </div>

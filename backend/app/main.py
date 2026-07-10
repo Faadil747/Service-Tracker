@@ -46,6 +46,14 @@ async def _daily_sync_loop():
 async def lifespan(app: FastAPI):
     # Startup: create tables + launch the once-a-day snapshot scheduler.
     await init_db()
+    # Apply any admin-saved API keys (from the Settings UI) onto the live config.
+    try:
+        from app.database import AsyncSessionLocal
+        from app.routers.settings import load_api_configs_into_settings
+        async with AsyncSessionLocal() as _db:
+            await load_api_configs_into_settings(_db)
+    except Exception as e:
+        print(f"API config load skipped: {e}")
     sync_task = asyncio.create_task(_daily_sync_loop())
     try:
         yield

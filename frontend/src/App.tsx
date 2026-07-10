@@ -119,7 +119,7 @@ const App: React.FC = () => {
                     <ProtectedLayout>{() => <Navigate to="/dashboard" replace />}</ProtectedLayout>
                 } />
                 <Route path="/settings" element={
-                    <ProtectedLayout roles={['admin', 'developer', 'ceo']}>{() => <SettingsView />}</ProtectedLayout>
+                    <ProtectedLayout roles={['admin', 'agent', 'developer', 'ceo']}>{() => <SettingsView />}</ProtectedLayout>
                 } />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />

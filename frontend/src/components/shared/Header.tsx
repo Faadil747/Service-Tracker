@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
     Bell, LogOut, Zap, CheckSquare, LayoutDashboard, TrendingUp,
-    Settings, Calendar, Link2, Users, ChevronDown, MessageSquare, Menu, X,
-    AlertTriangle, BarChart3
+    Settings, Calendar, Link2, Users, ChevronDown, Menu, X,
+    AlertTriangle, BarChart3, Copy, Check, Camera, ExternalLink, UserCog
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useNotificationStore } from '../../store/notificationStore';
-import { chatApi, alertsApi, usersApi } from '../../services/api';
+import { chatApi, alertsApi, usersApi, postsApi, API_BASE_URL } from '../../services/api';
 
 interface HeaderProps {
     region: string;
@@ -35,7 +36,7 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
-    const { user, logout } = useAuthStore();
+    const { user, logout, setUser } = useAuthStore();
     const { unreadCount, fetchCount, notifications, fetchNotifications, markRead } = useNotificationStore();
     const navigate = useNavigate();
 
@@ -160,6 +161,61 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
     const handleLogout = () => { logout(); navigate('/login'); };
 
     const initials = user?.full_name?.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) || '?';
+
+    // ── Profile editing ─────────────────────────────────────────────────────
+    const [showProfileEdit, setShowProfileEdit] = useState(false);
+    const [savingProfile, setSavingProfile] = useState(false);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
+    const [copiedEmail, setCopiedEmail] = useState(false);
+    const [profileForm, setProfileForm] = useState({ full_name: '', linkedin_url: '', avatar_url: '', region: 'Global' });
+
+    const openProfileEdit = () => {
+        setProfileForm({
+            full_name: user?.full_name || '',
+            linkedin_url: user?.linkedin_url || '',
+            avatar_url: user?.avatar_url || '',
+            region: user?.region || 'Global',
+        });
+        setShowProfile(false);
+        setShowProfileEdit(true);
+    };
+
+    const handleAvatarUpload = async (file: File | null) => {
+        if (!file) return;
+        setUploadingAvatar(true);
+        try {
+            const res = await postsApi.uploadMedia(file);
+            setProfileForm(p => ({ ...p, avatar_url: `${API_BASE_URL}${res.data.url}` }));
+        } catch { toast.error('Could not upload image'); }
+        finally { setUploadingAvatar(false); }
+    };
+
+    const handleSaveProfile = async () => {
+        if (!profileForm.full_name.trim()) { toast.error('Name is required'); return; }
+        setSavingProfile(true);
+        try {
+            const res = await usersApi.updateProfile({
+                full_name: profileForm.full_name.trim(),
+                linkedin_url: profileForm.linkedin_url.trim(),
+                avatar_url: profileForm.avatar_url,
+                region: profileForm.region,
+            });
+            setUser(res.data);
+            toast.success('Profile updated');
+            setShowProfileEdit(false);
+        } catch (err: any) {
+            toast.error(err?.response?.data?.detail || 'Could not update profile');
+        } finally { setSavingProfile(false); }
+    };
+
+    const copyEmail = async () => {
+        if (!user?.email) return;
+        try {
+            await navigator.clipboard.writeText(user.email);
+            setCopiedEmail(true);
+            setTimeout(() => setCopiedEmail(false), 1500);
+        } catch { toast.error('Copy failed'); }
+    };
 
     return (
         <>
@@ -326,9 +382,9 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                                 width: 30, height: 30, borderRadius: '50%',
                                 background: roleColor,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '0.72rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+                                fontSize: '0.72rem', fontWeight: 700, color: '#fff', flexShrink: 0, overflow: 'hidden',
                             }}>
-                                {initials}
+                                {user?.avatar_url ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
                             </div>
                             <div className="profile-name-text" style={{ textAlign: 'left', lineHeight: 1.2 }}>
                                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>{user?.full_name?.split(' ')[0]}</div>
@@ -340,22 +396,45 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                         {showProfile && (
                             <div className="animate-slide-down" style={{
                                 position: 'absolute', right: 0, top: 'calc(100% + 8px)',
-                                width: 220, background: '#fff',
+                                width: 264, background: '#fff',
                                 border: '1px solid var(--border)',
                                 borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)',
                                 zIndex: 2000, overflow: 'hidden',
                             }}>
-                                <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-tertiary)' }}>
-                                    <div style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: 2 }}>{user?.full_name}</div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user?.email}</div>
-                                    <div style={{ marginTop: 8 }}>
-                                        <span className="badge" style={{ background: roleColor + '18', color: roleColor }}>
-                                            {user?.role?.toUpperCase()}
-                                        </span>
-                                        {user?.region && <span className="badge badge-gray" style={{ marginLeft: 6 }}>{user.region}</span>}
+                                {/* Identity header with avatar */}
+                                <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', background: `linear-gradient(135deg, ${roleColor}14, transparent)` }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <div style={{ width: 46, height: 46, borderRadius: '50%', background: roleColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 700, color: '#fff', overflow: 'hidden', flexShrink: 0, boxShadow: `0 0 0 3px ${roleColor}22` }}>
+                                            {user?.avatar_url ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                                        </div>
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                            <div style={{ fontSize: '0.9rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.full_name}</div>
+                                            <button onClick={copyEmail} title="Copy email" style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.72rem', fontFamily: 'inherit' }}>
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email}</span>
+                                                {copiedEmail ? <Check size={11} color="var(--success)" style={{ flexShrink: 0 }} /> : <Copy size={11} style={{ flexShrink: 0 }} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        <span className="badge" style={{ background: roleColor + '18', color: roleColor }}>{user?.role?.toUpperCase()}</span>
+                                        {user?.region && <span className="badge badge-gray">{user.region}</span>}
+                                        {user?.linkedin_url && (
+                                            <a href={user.linkedin_url} target="_blank" rel="noreferrer" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.7rem', fontWeight: 600, color: '#0a66c2', textDecoration: 'none' }}>
+                                                LinkedIn <ExternalLink size={11} />
+                                            </a>
+                                        )}
                                     </div>
                                 </div>
                                 <div style={{ padding: '6px' }}>
+                                    <button onClick={openProfileEdit} style={{
+                                        width: '100%', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8,
+                                        background: 'transparent', border: 'none', borderRadius: 6,
+                                        cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-secondary)',
+                                        transition: 'background 0.12s', fontFamily: 'inherit',
+                                    }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+                                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                                        <UserCog size={14} /> Edit profile
+                                    </button>
                                     <button onClick={() => { navigate('/settings'); setShowProfile(false); }} style={{
                                         width: '100%', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8,
                                         background: 'transparent', border: 'none', borderRadius: 6,
@@ -365,16 +444,7 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                                         <Settings size={14} /> Settings
                                     </button>
-                                    <button onClick={() => { navigate('/chat'); setShowProfile(false); }} style={{
-                                        width: '100%', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8,
-                                        background: 'transparent', border: 'none', borderRadius: 6,
-                                        cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-secondary)',
-                                        transition: 'background 0.12s', fontFamily: 'inherit',
-                                    }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
-                                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                                        <MessageSquare size={14} /> Messages
-                                        {chatUnread > 0 && <span className="badge badge-danger" style={{ marginLeft: 'auto' }}>{chatUnread}</span>}
-                                    </button>
+                                    <div style={{ height: 1, background: 'var(--border)', margin: '6px 8px' }} />
                                     <button onClick={handleLogout} style={{
                                         width: '100%', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8,
                                         background: 'transparent', border: 'none', borderRadius: 6,
@@ -541,6 +611,68 @@ export const Header: React.FC<HeaderProps> = ({ region, onRegionChange }) => {
                     ))}
                 </div>
             </div>
+
+            {/* Edit Profile modal */}
+            {showProfileEdit && (
+                <div className="modal-overlay" onClick={() => !savingProfile && setShowProfileEdit(false)}>
+                    <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><UserCog size={18} color="var(--accent)" /> Edit profile</h3>
+                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowProfileEdit(false)}><X size={16} /></button>
+                        </div>
+
+                        {/* Avatar */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+                            <div style={{ width: 64, height: 64, borderRadius: '50%', background: roleColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', fontWeight: 700, color: '#fff', overflow: 'hidden', flexShrink: 0 }}>
+                                {profileForm.avatar_url ? <img src={profileForm.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingAvatar ? 'default' : 'pointer', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <Camera size={14} /> {uploadingAvatar ? 'Uploading…' : 'Change photo'}
+                                    <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingAvatar}
+                                        onChange={e => { handleAvatarUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
+                                </label>
+                                {profileForm.avatar_url && (
+                                    <button className="btn btn-ghost btn-sm" onClick={() => setProfileForm(p => ({ ...p, avatar_url: '' }))} style={{ color: 'var(--danger)' }}>Remove</button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Fields */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            <div>
+                                <label className="comp-label">Full name</label>
+                                <input className="input" value={profileForm.full_name} onChange={e => setProfileForm(p => ({ ...p, full_name: e.target.value }))} placeholder="Your name" />
+                            </div>
+                            <div>
+                                <label className="comp-label">Email</label>
+                                <input className="input" value={user?.email || ''} disabled style={{ opacity: 0.7, cursor: 'not-allowed' }} />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                <div>
+                                    <label className="comp-label">Region</label>
+                                    <select className="select" value={profileForm.region} onChange={e => setProfileForm(p => ({ ...p, region: e.target.value }))}>
+                                        {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="comp-label">Role</label>
+                                    <input className="input" value={user?.role?.toUpperCase() || ''} disabled style={{ opacity: 0.7, cursor: 'not-allowed' }} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="comp-label">LinkedIn URL</label>
+                                <input className="input" value={profileForm.linkedin_url} onChange={e => setProfileForm(p => ({ ...p, linkedin_url: e.target.value }))} placeholder="https://www.linkedin.com/in/…" />
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+                            <button className="btn btn-secondary" onClick={() => setShowProfileEdit(false)} disabled={savingProfile}>Cancel</button>
+                            <button className="btn btn-primary" onClick={handleSaveProfile} disabled={savingProfile}>{savingProfile ? 'Saving…' : 'Save changes'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 };

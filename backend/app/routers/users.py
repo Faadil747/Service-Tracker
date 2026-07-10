@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from pydantic import BaseModel, EmailStr
 from app.database import get_db
 from app.models import User, Task, TaskCompletion, TaskAssignment
-from app.services.auth_service import get_current_user, require_role, hash_password
+from app.services.auth_service import get_current_user, require_role, hash_password, verify_password
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 require_admin = require_role("admin")
@@ -27,6 +27,11 @@ class UpdateUserRequest(BaseModel):
     region: Optional[str] = None
     linkedin_url: Optional[str] = None
     avatar_url: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 @router.get("/")
@@ -133,6 +138,25 @@ async def update_profile(
         current_user.avatar_url = req.avatar_url
     await db.commit()
     return _user_dict(current_user)
+
+
+@router.post("/me/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Any signed-in user (admin or agent) changes their own password after
+    re-confirming their current one."""
+    if not verify_password(req.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Your current password is incorrect.")
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters.")
+    if verify_password(req.new_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="New password must be different from the current one.")
+    current_user.hashed_password = hash_password(req.new_password)
+    await db.commit()
+    return {"message": "Password updated successfully."}
 
 
 @router.post("/{user_id}/reset-credentials")

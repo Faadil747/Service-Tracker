@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
     Bell, LogOut, Zap, CheckSquare, LayoutDashboard, TrendingUp,
     Settings, Calendar, Link2, Users, ChevronDown, MessageSquare, Menu, X,
-    AlertTriangle
+    AlertTriangle, BarChart3
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
@@ -21,6 +21,7 @@ const getNavItems = (role: string) => [
     { to: '/workspace', icon: CheckSquare, label: 'Workspace', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/calendar', icon: Calendar, label: 'Calendar', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/links', icon: Link2, label: 'Link Analytics', roles: ['admin', 'agent', 'developer', 'ceo'] },
+    { to: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'developer', 'ceo'] },
     { to: '/progress', icon: TrendingUp, label: 'Agent Progress', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/accountability', icon: Users, label: 'Accountability', roles: ['admin', 'ceo'] },
     { to: '/settings', icon: Settings, label: 'Settings', roles: ['admin', 'developer', 'ceo'] },

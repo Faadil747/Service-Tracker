@@ -1,19 +1,61 @@
 import os
+import asyncio
+from datetime import date
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, users, tasks, posts, ai, notifications, alerts, metrics, link_tracking, settings as settings_router
+from app.routers import auth, users, tasks, posts, ai, notifications, alerts, metrics, link_tracking, reports, settings as settings_router
+
+
+async def _snapshot_exists_today() -> bool:
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models import FollowerSnapshot
+    async with AsyncSessionLocal() as s:
+        row = (await s.execute(
+            select(FollowerSnapshot).where(FollowerSnapshot.snapshot_date == date.today())
+        )).scalar_one_or_none()
+        return row is not None
+
+
+async def _daily_sync_loop():
+    """Record exactly ONE real LinkedIn snapshot per calendar day so the rolling
+    14-day trends fill in automatically. Quota-safe: it re-checks hourly but only
+    calls LinkedIn on the first check of a day that has no snapshot yet — so at
+    most one API call/day, and never twice even across restarts. Any error is
+    swallowed so the loop keeps running."""
+    from app.services.linkedin_service import linkedin_service
+    await asyncio.sleep(5)  # let startup settle
+    while True:
+        try:
+            if settings.LINKEDIN_AUTO_DAILY_SYNC and linkedin_service._has_credentials():
+                if not await _snapshot_exists_today():
+                    print("[daily-sync] recording today's LinkedIn snapshot (1 API call)")
+                    await linkedin_service.get_org_snapshot(force=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[daily-sync] error (will retry next hour): {e}")
+        await asyncio.sleep(3600)  # re-check hourly; real fetch happens once/day
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables
+    # Startup: create tables + launch the once-a-day snapshot scheduler.
     await init_db()
-    yield
-    # Shutdown: nothing to clean up for SQLite
+    sync_task = asyncio.create_task(_daily_sync_loop())
+    try:
+        yield
+    finally:
+        # Shutdown: stop the scheduler cleanly.
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
@@ -47,6 +89,7 @@ app.include_router(notifications.router)
 app.include_router(alerts.router)
 app.include_router(metrics.router)
 app.include_router(link_tracking.router)
+app.include_router(reports.router)
 app.include_router(settings_router.router)
 
 # Serve uploaded post images from backend/uploads at /uploads/<file>

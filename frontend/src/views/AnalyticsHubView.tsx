@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
     BarChart, Bar, PieChart, Pie, Cell,
-    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList
 } from 'recharts';
 import {
     TrendingUp, Eye, Heart, Users, MousePointer, RefreshCw,
@@ -11,9 +11,17 @@ import { metricsApi, tasksApi, settingsApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 
-interface Props { region: string; }
+interface Props { region: string; embedded?: boolean }
 
 const COLORS = ['#2563eb', '#7c3aed', '#10b981', '#f59e0b', '#ef4444', '#0891b2', '#db2777'];
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// "2026-07-10" -> "Jul 10" (readable X-axis labels instead of "07-10").
+const fmtDay = (iso: string) => {
+    const p = String(iso || '').split('-');
+    if (p.length < 3) return iso;
+    return `${MONTHS[parseInt(p[1], 10) - 1] || ''} ${parseInt(p[2], 10)}`;
+};
 
 const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
@@ -37,7 +45,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // A metric value that is honest about missing data (throttled / not yet synced).
 const fmt = (v: any) => (v === null || v === undefined) ? null : Number(v);
 
-export const AnalyticsHubView: React.FC<Props> = ({ region }) => {
+export const AnalyticsHubView: React.FC<Props> = ({ region, embedded = false }) => {
     const { user } = useAuthStore();
     const isAdmin = user?.role === 'admin';
     const [overview, setOverview] = useState<any>(null);
@@ -49,20 +57,23 @@ export const AnalyticsHubView: React.FC<Props> = ({ region }) => {
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [linkedinConnected, setLinkedinConnected] = useState<boolean | null>(null);
+    const [dailyTrend, setDailyTrend] = useState<any>(null);
     const initialLoaded = useRef(false);
 
     const load = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         try {
-            const [oRes, dRes, pRes] = await Promise.all([
+            const [oRes, dRes, pRes, tRes] = await Promise.all([
                 metricsApi.linkedinOverview(),
                 metricsApi.demographics(),
                 metricsApi.linkedinPosts(15),
+                metricsApi.dailyTrend(14),
             ]);
             setOverview(oRes.data);
             setDemographics({ seniority: dRes.data.seniority || [], function: dRes.data.function || [] });
             setPosts(pRes.data.posts || []);
             setPostsMeta({ available: pRes.data.available, rate_limited: pRes.data.rate_limited, total: pRes.data.total });
+            setDailyTrend(tRes.data);
             if (isAdmin) {
                 try {
                     const acRes = await tasksApi.accountability(region === 'Global' ? undefined : region);
@@ -82,10 +93,13 @@ export const AnalyticsHubView: React.FC<Props> = ({ region }) => {
     }, [region, load]);
 
     useEffect(() => {
+        // Skip when embedded in the combined dashboard — the parent already
+        // checks LinkedIn status, so we avoid a duplicate introspection call.
+        if (embedded) return;
         settingsApi.linkedinStatus()
             .then(r => setLinkedinConnected(r.data.connected))
             .catch(() => setLinkedinConnected(false));
-    }, []);
+    }, [embedded]);
 
     const handleForceSync = async () => {
         setSyncing(true);
@@ -102,6 +116,7 @@ export const AnalyticsHubView: React.FC<Props> = ({ region }) => {
     const meta = overview?._meta || {};
     const available = meta.available;
     const rateLimited = meta.rate_limited;
+    const tokenExpired = meta.token_expired;
     const staleFields: string[] = meta.stale_fields || [];
 
     // Real KPI values (null when LinkedIn hasn't provided them yet).
@@ -128,9 +143,70 @@ export const AnalyticsHubView: React.FC<Props> = ({ region }) => {
         { name: 'Unique reach', value: uniqueImpr || 0 },
         { name: 'Clicks', value: clicks || 0 },
     ].filter(d => d.value > 0);
-    const followerSplit = (organic || paid)
-        ? [{ name: 'Organic', value: organic || 0 }, { name: 'Paid', value: paid || 0 }].filter(d => d.value > 0)
-        : [];
+
+    // Real 14-day daily deltas, accumulated from our own snapshots (LinkedIn has
+    // no historical API). Sparse until enough days are recorded — never faked.
+    const trendRows: any[] = dailyTrend?.trend || [];
+    const trendDeltas: any[] = [];
+    for (let i = 1; i < trendRows.length; i++) {
+        const fd = trendRows[i].followers - trendRows[i - 1].followers;
+        trendDeltas.push({
+            day: fmtDay(trendRows[i].date),
+            gained: Math.max(0, fd),
+            lost: Math.abs(Math.min(0, fd)),
+            engagement: Math.max(0, trendRows[i].engagement - trendRows[i - 1].engagement),
+            impressions: Math.max(0, trendRows[i].impressions - trendRows[i - 1].impressions),
+        });
+    }
+    const hasTrend = trendDeltas.length >= 1;
+
+    const TrendChart = ({ title, keyName, color, sub }: { title: string; keyName: string; color: string; sub: string }) => (
+        <div className="chart-container">
+            <div className="section-header">
+                <div className="section-title">{title}</div>
+                <span className="badge badge-gray">14-day</span>
+            </div>
+            {hasTrend ? (
+                <ResponsiveContainer width="100%" height={230}>
+                    <BarChart data={trendDeltas} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                        <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--accent-glow)' }} />
+                        <Bar dataKey={keyName} fill={color} radius={[4, 4, 0, 0]} name={title} />
+                    </BarChart>
+                </ResponsiveContainer>
+            ) : (
+                <EmptyBlock icon="📅" title="Accumulating daily trend"
+                    note={`${sub} A real point is recorded each day you Sync; ${dailyTrend?.snapshot_count || 0} day(s) captured so far.`} />
+            )}
+        </div>
+    );
+
+    // Professional horizontal demographic bar — sorted, top-N, gradient fill,
+    // value labels at the bar end, compact rows. Replaces the tall raw bar list.
+    const DemoBar = ({ data, gradId, from, to, topN = 12 }: { data: any[]; gradId: string; from: string; to: string; topN?: number }) => {
+        const rows = [...data].sort((a, b) => b.value - a.value).slice(0, topN);
+        const h = Math.max(200, rows.length * 30 + 16);
+        return (
+            <ResponsiveContainer width="100%" height={h}>
+                <BarChart layout="vertical" data={rows} margin={{ top: 4, right: 58, bottom: 2, left: 6 }} barCategoryGap={8}>
+                    <defs>
+                        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stopColor={from} />
+                            <stop offset="100%" stopColor={to} />
+                        </linearGradient>
+                    </defs>
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} width={142} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--accent-glow)' }} />
+                    <Bar dataKey="value" fill={`url(#${gradId})`} radius={[0, 5, 5, 0]} barSize={15} name="Followers">
+                        <LabelList dataKey="value" position="right" formatter={(v: any) => Number(v).toLocaleString()} style={{ fontSize: 10.5, fontWeight: 600, fill: 'var(--text-muted)' }} />
+                    </Bar>
+                </BarChart>
+            </ResponsiveContainer>
+        );
+    };
 
     const KPICard = ({ icon: Icon, label, value, suffix, sub, color }: any) => (
         <div className="stat-card animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -161,27 +237,44 @@ export const AnalyticsHubView: React.FC<Props> = ({ region }) => {
     );
 
     return (
-        <div className="page-content animate-fade">
-            {/* Header */}
-            <div className="page-header">
-                <div className="page-header-left">
-                    <div className="page-title">Analytics Hub</div>
-                    <div className="page-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <div className={`status-dot ${linkedinConnected && available ? 'active' : 'inactive'}`} />
-                        {linkedinConnected === false
-                            ? <span style={{ color: '#ef4444', fontWeight: 600 }}>LinkedIn not connected — check Settings</span>
-                            : !available
-                                ? <span style={{ color: 'var(--warning)', fontWeight: 600 }}>Waiting for first LinkedIn sync…</span>
-                                : <>Live LinkedIn data{meta.org_id ? ` · Org ${meta.org_id}` : ''}{meta.last_updated ? ` · Updated ${new Date(meta.last_updated).toLocaleString()}` : ''}</>
-                        }
+        <div className={embedded ? 'animate-fade' : 'page-content animate-fade'}>
+            {/* Header — hidden when embedded in the combined dashboard */}
+            {!embedded && (
+                <div className="page-header">
+                    <div className="page-header-left">
+                        <div className="page-title">Analytics Hub</div>
+                        <div className="page-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <div className={`status-dot ${linkedinConnected && available ? 'active' : 'inactive'}`} />
+                            {linkedinConnected === false
+                                ? <span style={{ color: '#ef4444', fontWeight: 600 }}>LinkedIn not connected — check Settings</span>
+                                : !available
+                                    ? <span style={{ color: 'var(--warning)', fontWeight: 600 }}>Waiting for first LinkedIn sync…</span>
+                                    : <>Live LinkedIn data{meta.org_id ? ` · Org ${meta.org_id}` : ''}{meta.last_updated ? ` · Updated ${new Date(meta.last_updated).toLocaleString()}` : ''}</>
+                            }
+                        </div>
+                    </div>
+                    <div className="page-header-right">
+                        <button className="btn btn-secondary btn-icon" onClick={handleForceSync} title="Force refresh from LinkedIn" disabled={syncing}>
+                            <RefreshCw size={15} style={{ animation: (loading || syncing) ? 'spin 0.7s linear infinite' : 'none' }} />
+                        </button>
                     </div>
                 </div>
-                <div className="page-header-right">
-                    <button className="btn btn-secondary btn-icon" onClick={handleForceSync} title="Force refresh from LinkedIn" disabled={syncing}>
-                        <RefreshCw size={15} style={{ animation: (loading || syncing) ? 'spin 0.7s linear infinite' : 'none' }} />
-                    </button>
+            )}
+
+            {/* Token expiry — the integration keeps serving last-known data but needs reconnecting */}
+            {tokenExpired && (
+                <div style={{
+                    background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 10, padding: '10px 16px', marginBottom: 16, fontSize: '0.8rem',
+                    color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                    <AlertTriangle size={16} color="var(--danger)" style={{ flexShrink: 0 }} />
+                    <span>
+                        The LinkedIn access token has expired — showing the last synced data. Add a
+                        LINKEDIN_REFRESH_TOKEN to auto-renew it, or reconnect LinkedIn in Settings.
+                    </span>
                 </div>
-            </div>
+            )}
 
             {/* Rate-limit / staleness notice — honest about what's live vs pending */}
             {available && rateLimited && (
@@ -226,20 +319,24 @@ export const AnalyticsHubView: React.FC<Props> = ({ region }) => {
                 )}
             </div>
 
-            {/* KPI Cards — all real, "—/syncing" when LinkedIn hasn't provided the value */}
-            <div className="grid-4" style={{ marginBottom: 16 }}>
-                <KPICard icon={Users} label="Total Followers" value={followers} color="#2563eb"
-                    sub={organic !== null ? `${(organic || 0).toLocaleString()} organic · ${(paid || 0).toLocaleString()} paid` : 'Total page followers'} />
-                <KPICard icon={Eye} label="Impressions" value={impressions} color="#7c3aed" sub="Lifetime page impressions" />
-                <KPICard icon={TrendingUp} label="Unique Reach" value={uniqueImpr} color="#0891b2" sub="Unique impressions" />
-                <KPICard icon={Heart} label="Engagement Rate" value={engagementRate} suffix="%" color="#f59e0b" sub="Across all page content" />
-            </div>
-            <div className="grid-4" style={{ marginBottom: 24 }}>
-                <KPICard icon={MousePointer} label="Clicks" value={clicks} color="#10b981" sub="Lifetime post clicks" />
-                <KPICard icon={Heart} label="Reactions" value={likes} color="#ef4444" sub="Total reactions" />
-                <KPICard icon={MessageCircle} label="Comments" value={comments} color="#db2777" sub="Total comments" />
-                <KPICard icon={Eye} label="Page Visitors" value={visitors} color="#6366f1" sub="Unique page visits" />
-            </div>
+            {/* KPI Cards — hidden when embedded (the combined dashboard shows its own) */}
+            {!embedded && (
+                <>
+                    <div className="grid-4" style={{ marginBottom: 16 }}>
+                        <KPICard icon={Users} label="Total Followers" value={followers} color="#2563eb"
+                            sub={organic !== null ? `${(organic || 0).toLocaleString()} organic · ${(paid || 0).toLocaleString()} paid` : 'Total page followers'} />
+                        <KPICard icon={Eye} label="Impressions" value={impressions} color="#7c3aed" sub="Lifetime page impressions" />
+                        <KPICard icon={TrendingUp} label="Unique Reach" value={uniqueImpr} color="#0891b2" sub="Unique impressions" />
+                        <KPICard icon={Heart} label="Engagement Rate" value={engagementRate} suffix="%" color="#f59e0b" sub="Across all page content" />
+                    </div>
+                    <div className="grid-4" style={{ marginBottom: 24 }}>
+                        <KPICard icon={MousePointer} label="Clicks" value={clicks} color="#10b981" sub="Lifetime post clicks" />
+                        <KPICard icon={Heart} label="Reactions" value={likes} color="#ef4444" sub="Total reactions" />
+                        <KPICard icon={MessageCircle} label="Comments" value={comments} color="#db2777" sub="Total comments" />
+                        <KPICard icon={Eye} label="Page Visitors" value={visitors} color="#6366f1" sub="Unique page visits" />
+                    </div>
+                </>
+            )}
 
             {activeTab === 'overview' && (
                 <>
@@ -290,69 +387,105 @@ export const AnalyticsHubView: React.FC<Props> = ({ region }) => {
                             </div>
                         </div>
                     )}
+
+                    {/* Real 14-day daily engagement/impression trend — accumulated from our snapshots */}
+                    <div className="grid-2" style={{ marginBottom: 20 }}>
+                        <TrendChart title="Daily Engagement" keyName="engagement" color="#10b981" sub="Reactions + comments + shares gained each day." />
+                        <TrendChart title="Daily Impressions" keyName="impressions" color="#7c3aed" sub="New impressions gained each day." />
+                    </div>
                 </>
             )}
 
             {activeTab === 'audience' && (
                 <>
                     <div className="grid-2" style={{ marginBottom: 20 }}>
-                        {/* Followers organic vs paid — real */}
+                        {/* Followers: Organic vs Paid — donut + clear labelled split
+                            (stays readable even when the page is ~100% organic). */}
                         <div className="chart-container">
                             <div className="section-header">
                                 <div className="section-title"><Users size={16} color="var(--accent)" /> Followers: Organic vs Paid</div>
                             </div>
-                            {followerSplit.length > 0 ? (
-                                <ResponsiveContainer width="100%" height={280}>
-                                    <PieChart>
-                                        <Pie data={followerSplit} cx="50%" cy="50%" innerRadius={60} outerRadius={100}
-                                            dataKey="value" nameKey="name" paddingAngle={3}>
-                                            {followerSplit.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                        </Pie>
-                                        <Tooltip content={<CustomTooltip />} />
-                                        <Legend wrapperStyle={{ fontSize: '0.78rem' }} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            ) : <EmptyBlock icon={rateLimited ? '⏳' : '👥'} title={rateLimited ? 'Follower breakdown syncing' : 'No follower breakdown'}
+                            {(organic !== null || paid !== null) ? (() => {
+                                const org = organic || 0, pd = paid || 0, tot = org + pd || 1;
+                                const orgPct = Math.round(org / tot * 1000) / 10;
+                                const pdPct = Math.round(pd / tot * 1000) / 10;
+                                const pie = [{ name: 'Organic', value: org }, { name: 'Paid', value: pd }].filter(d => d.value > 0);
+                                return (
+                                    <div>
+                                        <div style={{ position: 'relative' }}>
+                                            <ResponsiveContainer width="100%" height={200}>
+                                                <PieChart>
+                                                    <Pie data={pie} cx="50%" cy="50%" innerRadius={66} outerRadius={92} dataKey="value" nameKey="name" paddingAngle={pie.length > 1 ? 2 : 0} stroke="none">
+                                                        {pie.map(d => <Cell key={d.name} fill={d.name === 'Organic' ? '#4f46e5' : '#10b981'} />)}
+                                                    </Pie>
+                                                    <Tooltip content={<CustomTooltip />} />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                            <div style={{ position: 'absolute', inset: 0, height: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                                                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{tot.toLocaleString()}</div>
+                                                <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>total followers</div>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                                            <div style={{ flex: 1, padding: '10px 12px', borderRadius: 10, background: 'rgba(79,70,229,0.08)', border: '1px solid rgba(79,70,229,0.2)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4f46e5' }} /> ORGANIC</div>
+                                                <div style={{ fontSize: '1.05rem', fontWeight: 700, marginTop: 3 }}>{org.toLocaleString()} <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>· {orgPct}%</span></div>
+                                            </div>
+                                            <div style={{ flex: 1, padding: '10px 12px', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} /> PAID</div>
+                                                <div style={{ fontSize: '1.05rem', fontWeight: 700, marginTop: 3 }}>{pd.toLocaleString()} <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>· {pdPct}%</span></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })() : <EmptyBlock icon={rateLimited ? '⏳' : '👥'} title={rateLimited ? 'Follower breakdown syncing' : 'No follower breakdown'}
                                 note={rateLimited ? "LinkedIn's daily quota for follower statistics is reached — this fills in after 00:00 UTC." : 'Organic/paid follower split will appear here once LinkedIn returns it.'} />}
                         </div>
 
-                        {/* Followers by seniority — real (only labels resolvable offline) */}
+                        {/* Followers by seniority — professional top list */}
                         <div className="chart-container">
                             <div className="section-header">
                                 <div className="section-title"><TrendingUp size={16} color="var(--purple)" /> Followers by Seniority</div>
                             </div>
-                            {demographics.seniority.length > 0 ? (
-                                <ResponsiveContainer width="100%" height={280}>
-                                    <BarChart layout="vertical" data={demographics.seniority} margin={{ top: 0, right: 24, bottom: 0, left: 20 }}>
-                                        <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                                        <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} width={70} />
-                                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--accent-glow)' }} />
-                                        <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Followers">
-                                            {demographics.seniority.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            ) : <EmptyBlock icon={rateLimited ? '⏳' : '📊'} title={rateLimited ? 'Demographics syncing' : 'No demographic data'}
-                                note={rateLimited ? "LinkedIn's follower-statistics quota is reached for today — demographics fill in after 00:00 UTC." : 'Follower demographics will appear here once LinkedIn returns them.'} />}
+                            {demographics.seniority.length > 0
+                                ? <DemoBar data={demographics.seniority} gradId="senGrad" from="#7c3aed" to="#a78bfa" topN={10} />
+                                : <EmptyBlock icon={rateLimited ? '⏳' : '📊'} title={rateLimited ? 'Demographics syncing' : 'No demographic data'}
+                                    note={rateLimited ? "LinkedIn's follower-statistics quota is reached for today — demographics fill in after 00:00 UTC." : 'Follower demographics will appear here once LinkedIn returns them.'} />}
                         </div>
                     </div>
 
-                    {/* Followers by function — real */}
+                    {/* Followers by job function — professional top 12 */}
                     <div className="chart-container">
                         <div className="section-header">
                             <div className="section-title"><Users size={16} color="var(--accent)" /> Followers by Job Function</div>
+                            {demographics.function.length > 12 && <span className="badge badge-gray">Top 12 of {demographics.function.length}</span>}
                         </div>
-                        {demographics.function.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={Math.max(240, demographics.function.length * 34)}>
-                                <BarChart layout="vertical" data={demographics.function} margin={{ top: 0, right: 24, bottom: 0, left: 40 }}>
-                                    <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} width={130} />
+                        {demographics.function.length > 0
+                            ? <DemoBar data={demographics.function} gradId="funGrad" from="#4f46e5" to="#818cf8" topN={12} />
+                            : <EmptyBlock icon={rateLimited ? '⏳' : '🏢'} title={rateLimited ? 'Function breakdown syncing' : 'No function data'}
+                                note={rateLimited ? 'Fills in after LinkedIn\'s daily quota resets (00:00 UTC).' : 'Follower job-function breakdown will appear here once LinkedIn returns it.'} />}
+                    </div>
+
+                    {/* Real 14-day follower growth — gained vs lost each day, from our snapshots */}
+                    <div className="chart-container" style={{ marginTop: 20 }}>
+                        <div className="section-header">
+                            <div className="section-title"><TrendingUp size={16} color="var(--success)" /> Follower Growth — Gained vs Lost</div>
+                            <span className="badge badge-gray">Last 14 days</span>
+                        </div>
+                        {hasTrend ? (
+                            <ResponsiveContainer width="100%" height={250}>
+                                <BarChart data={trendDeltas} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
                                     <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--accent-glow)' }} />
-                                    <Bar dataKey="value" fill="#7c3aed" radius={[0, 4, 4, 0]} name="Followers" />
+                                    <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
+                                    <Bar dataKey="gained" fill="#10b981" radius={[3, 3, 0, 0]} name="Gained" />
+                                    <Bar dataKey="lost" fill="#ef4444" radius={[3, 3, 0, 0]} name="Lost" />
                                 </BarChart>
                             </ResponsiveContainer>
-                        ) : <EmptyBlock icon={rateLimited ? '⏳' : '🏢'} title={rateLimited ? 'Function breakdown syncing' : 'No function data'}
-                            note={rateLimited ? 'Fills in after LinkedIn\'s daily quota resets (00:00 UTC).' : 'Follower job-function breakdown will appear here once LinkedIn returns it.'} />}
+                        ) : <EmptyBlock icon="📅" title="Accumulating follower growth"
+                            note={`Daily follower gains/losses are recorded each time you Sync. ${dailyTrend?.snapshot_count || 0} day(s) captured so far — the chart fills in day by day.`} />}
                     </div>
                 </>
             )}

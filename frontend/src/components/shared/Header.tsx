@@ -22,8 +22,8 @@ const getNavItems = (role: string) => [
     { to: '/calendar', icon: Calendar, label: 'Calendar', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/links', icon: Link2, label: 'Link Analytics', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'developer', 'ceo'] },
-    { to: '/progress', icon: TrendingUp, label: 'Agent Progress', roles: ['admin', 'agent', 'developer', 'ceo'] },
-    { to: '/accountability', icon: Users, label: 'Accountability', roles: ['admin', 'ceo'] },
+    { to: '/engagement', icon: TrendingUp, label: 'Engagement', roles: ['admin', 'agent', 'developer', 'ceo'] },
+    { to: '/employees', icon: Users, label: 'Employees', roles: ['admin'] },
     { to: '/settings', icon: Settings, label: 'Settings', roles: ['admin', 'developer', 'ceo'] },
 ].filter(item => item.roles.includes(role));
 

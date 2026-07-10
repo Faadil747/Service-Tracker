@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
     Sparkles, Send, Download, Users, CheckCircle, FileText, Activity,
-    TrendingUp, Award, Lightbulb, Globe, RefreshCw,
+    TrendingUp, Award, Lightbulb, Globe, RefreshCw, Eye, Heart,
 } from 'lucide-react';
 import { reportsApi } from '../services/api';
 import toast from 'react-hot-toast';
@@ -62,6 +62,7 @@ export const ReportsView: React.FC<Props> = ({ region }) => {
     const [question, setQuestion] = useState('');
     const [asking, setAsking] = useState(false);
     const [answer, setAnswer] = useState<string | null>(null);
+    const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
     const initialLoaded = useRef(false);
 
     const load = useCallback(async (silent = false) => {
@@ -69,6 +70,7 @@ export const ReportsView: React.FC<Props> = ({ region }) => {
         try {
             const res = await reportsApi.summary({ range, region: region === 'Global' ? undefined : region });
             setData(res.data);
+            setUpdatedAt(new Date());
         } catch { /* keep last good data on transient poll errors */ }
         if (!silent) setLoading(false);
     }, [range, region]);
@@ -163,7 +165,9 @@ export const ReportsView: React.FC<Props> = ({ region }) => {
             <div className="page-header">
                 <div className="page-header-left">
                     <div className="page-title">Reports</div>
-                    <div className="page-subtitle">Data-driven insights and executive summary.</div>
+                    <div className="page-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div className="status-dot active" /> Live · realtime data{updatedAt ? ` · updated ${updatedAt.toLocaleTimeString()}` : ''}
+                    </div>
                 </div>
                 <div className="page-header-right" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <select className="select" style={{ width: 'auto', fontSize: '0.82rem' }} value={range} onChange={e => setRange(e.target.value)}>
@@ -216,11 +220,17 @@ export const ReportsView: React.FC<Props> = ({ region }) => {
             </div>
 
             {/* KPI cards */}
-            <div className="grid-4" style={{ marginBottom: 24 }}>
+            <div className="grid-4" style={{ marginBottom: 14 }}>
                 <KPI icon={Users} label="Total Followers" value={followers} color="#2563eb" />
                 <KPI icon={CheckCircle} label="Task Completion" value={num(kpis.task_completion)} suffix="%" color="#10b981" />
-                <KPI icon={FileText} label="Total Posts" value={num(kpis.total_posts)} color="#7c3aed" />
+                <KPI icon={FileText} label="Published Posts" value={num(kpis.total_posts)} color="#7c3aed" />
                 <KPI icon={Activity} label="Total Engagements" value={num(kpis.total_engagements)} color="#f59e0b" />
+            </div>
+            <div className="grid-4" style={{ marginBottom: 24 }}>
+                <KPI icon={Eye} label="Impressions" value={num(kpis.impressions)} color="#0891b2" />
+                <KPI icon={TrendingUp} label="Unique Reach" value={num(kpis.unique_reach)} color="#6366f1" />
+                <KPI icon={Heart} label="Engagement Rate" value={num(kpis.engagement_rate)} suffix="%" color="#db2777" />
+                <KPI icon={Users} label="Active Agents" value={num(kpis.active_agents)} color="#059669" />
             </div>
 
             {/* Engagement trend + Publishing volume */}

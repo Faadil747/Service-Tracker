@@ -291,7 +291,8 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
 export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const { user } = useAuthStore();
     const navigate = useNavigate();
-    // Trend period selector — controls the 14-day (or chosen) window of REAL data.
+    // Trend window selector. Defaults to a rolling 14 days (the most useful window);
+    // Week/Month/Custom become distinct as more daily snapshots accumulate.
     const [trendPeriod, setTrendPeriod] = useState<{ days: number; end: string; label: string }>({ days: 14, end: '', label: '14 Days' });
     const [overview, setOverview] = useState<any>(null);
     const [summary, setSummary] = useState<any>(null);
@@ -369,9 +370,9 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
         return () => clearInterval(interval);
     }, [region]);
 
-    // Daily trend is driven by the period selector (rolling 14d by default, or a
-    // chosen window/anchor date). Reads our own DB — no LinkedIn call. Polled so
-    // it stays realtime as new daily snapshots land.
+    // Daily trend follows the window selector (rolling 14d by default, or a chosen
+    // window / anchor date). Reads our own DB (no LinkedIn call) and polls so it
+    // stays realtime as new daily snapshots land; it fills out over time.
     useEffect(() => {
         let alive = true;
         const loadTrend = () => metricsApi.dailyTrend(trendPeriod.days, trendPeriod.end || undefined)
@@ -381,6 +382,30 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
         const t = setInterval(loadTrend, 15000);
         return () => { alive = false; clearInterval(t); };
     }, [trendPeriod]);
+
+    // Keep tasks (and therefore the calendar + task panel) realtime as work
+    // progresses — a light DB read every 12s so new/updated tasks and their due
+    // dates appear on the calendar without waiting for the 5-min full refresh.
+    useEffect(() => {
+        let alive = true;
+        const refreshTasks = async () => {
+            try {
+                const tRes = await tasksApi.list({ region: region === 'Global' ? undefined : region });
+                if (!alive) return;
+                setTasks(tRes.data);
+                if (isAdmin) {
+                    const [pa, ov] = await Promise.allSettled([
+                        tasksApi.pendingApprovals(),
+                        tasksApi.accountability(region === 'Global' ? undefined : region),
+                    ]);
+                    if (alive && pa.status === 'fulfilled') setPendingApprovals(pa.value.data);
+                    if (alive && ov.status === 'fulfilled') setOverdue(ov.value.data);
+                }
+            } catch { /* transient */ }
+        };
+        const t = setInterval(refreshTasks, 12000);
+        return () => { alive = false; clearInterval(t); };
+    }, [region, isAdmin]);
 
     // Check LinkedIn connection status (admin only, once)
     useEffect(() => {
@@ -469,17 +494,17 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
 
     return (
         <div className="page-content animate-fade">
-            {/* Combined dashboard header — title, period selector, and manual Sync
-                (the single control that ever calls the LinkedIn API). */}
+            {/* Combined dashboard header — title + manual Sync (the single control
+                that ever calls the LinkedIn API). Trends default to a rolling 14 days. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20, paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>
                 <div style={{ marginRight: 'auto' }}>
                     <div className="page-title" style={{ fontSize: '1.4rem', fontWeight: 800 }}>Dashboard</div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        Live company-page analytics · showing real last {trendPeriod.days} days{trendPeriod.end ? ` up to ${trendPeriod.end}` : ''}
+                        Live company-page analytics · {trendPeriod.end ? `14 days up to ${trendPeriod.end}` : `last ${trendPeriod.days} days`}{dailyTrend?.snapshot_count ? ` · ${dailyTrend.snapshot_count} day${dailyTrend.snapshot_count !== 1 ? 's' : ''} recorded so far` : ''}
                     </div>
                 </div>
 
-                {/* Period selector — rolling windows */}
+                {/* Trend window selector — fills in as daily snapshots accumulate */}
                 <div style={{ display: 'flex', gap: 4, background: 'var(--bg-tertiary)', borderRadius: 8, padding: 3 }}>
                     {[{ d: 14, l: '14 Days' }, { d: 7, l: 'Week' }, { d: 30, l: 'Month' }].map(o => {
                         const active = trendPeriod.label === o.l;
@@ -491,8 +516,6 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                         );
                     })}
                 </div>
-
-                {/* Custom end-date anchor — look back at any recorded 14-day window */}
                 <input
                     type="date"
                     value={trendPeriod.end}

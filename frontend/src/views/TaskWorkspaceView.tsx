@@ -2030,7 +2030,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <div className="glass-card" style={{ padding: 16 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                                                 <Sparkles size={15} color="var(--accent)" />
-                                                <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>âœ¨ AI Post Composer</span>
+                                                <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>✨ AI Post Composer</span>
                                             </div>
 
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -2073,7 +2073,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                     onClick={() => setWriteMode('ai')}
                                                     style={{ flex: 1, borderRadius: 0, borderRight: '1px solid var(--border)', padding: '10px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                                                 >
-                                                    <Sparkles size={13} /> âœ¨ Generate with DeepSeek
+                                                    <Sparkles size={13} /> ✨ Generate with DeepSeek
                                                 </button>
                                                 <button
                                                     className={`btn btn-sm ${writeMode === 'manual' ? 'btn-primary' : 'btn-ghost'}`}
@@ -2096,10 +2096,10 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                         </div>
                                                         <div style={{ display: 'flex', gap: 8 }}>
                                                             <button className="btn btn-primary" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1, fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                <Sparkles size={13} /> {generatingAI ? 'Generating...' : 'âœ¨ Generate with DeepSeek'}
+                                                                <Sparkles size={13} /> {generatingAI ? 'Generating...' : '✨ Generate with DeepSeek'}
                                                             </button>
                                                             <button className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ flex: 1, color: 'var(--accent)', borderColor: 'var(--accent)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                <Sparkles size={13} /> {enhancingAI ? 'Enhancing...' : 'ðŸ’¡ Enhance with DeepSeek'}
+                                                                <Sparkles size={13} /> {enhancingAI ? 'Enhancing...' : '💡 Enhance with DeepSeek'}
                                                             </button>
                                                         </div>
                                                     </>
@@ -2116,11 +2116,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             />
                                                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 3 }}>
                                                                 <span>{manualContent.length} characters</span>
-                                                                <span>{manualContent.length > 3000 ? 'âš ï¸ Too long' : manualContent.length > 2000 ? 'âš¡ Long post' : 'âœ… Good length'}</span>
+                                                                <span>{manualContent.length > 3000 ? '⚠ï¸ Too long' : manualContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
                                                             </div>
                                                         </div>
                                                         <button className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                            <Sparkles size={13} /> {enhancingAI ? 'Enhancing...' : 'âœ¨ Edit & Enhance with DeepSeek'}
+                                                            <Sparkles size={13} /> {enhancingAI ? 'Enhancing...' : '✨ Edit & Enhance with DeepSeek'}
                                                         </button>
                                                     </>
                                                 )}
@@ -2146,7 +2146,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                     ) : (
                                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                                             <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
-                                                                {uploadingImage ? '...' : 'ðŸ“Ž Upload'}
+                                                                {uploadingImage ? '...' : '📎 Upload'}
                                                                 <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
                                                                     onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
                                                             </label>
@@ -2163,7 +2163,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                             {isAdmin && (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                                                     <input type="checkbox" id="publishDirectly" checked={publishDirectly} onChange={e => setPublishDirectly(e.target.checked)} style={{ width: 15, height: 15, cursor: 'pointer' }} />
-                                                    <label htmlFor="publishDirectly" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>ðŸš€ Publish directly to LinkedIn</label>
+                                                    <label htmlFor="publishDirectly" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>🚀 Publish directly to LinkedIn</label>
                                                 </div>
                                             )}
                                             <button
@@ -2172,12 +2172,12 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                 disabled={savingPost || !previewContent}
                                                 style={{ padding: '11px 16px', fontSize: '0.88rem', fontWeight: 700 }}
                                             >
-                                                {savingPost ? 'Processing...' : publishDirectly ? 'ðŸš€ Publish directly to LinkedIn' : isAdmin ? 'ðŸ“¤ Save & Approve' : 'ðŸ“¤ Submit for Review'}
+                                                {savingPost ? 'Processing...' : publishDirectly ? '🚀 Publish directly to LinkedIn' : isAdmin ? '📤 Save & Approve' : '📤 Submit for Review'}
                                             </button>
                                         </div>
                                     </div>
 
-                                    {/* RIGHT COLUMN: LinkedIn Live Preview â€” sticky */}
+                                    {/* RIGHT COLUMN: LinkedIn Live Preview — sticky */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'sticky', top: 16 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                             <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>LINKEDIN PREVIEW</div>
@@ -2219,7 +2219,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         return (
                                             <div className="glass-card" style={{ padding: '14px 18px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                                    <span style={{ fontSize: '0.82rem', fontWeight: 700 }}>ðŸ‘¥ Agents on this post</span>
+                                                    <span style={{ fontSize: '0.82rem', fontWeight: 700 }}>👥 Agents on this post</span>
                                                     <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '2px 8px', borderRadius: 20, border: '1px solid var(--border)' }}>{displayAgents.length} agent{displayAgents.length !== 1 ? 's' : ''}</span>
                                                 </div>
                                                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -2231,7 +2231,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                                 <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.full_name}</div>
                                                                 <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                                                                    {a.region === 'India' ? 'ðŸ‡®ðŸ‡³' : a.region === 'USA' ? 'ðŸ‡ºðŸ‡¸' : a.region === 'Indonesia' ? 'ðŸ‡®ðŸ‡©' : 'ðŸŒ'} {a.region}
+                                                                    {a.region === 'India' ? '🇮🇳' : a.region === 'USA' ? '🇺🇸' : a.region === 'Indonesia' ? '🇮🇩' : 'ðŸŒ'} {a.region}
                                                                 </div>
                                                             </div>
                                                             <div style={{ display: 'flex', gap: 4 }}>

@@ -1084,7 +1084,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                                  </div>
 
                                                  <div style={{ fontSize: '0.66rem', color: 'var(--accent)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                     <span>ðŸ”„</span>
+                                                     <span>🔄</span>
                                                      <span>
                                                          {(() => {
                                                              const times = taskRecurrence.count;
@@ -1534,7 +1534,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                         </div>
 
                                         <div style={{ fontSize: '0.72rem', color: 'var(--accent)', background: 'var(--accent-glow)', padding: '6px 10px', borderRadius: 6, marginBottom: 8, border: '1px dashed var(--accent)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <span>ðŸ”„</span>
+                                            <span>🔄</span>
                                             <span>
                                                 {(() => {
                                                     const times = postRecurrence.count;

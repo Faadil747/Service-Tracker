@@ -88,6 +88,8 @@ export const postsApi = {
     kanban: (region?: string, agentId?: string) => api.get('/api/posts/kanban', { params: { region, agent_id: agentId } }),
     moveKanban: (id: string, status: string) => api.post(`/api/posts/${id}/move-kanban`, null, { params: { new_status: status } }),
     delete: (id: string) => api.delete(`/api/posts/${id}`),
+    toggleEmployeeEngagement: (id: string, data: { employee_id: string; action_type: string; state: boolean }) =>
+        api.post(`/api/posts/${id}/toggle-engagement`, data),
 };
 
 // ── AI ────────────────────────────────────────────────────────────────────

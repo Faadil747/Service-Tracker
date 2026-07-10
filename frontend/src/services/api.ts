@@ -111,6 +111,9 @@ export const metricsApi = {
     bestTime: (region?: string) => api.get('/api/metrics/best-time', { params: { region } }),
     // Real follower history — built from our own DB snapshots saved each sync.
     followerHistory: (days?: number) => api.get('/api/metrics/follower-history', { params: { days } }),
+    // Real multi-metric daily trend (followers/impressions/engagement) accumulated day by day.
+    // `end` (YYYY-MM-DD) anchors the window so you can view any past period we have data for.
+    dailyTrend: (days?: number, end?: string) => api.get('/api/metrics/daily-trend', { params: { days, end } }),
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────
@@ -134,6 +137,12 @@ export const linksApi = {
     create: (data: object) => api.post('/api/links/shorten', data),
     analytics: (id: string) => api.get(`/api/links/${id}/analytics`),
     clicks: (params?: object) => api.get('/api/links/clicks/summary', { params }),
+};
+
+// ── Reports (executive analytics over real project data) ───────────────────
+export const reportsApi = {
+    summary: (params?: { range?: string; region?: string }) => api.get('/api/reports/summary', { params }),
+    ask: (data: { question: string; range?: string; region?: string }) => api.post('/api/reports/ask', data),
 };
 
 // ── Settings ──────────────────────────────────────────────────────────────

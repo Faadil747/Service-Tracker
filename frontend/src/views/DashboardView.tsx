@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
     TrendingUp, Eye, Heart, CheckCircle, Clock,
-    AlertTriangle, Search, Plus, X, MessageSquare, CheckSquare
+    AlertTriangle, Search, Plus, X, MessageSquare, CheckSquare, RefreshCw
 } from 'lucide-react';
 import {
     format, startOfMonth, endOfMonth, eachDayOfInterval,
@@ -11,15 +11,22 @@ import { metricsApi, tasksApi, usersApi, settingsApi } from '../services/api';
 import { recurrenceDates, RECURRENCE_OPTIONS, RecurrenceType } from '../utils/recurrence';
 import { useAuthStore } from '../store/authStore';
 import { Task, User } from '../types';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AnalyticsHubView } from './AnalyticsHubView';
 import {
     ResponsiveContainer, AreaChart, Area,
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-    PieChart, Pie, Cell, Legend,
-    LineChart, Line
+    Cell, ReferenceLine
 } from 'recharts';
+
+const TREND_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// "2026-07-10" -> "Jul 10" so chart X-axes are readable (not "07-10").
+const fmtDay = (iso: string) => {
+    const p = String(iso || '').split('-');
+    if (p.length < 3) return iso;
+    return `${TREND_MONTHS[parseInt(p[1], 10) - 1] || ''} ${parseInt(p[2], 10)}`;
+};
 
 export const getTaskStatusInfo = (t: Task) => {
     if (t.status === 'completed') {
@@ -169,8 +176,8 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
 
     return (
         <div className="chart-container">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <h4>📅 Task Calendar</h4>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <h4 style={{ margin: 0 }}>📅 Task Calendar</h4>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button className="btn btn-ghost btn-sm" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>‹</button>
                     <span style={{ fontSize: '0.875rem', fontWeight: 600, minWidth: 110, textAlign: 'center' }}>
@@ -180,9 +187,9 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
                 </div>
             </div>
 
-            <div className="calendar-grid" style={{ marginBottom: 8 }}>
+            <div className="calendar-grid" style={{ marginBottom: 4 }}>
                 {dayLabels.map(d => (
-                    <div key={d} style={{ textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', padding: '4px 0' }}>{d}</div>
+                    <div key={d} style={{ textAlign: 'center', fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', padding: '2px 0' }}>{d}</div>
                 ))}
             </div>
             <div className="calendar-grid">
@@ -198,7 +205,9 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
                             style={{
                                 outline: isSelected ? '2px solid var(--accent)' : undefined,
                                 outlineOffset: '-2px',
-                                cursor: 'pointer'
+                                cursor: 'pointer',
+                                minHeight: 40,
+                                padding: '3px 5px',
                             }}
                             title={dayTasks.map(t => t.title).join(', ')}
                         >
@@ -217,10 +226,10 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
             </div>
 
             {/* Legend */}
-            <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
                 {Object.entries(statusColor).map(([s, c]) => (
-                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />
+                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />
                         {s.replace('_', ' ')}
                     </div>
                 ))}
@@ -228,8 +237,8 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
 
             {/* Short Tasks Overlay/Panel */}
             <div style={{
-                marginTop: 16,
-                padding: '12px 14px',
+                marginTop: 10,
+                padding: '10px 12px',
                 background: 'var(--bg-tertiary)',
                 borderRadius: 8,
                 border: '1px solid var(--border)',
@@ -242,7 +251,7 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
                         <Plus size={11} /> + Add Task
                     </button>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 104, overflowY: 'auto' }}>
                     {selectedDayTasks.map(t => {
                         const statusInfo = getTaskStatusInfo(t);
                         return (
@@ -282,8 +291,8 @@ const CalendarPanel: React.FC<{ tasks: Task[]; onAddTask: (date: Date) => void; 
 export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const { user } = useAuthStore();
     const navigate = useNavigate();
-    const [searchParams, setSearchParams] = useSearchParams();
-    const view = searchParams.get('view') === 'analytics' ? 'analytics' : 'dashboard';
+    // Trend period selector — controls the 14-day (or chosen) window of REAL data.
+    const [trendPeriod, setTrendPeriod] = useState<{ days: number; end: string; label: string }>({ days: 14, end: '', label: '14 Days' });
     const [overview, setOverview] = useState<any>(null);
     const [summary, setSummary] = useState<any>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -302,6 +311,8 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
     const [linkedinConnected, setLinkedinConnected] = useState<boolean | null>(null);
     const [linkedinError, setLinkedinError] = useState<string>('');
     const [followerHistory, setFollowerHistory] = useState<any>(null);
+    const [dailyTrend, setDailyTrend] = useState<any>(null);
+    const [syncing, setSyncing] = useState(false);
     const isAdmin = user?.role === 'admin';
     const initialLoaded = useRef(false);
 
@@ -325,7 +336,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
             if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data);
             if (tRes.status === 'fulfilled') setTasks(tRes.value.data);
 
-            // Follower history (our own DB — always available after first sync)
+            // Follower history (our own DB — powers the rolling-window growth cards)
             try {
                 const fhRes = await metricsApi.followerHistory(30);
                 setFollowerHistory(fhRes.data);
@@ -358,6 +369,19 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
         return () => clearInterval(interval);
     }, [region]);
 
+    // Daily trend is driven by the period selector (rolling 14d by default, or a
+    // chosen window/anchor date). Reads our own DB — no LinkedIn call. Polled so
+    // it stays realtime as new daily snapshots land.
+    useEffect(() => {
+        let alive = true;
+        const loadTrend = () => metricsApi.dailyTrend(trendPeriod.days, trendPeriod.end || undefined)
+            .then(res => { if (alive) setDailyTrend(res.data); })
+            .catch(() => { });
+        loadTrend();
+        const t = setInterval(loadTrend, 15000);
+        return () => { alive = false; clearInterval(t); };
+    }, [trendPeriod]);
+
     // Check LinkedIn connection status (admin only, once)
     useEffect(() => {
         if (!isAdmin) return;
@@ -374,6 +398,20 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
 
 
 
+
+    // Manual LinkedIn sync — the ONLY thing that hits the LinkedIn API. Reads are
+    // served from cache to protect the daily quota; this button forces a live pull.
+    const handleManualSync = async () => {
+        setSyncing(true);
+        try {
+            await metricsApi.syncPage(region === 'Global' ? undefined : region);
+            await loadAll(true);
+            toast.success('Synced latest data from LinkedIn');
+        } catch {
+            toast.error('Sync failed — LinkedIn may be rate-limited or the token expired');
+        }
+        setSyncing(false);
+    };
 
     const handleAddTask = async () => {
         if (!newTask.title.trim()) return toast.error('Task title is required');
@@ -431,37 +469,56 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
 
     return (
         <div className="page-content animate-fade">
-            {/* View Selector Tabs */}
-            <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
+            {/* Combined dashboard header — title, period selector, and manual Sync
+                (the single control that ever calls the LinkedIn API). */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 20, paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>
+                <div style={{ marginRight: 'auto' }}>
+                    <div className="page-title" style={{ fontSize: '1.4rem', fontWeight: 800 }}>Dashboard</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Live company-page analytics · showing real last {trendPeriod.days} days{trendPeriod.end ? ` up to ${trendPeriod.end}` : ''}
+                    </div>
+                </div>
+
+                {/* Period selector — rolling windows */}
+                <div style={{ display: 'flex', gap: 4, background: 'var(--bg-tertiary)', borderRadius: 8, padding: 3 }}>
+                    {[{ d: 14, l: '14 Days' }, { d: 7, l: 'Week' }, { d: 30, l: 'Month' }].map(o => {
+                        const active = trendPeriod.label === o.l;
+                        return (
+                            <button key={o.l} onClick={() => setTrendPeriod({ days: o.d, end: '', label: o.l })} style={{
+                                padding: '5px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600,
+                                background: active ? 'var(--accent)' : 'transparent', color: active ? '#fff' : 'var(--text-muted)', fontFamily: 'inherit',
+                            }}>{o.l}</button>
+                        );
+                    })}
+                </div>
+
+                {/* Custom end-date anchor — look back at any recorded 14-day window */}
+                <input
+                    type="date"
+                    value={trendPeriod.end}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={e => setTrendPeriod({ days: 14, end: e.target.value, label: e.target.value ? 'Custom' : '14 Days' })}
+                    title="Pick an end date to view the 14 days up to that date"
+                    className="input"
+                    style={{ width: 'auto', fontSize: '0.78rem', padding: '5px 8px' }}
+                />
+
                 <button
-                    onClick={() => setSearchParams({ view: 'dashboard' })}
+                    onClick={handleManualSync}
+                    disabled={syncing}
+                    title="Pull the latest data from LinkedIn (the only action that calls the LinkedIn API)"
                     style={{
-                        padding: '8px 16px', background: 'transparent', border: 'none',
-                        borderBottom: view === 'dashboard' ? '2px solid var(--accent)' : '2px solid transparent',
-                        color: view === 'dashboard' ? 'var(--accent)' : 'var(--text-muted)',
-                        fontWeight: view === 'dashboard' ? 700 : 500, fontSize: '0.85rem',
-                        cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'inherit',
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8, border: 'none',
+                        background: 'var(--accent)', color: '#fff', fontSize: '0.82rem', fontWeight: 700,
+                        cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.7 : 1, fontFamily: 'inherit',
                     }}
                 >
-                    🏠 Business Dashboard
-                </button>
-                <button
-                    onClick={() => setSearchParams({ view: 'analytics' })}
-                    style={{
-                        padding: '8px 16px', background: 'transparent', border: 'none',
-                        borderBottom: view === 'analytics' ? '2px solid var(--accent)' : '2px solid transparent',
-                        color: view === 'analytics' ? 'var(--accent)' : 'var(--text-muted)',
-                        fontWeight: view === 'analytics' ? 700 : 500, fontSize: '0.85rem',
-                        cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'inherit',
-                    }}
-                >
-                    📊 Analytics Hub
+                    <RefreshCw size={14} style={{ animation: syncing ? 'spin 0.7s linear infinite' : 'none' }} />
+                    {syncing ? 'Syncing…' : 'Sync'}
                 </button>
             </div>
 
-            {view === 'analytics' ? (
-                <AnalyticsHubView region={region} />
-            ) : (
+            {(
                 <>
                     {/* Login Popup */}
                     {showPopup && user && (
@@ -674,270 +731,8 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                             : <>Waiting for the first LinkedIn sync — metrics appear once the API responds.</>}
                     </div>
 
-                    {/* ── Followers Growth Tracker ─────────────────────────────────────── */}
-                    <div style={{ marginBottom: 24 }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: 14 }}>👥 FOLLOWERS GROWTH TRACKER</div>
-
-                        {!followerHistory || followerHistory.snapshot_count === 0 ? (
-                            // No snapshots yet — first sync hasn't happened
-                            <div className="glass-card" style={{ padding: 24, textAlign: 'center' }}>
-                                <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>⏳</div>
-                                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>Accumulating follower history…</div>
-                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>A snapshot is saved each time LinkedIn syncs. Daily and weekly growth will appear here once we have at least two days of data.</div>
-                            </div>
-                        ) : (
-                            <div>
-                                {/* Delta Cards Row */}
-                                <div className="grid-4" style={{ marginBottom: 16 }}>
-
-                                    {/* Daily — Followed */}
-                                    <div className="glass-card" style={{ padding: '16px 20px', borderLeft: '3px solid var(--success)' }}>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>FOLLOWED YESTERDAY</div>
-                                        <div style={{ fontSize: '1.6rem', fontWeight: 700, color: followerHistory.daily_gained !== null ? 'var(--success)' : 'var(--text-muted)' }}>
-                                            {followerHistory.daily_gained !== null ? `+${followerHistory.daily_gained.toLocaleString()}` : '—'}
-                                        </div>
-                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                                            {followerHistory.daily_gained !== null ? 'new followers (vs prev day)' : 'Need yesterday\'s snapshot'}
-                                        </div>
-                                    </div>
-
-                                    {/* Daily — Unfollowed */}
-                                    <div className="glass-card" style={{ padding: '16px 20px', borderLeft: '3px solid var(--danger)' }}>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>UNFOLLOWED YESTERDAY</div>
-                                        <div style={{ fontSize: '1.6rem', fontWeight: 700, color: followerHistory.daily_lost !== null && followerHistory.daily_lost > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
-                                            {followerHistory.daily_lost !== null ? `-${followerHistory.daily_lost.toLocaleString()}` : '—'}
-                                        </div>
-                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                                            {followerHistory.daily_lost !== null ? 'unfollows (vs prev day)' : 'Need yesterday\'s snapshot'}
-                                        </div>
-                                    </div>
-
-                                    {/* Weekly — Followed */}
-                                    <div className="glass-card" style={{ padding: '16px 20px', borderLeft: '3px solid #7c3aed' }}>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>FOLLOWED THIS WEEK</div>
-                                        <div style={{ fontSize: '1.6rem', fontWeight: 700, color: followerHistory.weekly_gained !== null ? '#7c3aed' : 'var(--text-muted)' }}>
-                                            {followerHistory.weekly_gained !== null ? `+${followerHistory.weekly_gained.toLocaleString()}` : '—'}
-                                        </div>
-                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>since Monday</div>
-                                    </div>
-
-                                    {/* Weekly — Unfollowed */}
-                                    <div className="glass-card" style={{ padding: '16px 20px', borderLeft: '3px solid #f59e0b' }}>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>UNFOLLOWED THIS WEEK</div>
-                                        <div style={{ fontSize: '1.6rem', fontWeight: 700, color: followerHistory.weekly_lost !== null && followerHistory.weekly_lost > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
-                                            {followerHistory.weekly_lost !== null ? `-${followerHistory.weekly_lost.toLocaleString()}` : '—'}
-                                        </div>
-                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>since Monday</div>
-                                    </div>
-                                </div>
-
-                                {/* Follower count line chart */}
-                                {followerHistory.history.length >= 2 && (
-                                    <div className="chart-container">
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                            <div className="chart-title" style={{ margin: 0 }}>Follower Count Over Time</div>
-                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                                {followerHistory.snapshot_count} day{followerHistory.snapshot_count !== 1 ? 's' : ''} of data · grows daily
-                                            </div>
-                                        </div>
-                                        {(() => {
-                                            const data = followerHistory.history.map((h: any) => ({
-                                                date: h.date.slice(5), // MM-DD
-                                                followers: h.followers,
-                                            }));
-                                            const minF = Math.min(...data.map((d: any) => d.followers));
-                                            const maxF = Math.max(...data.map((d: any) => d.followers));
-                                            const pad = Math.max(10, Math.round((maxF - minF) * 0.1));
-                                            return (
-                                                <ResponsiveContainer width="100%" height={180}>
-                                                    <LineChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                                                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-                                                        <YAxis
-                                                            domain={[minF - pad, maxF + pad]}
-                                                            tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                                                            tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
-                                                        />
-                                                        <Tooltip
-                                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
-                                                            formatter={(v: any) => [v.toLocaleString(), 'Followers']}
-                                                        />
-                                                        <Line type="monotone" dataKey="followers" stroke="#2563eb" strokeWidth={2} dot={{ r: 3, fill: '#2563eb' }} activeDot={{ r: 5 }} />
-                                                    </LineChart>
-                                                </ResponsiveContainer>
-                                            );
-                                        })()}
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8, textAlign: 'center' }}>
-                                            Daily delta = today's count − yesterday's count. Weekly = today − Monday. No estimates or fabricated data.
-                                        </div>
-                                    </div>
-                                )}
-
-                                {followerHistory.history.length < 2 && (
-                                    <div className="glass-card" style={{ padding: 16, textAlign: 'center' }}>
-                                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>📅 Line chart appears once 2+ daily snapshots are saved. Come back tomorrow!</div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* ── LinkedIn Analytics Charts ─────────────────────────────────────── */}
-                    {meta.available && (
-                        <div style={{ marginBottom: 24 }}>
-                            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: 14 }}>📊 LINKEDIN ANALYTICS — LIVE</div>
-
-                            {/* Row 1: Engagement Bar Chart + Followers Split Donut */}
-                            <div className="grid-2" style={{ marginBottom: 16 }}>
-
-                                {/* Engagement Metrics Bar Chart */}
-                                <div className="chart-container">
-                                    <div className="chart-title" style={{ marginBottom: 16 }}>Engagement Breakdown</div>
-                                    {(() => {
-                                        const engData = [
-                                            ...(kImpressions !== null ? [{ name: 'Impressions', value: kImpressions, fill: '#2563eb' }] : []),
-                                            ...(kReach !== null ? [{ name: 'Unique Reach', value: kReach, fill: '#7c3aed' }] : []),
-                                            ...(kClicks !== null ? [{ name: 'Clicks', value: kClicks, fill: '#0891b2' }] : []),
-                                            ...(kLikes !== null ? [{ name: 'Reactions', value: kLikes, fill: '#10b981' }] : []),
-                                            ...(kComments !== null ? [{ name: 'Comments', value: kComments, fill: '#f59e0b' }] : []),
-                                        ];
-                                        if (!engData.length) return <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)', fontSize: '0.8rem' }}>No engagement data available</div>;
-                                        return (
-                                            <ResponsiveContainer width="100%" height={200}>
-                                                <BarChart data={engData} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                                                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-                                                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-                                                    <Tooltip
-                                                        contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
-                                                        formatter={(v: any) => [v.toLocaleString(), '']}
-                                                    />
-                                                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                                                        {engData.map((entry, i) => (
-                                                            <Cell key={i} fill={entry.fill} />
-                                                        ))}
-                                                    </Bar>
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                        );
-                                    })()}
-                                </div>
-
-                                {/* Organic vs Paid Followers Donut */}
-                                <div className="chart-container">
-                                    <div className="chart-title" style={{ marginBottom: 16 }}>Followers — Organic vs Paid</div>
-                                    {(() => {
-                                        const organic = num(li.organic_followers);
-                                        const paid = num(li.paid_followers);
-                                        if (organic === null && paid === null) {
-                                            return (
-                                                <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                                                    Follower breakdown syncs after LinkedIn's daily quota resets (00:00 UTC)
-                                                </div>
-                                            );
-                                        }
-                                        const pieData = [
-                                            ...(organic !== null ? [{ name: 'Organic', value: organic }] : []),
-                                            ...(paid !== null && paid > 0 ? [{ name: 'Paid', value: paid }] : []),
-                                        ];
-                                        const PIE_COLORS = ['#2563eb', '#10b981'];
-                                        return (
-                                            <>
-                                                <ResponsiveContainer width="100%" height={180}>
-                                                    <PieChart>
-                                                        <Pie
-                                                            data={pieData}
-                                                            cx="50%" cy="50%"
-                                                            innerRadius={50} outerRadius={75}
-                                                            paddingAngle={3}
-                                                            dataKey="value"
-                                                        >
-                                                            {pieData.map((_, i) => (
-                                                                <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                                                            ))}
-                                                        </Pie>
-                                                        <Tooltip
-                                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
-                                                            formatter={(v: any) => [v.toLocaleString(), '']}
-                                                        />
-                                                        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '0.78rem' }} />
-                                                    </PieChart>
-                                                </ResponsiveContainer>
-                                                <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 4 }}>
-                                                    {pieData.map((d, i) => (
-                                                        <div key={d.name} style={{ textAlign: 'center' }}>
-                                                            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: PIE_COLORS[i] }}>{d.value.toLocaleString()}</div>
-                                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{d.name}</div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-
-                            {/* Row 2: Seniority Demographics + Function Demographics */}
-                            {(() => {
-                                const seniority: any[] = li.demographics?.seniority || [];
-                                const func: any[] = li.demographics?.function || [];
-                                if (!seniority.length && !func.length) return null;
-                                return (
-                                    <div className="grid-2" style={{ marginBottom: 0 }}>
-
-                                        {/* Seniority Breakdown */}
-                                        {seniority.length > 0 && (
-                                            <div className="chart-container">
-                                                <div className="chart-title" style={{ marginBottom: 16 }}>Audience by Seniority</div>
-                                                <ResponsiveContainer width="100%" height={220}>
-                                                    <BarChart
-                                                        layout="vertical"
-                                                        data={seniority.slice(0, 8)}
-                                                        margin={{ top: 2, right: 16, left: 10, bottom: 2 }}
-                                                    >
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                                                        <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-                                                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={65} />
-                                                        <Tooltip
-                                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
-                                                            formatter={(v: any) => [v.toLocaleString(), 'Followers']}
-                                                        />
-                                                        <Bar dataKey="value" fill="#7c3aed" radius={[0, 4, 4, 0]} />
-                                                    </BarChart>
-                                                </ResponsiveContainer>
-                                            </div>
-                                        )}
-
-                                        {/* Function Breakdown */}
-                                        {func.length > 0 && (
-                                            <div className="chart-container">
-                                                <div className="chart-title" style={{ marginBottom: 16 }}>Audience by Function</div>
-                                                <ResponsiveContainer width="100%" height={220}>
-                                                    <BarChart
-                                                        layout="vertical"
-                                                        data={func.slice(0, 8)}
-                                                        margin={{ top: 2, right: 16, left: 60, bottom: 2 }}
-                                                    >
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                                                        <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-                                                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={110} />
-                                                        <Tooltip
-                                                            contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.78rem' }}
-                                                            formatter={(v: any) => [v.toLocaleString(), 'Followers']}
-                                                        />
-                                                        <Bar dataKey="value" fill="#0891b2" radius={[0, 4, 4, 0]} />
-                                                    </BarChart>
-                                                </ResponsiveContainer>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
-                        </div>
-                    )}
-
-                    {/* ── Task Panel + Calendar ────────────────────────────────────────── */}
-                    <div className="grid-2" style={{ marginBottom: 20 }}>
+                    {/* ── Task Panel + Calendar (calendar sits on the right, up top) ────── */}
+                    <div className="grid-2" style={{ marginBottom: 24 }}>
                         {/* Task Accountability Panel */}
                         <div className="chart-container">
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -1023,7 +818,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                             </div>
                         </div>
 
-                        {/* Calendar */}
+                        {/* Calendar — on the right, near the top */}
                         <CalendarPanel
                             tasks={tasks}
                             onAddTask={(d) => {
@@ -1033,8 +828,171 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                             onNavigateToTask={(taskId) => navigate(`/workspace?taskId=${taskId}`)}
                         />
                     </div>
+
+                    {/* ── Followers Growth & Trends — driven by the period selector above ─ */}
+                    <div style={{ marginBottom: 24 }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: 14 }}>
+                            👥 FOLLOWERS GROWTH &amp; TRENDS · {trendPeriod.label.toUpperCase()}
+                        </div>
+
+                        {/* Rolling-window net change cards (current, fixed windows) */}
+                        {followerHistory && followerHistory.snapshot_count > 0 && (
+                            <div className="grid-4" style={{ marginBottom: 16 }}>
+                                {[
+                                    { key: 'd1', label: 'NET · LAST 24H', sub: 'vs yesterday', color: 'var(--success)', n: 1 },
+                                    { key: 'd7', label: 'NET · LAST 7 DAYS', sub: 'vs 7 days ago', color: '#7c3aed', n: 7 },
+                                    { key: 'd14', label: 'NET · LAST 14 DAYS', sub: 'vs 14 days ago', color: '#0891b2', n: 14 },
+                                    { key: 'd30', label: 'NET · LAST 30 DAYS', sub: 'vs 30 days ago', color: '#f59e0b', n: 30 },
+                                ].map(({ key, label, sub, color, n }) => {
+                                    const w = (followerHistory.windows || {})[key] || {};
+                                    const has = w.delta !== null && w.delta !== undefined;
+                                    const positive = has && w.delta >= 0;
+                                    return (
+                                        <div key={key} className="glass-card" style={{ padding: '14px 18px', borderLeft: `3px solid ${color}` }}>
+                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 5 }}>{label}</div>
+                                            <div style={{ fontSize: '1.5rem', fontWeight: 700, color: has ? (positive ? '#10b981' : '#ef4444') : 'var(--text-muted)' }}>
+                                                {has ? `${positive ? '+' : ''}${w.delta.toLocaleString()}` : '—'}
+                                            </div>
+                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                                {has
+                                                    ? (w.pct !== null && w.pct !== undefined ? `${w.pct >= 0 ? '+' : ''}${w.pct}% · ${sub}` : `followers · ${sub}`)
+                                                    : `accumulating · needs ${n}-day history`}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {(() => {
+                            const t = dailyTrend?.trend || [];
+                            if (t.length < 2) {
+                                return (
+                                    <div className="glass-card" style={{ padding: 22, textAlign: 'center' }}>
+                                        <div style={{ fontSize: '1.4rem', marginBottom: 8 }}>📅</div>
+                                        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>Accumulating trend data…</div>
+                                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', maxWidth: 480, margin: '0 auto' }}>
+                                            One real snapshot is recorded per day. Trends fill in day by day — nothing estimated.{dailyTrend?.snapshot_count ? ` ${dailyTrend.snapshot_count} day(s) captured so far.` : ''}
+                                        </div>
+                                    </div>
+                                );
+                            }
+                            const deltas: any[] = [];
+                            for (let i = 1; i < t.length; i++) {
+                                deltas.push({
+                                    day: fmtDay(t[i].date),
+                                    net: t[i].followers - t[i - 1].followers,
+                                    impressions: Math.max(0, t[i].impressions - t[i - 1].impressions),
+                                    engagement: Math.max(0, t[i].engagement - t[i - 1].engagement),
+                                });
+                            }
+                            const series = t.map((r: any) => ({ day: fmtDay(r.date), followers: r.followers }));
+                            const first = t[0], last = t[t.length - 1];
+                            const totFollowers = last.followers - first.followers;
+                            const totImpr = Math.max(0, last.impressions - first.impressions);
+                            const totEng = Math.max(0, last.engagement - first.engagement);
+                            const totClicks = Math.max(0, last.clicks - first.clicks);
+                            const fv = series.map((s: any) => s.followers);
+                            const minF = Math.min(...fv), maxF = Math.max(...fv);
+                            const pad = Math.max(5, Math.round((maxF - minF) * 0.15));
+                            const tip = { background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.75rem' };
+                            const stat = (label: string, val: number, color: string, signed: boolean) => (
+                                <div className="glass-card" style={{ padding: '12px 16px' }}>
+                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 5 }}>{label}</div>
+                                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: signed ? (val >= 0 ? '#10b981' : '#ef4444') : color }}>{signed && val >= 0 ? '+' : ''}{val.toLocaleString()}</div>
+                                    <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', marginTop: 2 }}>over {t.length} days</div>
+                                </div>
+                            );
+                            return (
+                                <>
+                                    <div className="grid-4" style={{ marginBottom: 14 }}>
+                                        {stat('NEW FOLLOWERS', totFollowers, '#2563eb', true)}
+                                        {stat('IMPRESSIONS GAINED', totImpr, '#7c3aed', false)}
+                                        {stat('ENGAGEMENT GAINED', totEng, '#10b981', false)}
+                                        {stat('POST CLICKS GAINED', totClicks, '#f59e0b', false)}
+                                    </div>
+                                    <div className="grid-2" style={{ marginBottom: 14 }}>
+                                        <div className="chart-container" style={{ padding: 16 }}>
+                                            <div className="chart-title" style={{ marginBottom: 8, fontSize: '0.82rem' }}>Follower Count</div>
+                                            <ResponsiveContainer width="100%" height={170}>
+                                                <AreaChart data={series} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                                                    <defs>
+                                                        <linearGradient id="fgGrad" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="0%" stopColor="#2563eb" stopOpacity={0.32} />
+                                                            <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                                                    <YAxis domain={[minF - pad, maxF + pad]} width={42} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)} />
+                                                    <Tooltip contentStyle={tip} formatter={(v: any) => [v.toLocaleString(), 'Followers']} />
+                                                    <Area type="monotone" dataKey="followers" stroke="#2563eb" strokeWidth={2} fill="url(#fgGrad)" dot={{ r: 2.5, fill: '#2563eb' }} activeDot={{ r: 4 }} />
+                                                </AreaChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                        <div className="chart-container" style={{ padding: 16 }}>
+                                            <div className="chart-title" style={{ marginBottom: 8, fontSize: '0.82rem' }}>Daily Net Followers (+ / −)</div>
+                                            <ResponsiveContainer width="100%" height={170}>
+                                                <BarChart data={deltas} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                                                    <YAxis width={36} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                                    <Tooltip contentStyle={tip} formatter={(v: any) => [`${v >= 0 ? '+' : ''}${v}`, 'Net followers']} />
+                                                    <ReferenceLine y={0} stroke="var(--border)" />
+                                                    <Bar dataKey="net" radius={[3, 3, 0, 0]} name="Net followers">
+                                                        {deltas.map((d, i) => <Cell key={i} fill={d.net >= 0 ? '#10b981' : '#ef4444'} />)}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                    <div className="grid-2">
+                                        <div className="chart-container" style={{ padding: 16 }}>
+                                            <div className="chart-title" style={{ marginBottom: 8, fontSize: '0.82rem' }}>Engagement / Day</div>
+                                            <ResponsiveContainer width="100%" height={160}>
+                                                <BarChart data={deltas} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                                                    <YAxis width={36} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                                    <Tooltip contentStyle={tip} />
+                                                    <Bar dataKey="engagement" fill="#10b981" radius={[3, 3, 0, 0]} name="Engagement" />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                        <div className="chart-container" style={{ padding: 16 }}>
+                                            <div className="chart-title" style={{ marginBottom: 8, fontSize: '0.82rem' }}>Impressions / Day</div>
+                                            <ResponsiveContainer width="100%" height={160}>
+                                                <BarChart data={deltas} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                                                    <YAxis width={40} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)} />
+                                                    <Tooltip contentStyle={tip} />
+                                                    <Bar dataKey="impressions" fill="#7c3aed" radius={[3, 3, 0, 0]} name="Impressions" />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
+                                        Real day-over-day change · window follows the selector above · green = gained, red = lost. No estimates or fabricated data.
+                                    </div>
+                                </>
+                            );
+                        })()}
+                    </div>
+
+                    {/* LinkedIn engagement + audience demographics now live in the single
+                        "Detailed Analytics" section below (embedded Analytics Hub) — no
+                        duplication, one professional home for the deep breakdowns. */}
+
                 </>
             )}
+
+            {/* ── Detailed Analytics — merged into this single combined dashboard ── */}
+            <div style={{ marginTop: 12, paddingTop: 20, borderTop: '2px solid var(--border)' }}>
+                <div style={{ fontSize: '1.15rem', fontWeight: 800, marginBottom: 2 }}>📊 Detailed Analytics</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 16 }}>Engagement, audience &amp; company posts — deeper breakdowns of the same live data.</div>
+                <AnalyticsHubView region={region} embedded />
+            </div>
         </div>
     );
 };

@@ -26,10 +26,20 @@ class Settings(BaseSettings):
     # LinkedIn long-lived access token (used for publishing + metrics)
     LINKEDIN_ACCESS_TOKEN: str = ""
 
+    # LinkedIn refresh token — when present the service auto-renews the access
+    # token on expiry (HTTP 401) instead of going dark. Requires the app to be
+    # approved for refresh tokens. Get one via the OAuth flow with r_ scopes.
+    LINKEDIN_REFRESH_TOKEN: str = ""
+
     # Minutes between live LinkedIn analytics fetches. LinkedIn day-throttles the
     # follower/page statistics endpoints, so we cache each real snapshot and only
     # re-fetch after this interval. Frontend polls read the cached snapshot.
     LINKEDIN_SYNC_INTERVAL_MIN: int = 30
+
+    # Record exactly one real LinkedIn snapshot per calendar day (1 API call/day)
+    # so the rolling 14-day trends fill in automatically. Set False to make the
+    # integration fully manual (only the Sync button ever calls LinkedIn).
+    LINKEDIN_AUTO_DAILY_SYNC: bool = True
 
     # LinkedIn proxy (configurable for dev/test role)
     LINKEDIN_PROXY_URL: str = "http://localhost:3001"

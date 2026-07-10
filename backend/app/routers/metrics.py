@@ -224,6 +224,29 @@ async def follower_history(
         weekly_gained = max(0, weekly_delta)
         weekly_lost = abs(min(0, weekly_delta))
 
+    # ── Rolling-window net deltas (1 / 7 / 14 / 30 days) ─────────────────────
+    # Each window is the follower change vs the most recent snapshot on-or-before
+    # (latest_date − N days). Returns null when we don't yet have a baseline that
+    # far back — honest "accumulating" rather than a fabricated number. As daily
+    # snapshots pile up, the windows diverge into genuinely distinct figures.
+    latest = rows[-1] if rows else None
+
+    def _rolling(n_days: int) -> dict:
+        if latest is None:
+            return {"delta": None, "gained": None, "lost": None, "pct": None, "days_needed": n_days}
+        boundary = latest.snapshot_date - timedelta(days=n_days)
+        baseline = None
+        for r in rows:  # ascending -> last match is the most recent on/before boundary
+            if r.snapshot_date <= boundary:
+                baseline = r
+        if baseline is None or baseline.snapshot_date == latest.snapshot_date:
+            return {"delta": None, "gained": None, "lost": None, "pct": None, "days_needed": n_days}
+        delta = latest.followers - baseline.followers
+        pct = round(delta / baseline.followers * 100, 2) if baseline.followers else None
+        return {"delta": delta, "gained": max(0, delta), "lost": abs(min(0, delta)), "pct": pct, "days_needed": n_days}
+
+    windows = {"d1": _rolling(1), "d7": _rolling(7), "d14": _rolling(14), "d30": _rolling(30)}
+
     return {
         "history": history,
         "daily_delta": daily_delta,
@@ -232,8 +255,60 @@ async def follower_history(
         "weekly_delta": weekly_delta,
         "weekly_gained": weekly_gained,
         "weekly_lost": weekly_lost,
+        "windows": windows,
         "has_enough_data": len(rows) >= 2,
         "snapshot_count": len(rows),
         "today": str(today),
         "monday": str(monday),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Daily metric trend — the real multi-metric history we accumulate ourselves,
+# one row per day. LinkedIn exposes no historical API, so this fills in over time
+# (sparse at first). Nothing here is estimated or fabricated.
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/daily-trend")
+async def daily_trend(
+    days: int = 14,
+    end: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Real accumulated daily metrics. `days` sets the window length; `end`
+    (YYYY-MM-DD) anchors it so you can look back at any historical period we
+    have snapshots for. Defaults to the rolling window ending today."""
+    days = max(1, min(days, 366))
+    try:
+        anchor = date.fromisoformat(end) if end else date.today()
+    except ValueError:
+        anchor = date.today()
+    since = anchor - timedelta(days=days)
+    result = await db.execute(
+        select(FollowerSnapshot)
+        .where(FollowerSnapshot.snapshot_date > since, FollowerSnapshot.snapshot_date <= anchor)
+        .order_by(FollowerSnapshot.snapshot_date.asc())
+    )
+    rows = result.scalars().all()
+    trend = [
+        {
+            "date": str(r.snapshot_date),
+            "followers": r.followers,
+            "impressions": r.impressions or 0,
+            "unique_impressions": r.unique_impressions or 0,
+            "clicks": r.clicks or 0,
+            "reactions": r.likes or 0,
+            "comments": r.comments or 0,
+            "shares": r.shares or 0,
+            "engagement": (r.likes or 0) + (r.comments or 0) + (r.shares or 0),
+            "visitors": r.visitors or 0,
+            "engagement_rate": r.engagement_rate or 0.0,
+        }
+        for r in rows
+    ]
+    return {
+        "days": days,
+        "snapshot_count": len(rows),
+        "trend": trend,
+        "has_enough_data": len(rows) >= 2,
     }

@@ -66,3 +66,22 @@ async def init_db():
             await conn.execute(text("ALTER TABLE posts ADD review_comment TEXT DEFAULT ''"))
         except Exception:
             pass
+
+        # Extend the daily snapshot with per-day metric columns so a real
+        # multi-metric 14-day trend accumulates. Each ALTER is independent so a
+        # partially-migrated DB fills in only the missing columns.
+        from sqlalchemy import text as _text
+        for _col in (
+            "impressions INTEGER DEFAULT 0",
+            "unique_impressions INTEGER DEFAULT 0",
+            "clicks INTEGER DEFAULT 0",
+            "likes INTEGER DEFAULT 0",
+            "comments INTEGER DEFAULT 0",
+            "shares INTEGER DEFAULT 0",
+            "visitors INTEGER DEFAULT 0",
+            "engagement_rate FLOAT DEFAULT 0",
+        ):
+            try:
+                await conn.execute(_text(f"ALTER TABLE follower_snapshots ADD {_col}"))
+            except Exception:
+                pass

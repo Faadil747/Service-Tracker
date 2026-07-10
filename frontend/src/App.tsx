@@ -12,6 +12,7 @@ import { AgentProgressView } from './views/AgentProgressView';
 import { SettingsView } from './views/SettingsView';
 import { ContentCalendarView } from './views/ContentCalendarView';
 import { LinkAnalyticsView } from './views/LinkAnalyticsView';
+import { ReportsView } from './views/ReportsView';
 import { AccountabilityView } from './views/AccountabilityView';
 import './styles/globals.css';
 
@@ -98,6 +99,9 @@ const App: React.FC = () => {
                 } />
                 <Route path="/links" element={
                     <ProtectedLayout roles={['admin', 'agent', 'developer', 'ceo']}>{(r) => <LinkAnalyticsView region={r} />}</ProtectedLayout>
+                } />
+                <Route path="/reports" element={
+                    <ProtectedLayout roles={['admin', 'developer', 'ceo']}>{(r) => <ReportsView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/progress" element={
                     <ProtectedLayout>{(r) => <AgentProgressView region={r} />}</ProtectedLayout>

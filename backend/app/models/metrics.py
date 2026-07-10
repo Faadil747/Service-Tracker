@@ -60,9 +60,10 @@ class AudienceDemographic(Base):
 
 
 class FollowerSnapshot(Base):
-    """One row per calendar day — the follower count at the time of the last
-    LinkedIn sync for that day.  Used to compute daily/weekly deltas without
-    needing access to LinkedIn's (unavailable) historical API."""
+    """One row per calendar day — a snapshot of the company page's real metrics
+    at the time of the last LinkedIn sync for that day. LinkedIn exposes no
+    historical API, so we accumulate one real row per day; daily/weekly/14-day
+    trends are computed from these rows (never fabricated)."""
 
     __tablename__ = "follower_snapshots"
     __table_args__ = (UniqueConstraint("snapshot_date", name="uq_follower_snapshot_date"),)
@@ -72,5 +73,15 @@ class FollowerSnapshot(Base):
     followers: Mapped[int] = mapped_column(Integer, nullable=False)
     organic_followers: Mapped[int] = mapped_column(Integer, default=0)
     paid_followers: Mapped[int] = mapped_column(Integer, default=0)
+    # Daily metric snapshot — captured alongside followers so a real multi-metric
+    # trend (impressions, engagement, reactions…) fills in day by day.
+    impressions: Mapped[int] = mapped_column(Integer, default=0)
+    unique_impressions: Mapped[int] = mapped_column(Integer, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, default=0)
+    likes: Mapped[int] = mapped_column(Integer, default=0)
+    comments: Mapped[int] = mapped_column(Integer, default=0)
+    shares: Mapped[int] = mapped_column(Integer, default=0)
+    visitors: Mapped[int] = mapped_column(Integer, default=0)
+    engagement_rate: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

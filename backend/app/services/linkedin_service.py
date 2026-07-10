@@ -31,6 +31,7 @@ from app.config import settings
 _CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "linkedin_cache.json")
 _SNAPSHOT: dict = {}          # last good snapshot (in-memory)
 _LAST_FETCH_TS: float = 0.0   # epoch seconds of last LinkedIn round-trip
+_MIN_SYNC_SECONDS = 20        # debounce: even a manual sync can't refetch faster than this
 
 # Static URN → label maps (small, fixed sets — safe to resolve offline).
 _SENIORITY = {
@@ -70,6 +71,36 @@ def _save_disk_cache() -> None:
         print(f"LinkedIn cache write failed: {e}")
 
 
+# ── Refreshed-token persistence ─────────────────────────────────────────────
+# When the access token is auto-refreshed we persist it next to the cache so a
+# restart picks up the current token instead of the (possibly expired) one in
+# .env. .env stays the seed/bootstrap source; this file is the live override.
+_TOKEN_FILE = os.path.join(os.path.dirname(_CACHE_FILE), "linkedin_token.json")
+
+
+def _persist_refreshed_token(access_token: str, refresh_token: str) -> None:
+    try:
+        with open(_TOKEN_FILE, "w", encoding="utf-8") as f:
+            json.dump({"access_token": access_token, "refresh_token": refresh_token, "saved_at": time.time()}, f)
+    except Exception as e:
+        print(f"[LinkedIn] token persist failed: {e}")
+
+
+def _load_persisted_token() -> None:
+    """On startup, prefer a previously refreshed token over the .env seed."""
+    try:
+        with open(_TOKEN_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        if d.get("access_token"):
+            settings.LINKEDIN_ACCESS_TOKEN = d["access_token"]
+        if d.get("refresh_token"):
+            settings.LINKEDIN_REFRESH_TOKEN = d["refresh_token"]
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[LinkedIn] token load failed: {e}")
+
+
 class LinkedInService:
     def __init__(self):
         self.base_url = "https://api.linkedin.com/rest"
@@ -93,6 +124,55 @@ class LinkedInService:
         if extra:
             headers.update(extra)
         return headers
+
+    async def _refresh_access_token(self) -> bool:
+        """Exchange the refresh token for a fresh access token so the integration
+        keeps working when LinkedIn's 60-day access token expires. Updates the
+        in-memory token (and rotated refresh token) and returns True on success.
+        A no-op returning False when no refresh token / client creds are set."""
+        rt = settings.LINKEDIN_REFRESH_TOKEN
+        if not (rt and settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET):
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://www.linkedin.com/oauth/v2/accessToken",
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": rt,
+                        "client_id": settings.LINKEDIN_CLIENT_ID,
+                        "client_secret": settings.LINKEDIN_CLIENT_SECRET,
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+            if resp.status_code == 200:
+                d = resp.json()
+                new_token = d.get("access_token")
+                if new_token:
+                    settings.LINKEDIN_ACCESS_TOKEN = new_token
+                    if d.get("refresh_token"):
+                        settings.LINKEDIN_REFRESH_TOKEN = d["refresh_token"]
+                    _persist_refreshed_token(new_token, settings.LINKEDIN_REFRESH_TOKEN)
+                    print("[LinkedIn] access token refreshed successfully")
+                    return True
+            print(f"[LinkedIn] token refresh failed: HTTP {resp.status_code} {resp.text[:160]}")
+        except Exception as e:
+            print(f"[LinkedIn] token refresh error: {e}")
+        return False
+
+    async def _authed_get(self, client: httpx.AsyncClient, url: str, params: Optional[dict] = None) -> httpx.Response:
+        """GET with the current token. On 401 (expired) it refreshes once and
+        retries; if it still 401s it raises _TokenExpired. 429 -> _Throttled."""
+        resp = await client.get(url, headers=self._auth_headers(), params=params)
+        if resp.status_code == 401:
+            if await self._refresh_access_token():
+                resp = await client.get(url, headers=self._auth_headers(), params=params)
+            if resp.status_code == 401:
+                raise _TokenExpired()
+        if resp.status_code == 429:
+            raise _Throttled()
+        resp.raise_for_status()
+        return resp
 
     # ──────────────────────────────────────────────────────────────────────────
     # Publishing
@@ -154,26 +234,39 @@ class LinkedInService:
         if not self._has_credentials():
             return {"_meta": {"available": False, "reason": "LinkedIn token or org ID not configured"}}
 
-        interval = max(1, settings.LINKEDIN_SYNC_INTERVAL_MIN) * 60
-        age = time.time() - _LAST_FETCH_TS
-        if _SNAPSHOT and not force and age < interval:
-            # Serve cached — do not touch LinkedIn (protects the daily quota).
-            # Still record today's follower count in the DB: the growth tracker
-            # reads the DB, and the real count lives in the cache even when we
-            # aren't allowed to re-fetch from LinkedIn right now.
+        # Manual-refresh mode: ordinary reads NEVER touch LinkedIn — that would
+        # burn the daily API quota on every dashboard/reports poll. We always
+        # serve the last real snapshot and still record today's row so the
+        # 14-day trends keep accumulating (free — it's a DB write). A live fetch
+        # happens ONLY on an explicit user sync (force=True → the Sync button).
+        if not force:
+            if _SNAPSHOT:
+                await self._maybe_persist_today(_SNAPSHOT)
+                meta = dict(_SNAPSHOT.get("_meta", {}))
+                meta["served_from_cache"] = True
+                meta["last_fetch_ts"] = _LAST_FETCH_TS
+                return {**_SNAPSHOT, "_meta": meta}
+            return {"_meta": {"available": False,
+                              "reason": "Not synced yet — click Sync to load live LinkedIn data."}}
+
+        # Debounce: even an explicit Sync can't refetch faster than _MIN_SYNC_SECONDS
+        # (guards against double-clicks / rapid re-syncs burning the daily quota).
+        if _SNAPSHOT and (time.time() - _LAST_FETCH_TS) < _MIN_SYNC_SECONDS:
             await self._maybe_persist_today(_SNAPSHOT)
             meta = dict(_SNAPSHOT.get("_meta", {}))
             meta["served_from_cache"] = True
-            meta["cache_age_seconds"] = int(age)
+            meta["synced_recently"] = True
             return {**_SNAPSHOT, "_meta": meta}
 
-        # Time to refresh. Fetch each metric group independently so one throttled
-        # endpoint doesn't wipe out the others.
+        # force=True — the user explicitly asked for a fresh pull. Fetch each
+        # metric group independently so one throttled endpoint doesn't wipe out
+        # the others.
         token = self._access_token()
         org = settings.LINKEDIN_ORG_ID
         fresh: dict = {}
         stale_fields: list[str] = []
         rate_limited = False
+        token_expired = False
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             # 1. Share statistics — impressions/clicks/likes/comments/engagement (reliable)
@@ -183,23 +276,28 @@ class LinkedInService:
             except _Throttled:
                 rate_limited = True
                 stale_fields += ["impressions", "unique_impressions", "clicks", "likes", "comments", "shares", "engagement_rate"]
+            except _TokenExpired:
+                token_expired = True
             except Exception as e:
                 print(f"LinkedIn share-stats error: {e}")
                 stale_fields += ["impressions", "clicks", "likes", "comments", "engagement_rate"]
 
             # 2. Follower count + organic/paid split + raw demographics
-            try:
-                foll = await self._fetch_follower_stats(client, token, org)
-                fresh.update(foll)
-            except _Throttled:
-                rate_limited = True
-                stale_fields += ["followers", "organic_followers", "paid_followers", "demographics"]
-            except Exception as e:
-                print(f"LinkedIn follower-stats error: {e}")
-                stale_fields += ["followers", "demographics"]
+            if not token_expired:
+                try:
+                    foll = await self._fetch_follower_stats(client, token, org)
+                    fresh.update(foll)
+                except _Throttled:
+                    rate_limited = True
+                    stale_fields += ["followers", "organic_followers", "paid_followers", "demographics"]
+                except _TokenExpired:
+                    token_expired = True
+                except Exception as e:
+                    print(f"LinkedIn follower-stats error: {e}")
+                    stale_fields += ["followers", "demographics"]
 
             # Fallback total-follower source if follower-stats didn't yield one.
-            if not fresh.get("followers"):
+            if not token_expired and not fresh.get("followers"):
                 try:
                     total = await self._fetch_follower_count(client, token, org)
                     if total:
@@ -208,18 +306,23 @@ class LinkedInService:
                             stale_fields.remove("followers")
                 except _Throttled:
                     rate_limited = True
+                except _TokenExpired:
+                    token_expired = True
                 except Exception as e:
                     print(f"LinkedIn networkSizes error: {e}")
 
             # 3. Page visitors
-            try:
-                fresh["visitors"] = await self._fetch_page_stats(client, token, org)
-            except _Throttled:
-                rate_limited = True
-                stale_fields.append("visitors")
-            except Exception as e:
-                print(f"LinkedIn page-stats error: {e}")
-                stale_fields.append("visitors")
+            if not token_expired:
+                try:
+                    fresh["visitors"] = await self._fetch_page_stats(client, token, org)
+                except _Throttled:
+                    rate_limited = True
+                    stale_fields.append("visitors")
+                except _TokenExpired:
+                    token_expired = True
+                except Exception as e:
+                    print(f"LinkedIn page-stats error: {e}")
+                    stale_fields.append("visitors")
 
         # Merge fresh over last-good; keep previous real values for stale fields.
         merged = {k: v for k, v in _SNAPSHOT.items() if k != "_meta"}
@@ -229,10 +332,13 @@ class LinkedInService:
         merged["_meta"] = {
             "available": bool(merged) and any(k != "_meta" for k in merged),
             "rate_limited": rate_limited,
+            "token_expired": token_expired,
             "stale_fields": sorted(set(f for f in stale_fields if f in merged)),
             "last_updated": _iso_now(),
             "org_id": org,
         }
+        if token_expired:
+            merged["_meta"]["reason"] = "LinkedIn access token expired — reconnect in Settings."
 
         if got_anything:
             _SNAPSHOT = merged
@@ -255,30 +361,43 @@ class LinkedInService:
                           "reason": "LinkedIn API throttled and no cached data yet"}}
 
     async def _maybe_persist_today(self, snap: dict) -> None:
-        """Record today's follower count in the DB from any snapshot (fresh OR
-        cached) that carries a real `followers` value. The growth tracker reads
-        the DB, so this must run on every path — including throttled ones — or
-        the tracker never accumulates history. No-op when followers is absent."""
+        """Record today's full metric snapshot (followers + impressions +
+        engagement + reactions…) from any snapshot (fresh OR cached) that carries
+        a real `followers` value. The dashboard/reports trends read these rows, so
+        this must run on every path — including throttled ones — or trends never
+        accumulate. No-op when followers is absent."""
         followers = snap.get("followers")
         if followers is None:
             return
         try:
-            await self._save_follower_snapshot(
-                int(followers),
-                int(snap.get("organic_followers") or 0),
-                int(snap.get("paid_followers") or 0),
-            )
+            await self._save_daily_snapshot(snap)
         except Exception as e:
-            print(f"[LinkedIn] follower snapshot save failed: {e}")
+            print(f"[LinkedIn] daily snapshot save failed: {e}")
 
-    async def _save_follower_snapshot(self, followers: int, organic: int, paid: int) -> None:
-        """Upsert today's FollowerSnapshot row in the database.
-        If a row for today already exists it is updated in-place (last sync wins).
-        Skips the write entirely when today's row already matches, so it is cheap
-        to call on every dashboard poll."""
+    async def _save_daily_snapshot(self, snap: dict) -> None:
+        """Upsert today's FollowerSnapshot row with the current real metrics.
+        Updates in-place (last sync wins) and skips the write entirely when
+        today's row already matches, so it is cheap to call on every poll."""
         from app.database import AsyncSessionLocal
         from app.models import FollowerSnapshot
         from sqlalchemy import select
+
+        def _i(k):
+            return int(snap.get(k) or 0)
+
+        fields = {
+            "followers": int(snap.get("followers") or 0),
+            "organic_followers": _i("organic_followers"),
+            "paid_followers": _i("paid_followers"),
+            "impressions": _i("impressions"),
+            "unique_impressions": _i("unique_impressions"),
+            "clicks": _i("clicks"),
+            "likes": _i("likes"),
+            "comments": _i("comments"),
+            "shares": _i("shares"),
+            "visitors": _i("visitors"),
+            "engagement_rate": float(snap.get("engagement_rate") or 0.0),
+        }
 
         today = date.today()
         async with AsyncSessionLocal() as session:
@@ -287,32 +406,22 @@ class LinkedInService:
             )
             row = result.scalar_one_or_none()
             if row is None:
-                row = FollowerSnapshot(
-                    snapshot_date=today,
-                    followers=followers,
-                    organic_followers=organic,
-                    paid_followers=paid,
-                )
-                session.add(row)
-            elif (row.followers, row.organic_followers, row.paid_followers) != (followers, organic, paid):
-                row.followers = followers
-                row.organic_followers = organic
-                row.paid_followers = paid
+                session.add(FollowerSnapshot(snapshot_date=today, **fields))
+            elif any(getattr(row, k) != v for k, v in fields.items()):
+                for k, v in fields.items():
+                    setattr(row, k, v)
             else:
                 return  # unchanged — nothing to write
             await session.commit()
 
-    # ── individual fetchers (raise _Throttled on 429) ───────────────────────
+    # ── individual fetchers (raise _Throttled on 429, _TokenExpired on 401) ──
     async def _fetch_share_stats(self, client: httpx.AsyncClient, token: str, org: str) -> dict:
         org_urn = f"urn:li:organization:{org}"
-        resp = await client.get(
+        resp = await self._authed_get(
+            client,
             f"{self.base_url}/organizationalEntityShareStatistics",
-            headers=self._auth_headers(token=token),
             params={"q": "organizationalEntity", "organizationalEntity": org_urn},
         )
-        if resp.status_code == 429:
-            raise _Throttled()
-        resp.raise_for_status()
         elements = resp.json().get("elements", [])
         if not elements:
             return {}
@@ -330,14 +439,11 @@ class LinkedInService:
 
     async def _fetch_follower_stats(self, client: httpx.AsyncClient, token: str, org: str) -> dict:
         org_urn = f"urn:li:organization:{org}"
-        resp = await client.get(
+        resp = await self._authed_get(
+            client,
             f"{self.base_url}/organizationalEntityFollowerStatistics",
-            headers=self._auth_headers(token=token),
             params={"q": "organizationalEntity", "organizationalEntity": org_urn},
         )
-        if resp.status_code == 429:
-            raise _Throttled()
-        resp.raise_for_status()
         elements = resp.json().get("elements", [])
         if not elements:
             return {}
@@ -367,26 +473,20 @@ class LinkedInService:
     async def _fetch_follower_count(self, client: httpx.AsyncClient, token: str, org: str) -> int:
         org_urn = f"urn:li:organization:{org}"
         enc = urllib.parse.quote_plus(org_urn)
-        resp = await client.get(
+        resp = await self._authed_get(
+            client,
             f"{self.base_url}/networkSizes/{enc}",
-            headers=self._auth_headers(token=token),
             params={"edgeType": "COMPANY_FOLLOWED_BY_MEMBER"},
         )
-        if resp.status_code == 429:
-            raise _Throttled()
-        resp.raise_for_status()
         return int(resp.json().get("firstDegreeSize", 0) or 0)
 
     async def _fetch_page_stats(self, client: httpx.AsyncClient, token: str, org: str) -> int:
         org_urn = f"urn:li:organization:{org}"
-        resp = await client.get(
+        resp = await self._authed_get(
+            client,
             f"{self.base_url}/organizationPageStatistics",
-            headers=self._auth_headers(token=token),
             params={"q": "organization", "organization": org_urn},
         )
-        if resp.status_code == 429:
-            raise _Throttled()
-        resp.raise_for_status()
         elements = resp.json().get("elements", [])
         total = 0
         for el in elements:
@@ -485,6 +585,11 @@ class _Throttled(Exception):
     """Raised when a LinkedIn endpoint returns HTTP 429 (daily quota reached)."""
 
 
+class _TokenExpired(Exception):
+    """Raised when a LinkedIn endpoint returns HTTP 401 and the token could not
+    be refreshed — the integration needs to be reconnected."""
+
+
 def _iso_now() -> str:
     # time.gmtime avoids importing datetime just for a timestamp string.
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -511,3 +616,6 @@ def _resolve_buckets(buckets, urn_kind: str, label_map: dict) -> list:
 
 
 linkedin_service = LinkedInService()
+
+# Prefer a previously auto-refreshed token over the .env seed on startup.
+_load_persisted_token()

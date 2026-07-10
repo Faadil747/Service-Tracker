@@ -80,7 +80,7 @@ const LinkedInPreview: React.FC<{
                     {postStatus || 'Draft'}
                 </span>
             </div>
-            
+
             <div style={{ padding: '16px 16px 12px' }}>
                 {/* Author Info */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -107,8 +107,8 @@ const LinkedInPreview: React.FC<{
                         <>
                             {displayedContent}
                             {isLong && !expanded && (
-                                <span 
-                                    onClick={() => setExpanded(true)} 
+                                <span
+                                    onClick={() => setExpanded(true)}
                                     style={{ color: '#666666', fontWeight: 600, cursor: 'pointer', marginLeft: 4, fontSize: '0.78rem' }}
                                 >
                                     ...see more
@@ -163,7 +163,7 @@ const LinkedInPreview: React.FC<{
 
                 {/* Actions Toolbar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0', marginTop: 4 }}>
-                    <button 
+                    <button
                         onClick={handleLike}
                         style={{ display: 'flex', alignItems: 'center', justifyItems: 'center', gap: 6, padding: '6px 10px', border: 'none', background: 'transparent', borderRadius: '4px', cursor: 'pointer', color: liked ? '#0a66c2' : '#666666', fontSize: '0.78rem', fontWeight: 600, transition: 'background 0.2s' }}
                     >
@@ -171,7 +171,7 @@ const LinkedInPreview: React.FC<{
                         <span>Like</span>
                     </button>
 
-                    <button 
+                    <button
                         onClick={() => setShowCommentBox(!showCommentBox)}
                         style={{ display: 'flex', alignItems: 'center', justifyItems: 'center', gap: 6, padding: '6px 10px', border: 'none', background: 'transparent', borderRadius: '4px', cursor: 'pointer', color: showCommentBox ? '#0a66c2' : '#666666', fontSize: '0.78rem', fontWeight: 600, transition: 'background 0.2s' }}
                     >
@@ -179,7 +179,7 @@ const LinkedInPreview: React.FC<{
                         <span>Comment</span>
                     </button>
 
-                    <button 
+                    <button
                         onClick={handleRepost}
                         style={{ display: 'flex', alignItems: 'center', justifyItems: 'center', gap: 6, padding: '6px 10px', border: 'none', background: 'transparent', borderRadius: '4px', cursor: 'pointer', color: reposted ? '#0a66c2' : '#666666', fontSize: '0.78rem', fontWeight: 600, transition: 'background 0.2s' }}
                     >
@@ -187,7 +187,7 @@ const LinkedInPreview: React.FC<{
                         <span>Repost</span>
                     </button>
 
-                    <button 
+                    <button
                         onClick={handleSend}
                         style={{ display: 'flex', alignItems: 'center', justifyItems: 'center', gap: 6, padding: '6px 10px', border: 'none', background: 'transparent', borderRadius: '4px', cursor: 'pointer', color: shared ? '#0a66c2' : '#666666', fontSize: '0.78rem', fontWeight: 600, transition: 'background 0.2s' }}
                     >
@@ -200,16 +200,16 @@ const LinkedInPreview: React.FC<{
                 {showCommentBox && (
                     <div style={{ marginTop: 12, borderTop: '1px solid #ebebeb', paddingTop: 12 }}>
                         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                            <input 
-                                className="input" 
-                                placeholder="Add a comment..." 
+                            <input
+                                className="input"
+                                placeholder="Add a comment..."
                                 value={commentInput}
                                 onChange={e => setCommentInput(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') handleAddComment(); }}
                                 style={{ flex: 1, fontSize: '0.78rem', background: '#f3f6f8', border: '1px solid #d0d0d0', padding: '6px 12px', height: 'auto', borderRadius: '20px', color: '#191919' }}
                             />
-                            <button 
-                                className="btn btn-primary btn-sm" 
+                            <button
+                                className="btn btn-primary btn-sm"
                                 onClick={handleAddComment}
                                 style={{ borderRadius: '20px', padding: '4px 14px', fontSize: '0.75rem' }}
                             >
@@ -536,7 +536,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
             setManualContent(res.data.content);
             setPreviewContent(res.data.content);
             toast.success('Content enhanced!');
-            
+
             // Optionally predict reach
             const reachRes = await aiApi.predictReach({ content: res.data.content, region });
             setPredictedReach(reachRes.data);
@@ -858,7 +858,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     // const maxEngagement = Math.max(...heatmap.map(c => c.engagement), 1);
     // const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-    
+
 
     const TAB_STYLE = (active: boolean) => ({
         padding: '8px 16px',
@@ -1684,7 +1684,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                 const post = activeTask.post;
                                 if (!post) return <div className="text-center py-8">Loading post draft...</div>;
 
-                                const filteredAgents = agents.filter(a => 
+                                const filteredAgents = agents.filter(a =>
                                     !employeeSearch || a.full_name.toLowerCase().includes(employeeSearch.toLowerCase()) || (a.region && a.region.toLowerCase().includes(employeeSearch.toLowerCase()))
                                 );
 
@@ -1723,7 +1723,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         </div>
 
                                         {/* Two-column layout — same as generic composer */}
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 18, alignItems: 'start' }}>
+                                        <div className="composer-grid">
 
                                             {/* LEFT COLUMN */}
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1952,7 +1952,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                 <div className="glass-card" style={{ padding: 16 }}>
                                                     <h4 style={{ margin: '0 0 6px 0', fontSize: '0.85rem' }}>👥 Employee Engagement</h4>
                                                     <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>Tick the actions each employee took on this post:</p>
-                                                    
+
                                                     <div style={{ position: 'relative', marginBottom: 12 }}>
                                                         <input
                                                             className="input"
@@ -1979,24 +1979,24 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                         </div>
                                                                     </div>
                                                                     <div style={{ display: 'flex', gap: 6 }}>
-                                                                        <button 
-                                                                            className="btn btn-ghost" 
+                                                                        <button
+                                                                            className="btn btn-ghost"
                                                                             onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'like', empEng.like)}
                                                                             style={{ padding: '4px 8px', fontSize: '0.75rem', background: empEng.like ? 'var(--success-glow)' : 'transparent', color: empEng.like ? 'var(--success)' : 'var(--text-muted)', border: empEng.like ? '1px solid var(--success)' : '1px solid var(--border)' }}
                                                                             title="Liked"
                                                                         >
                                                                             👍
                                                                         </button>
-                                                                        <button 
-                                                                            className="btn btn-ghost" 
+                                                                        <button
+                                                                            className="btn btn-ghost"
                                                                             onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'comment', empEng.comment)}
                                                                             style={{ padding: '4px 8px', fontSize: '0.75rem', background: empEng.comment ? 'var(--warning-glow)' : 'transparent', color: empEng.comment ? 'var(--warning)' : 'var(--text-muted)', border: empEng.comment ? '1px solid var(--warning)' : '1px solid var(--border)' }}
                                                                             title="Commented"
                                                                         >
                                                                             💬
                                                                         </button>
-                                                                        <button 
-                                                                            className="btn btn-ghost" 
+                                                                        <button
+                                                                            className="btn btn-ghost"
                                                                             onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'share', empEng.share)}
                                                                             style={{ padding: '4px 8px', fontSize: '0.75rem', background: empEng.share ? 'var(--info-glow)' : 'transparent', color: empEng.share ? 'var(--info)' : 'var(--text-muted)', border: empEng.share ? '1px solid var(--info)' : '1px solid var(--border)' }}
                                                                             title="Shared/Sent"
@@ -2027,7 +2027,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                             </div>
 
                                             {/* RIGHT COLUMN: LinkedIn Live Preview — sticky */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'sticky', top: 16 }}>
+                                            <div className="composer-preview">
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                     <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>LINKEDIN PREVIEW</div>
                                                     <div style={{ fontSize: '0.63rem', color: 'var(--success)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2063,197 +2063,174 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                             })() : (
                                 /* Generic post composer layout (when no task is selected) */
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                    {/* Two-column layout */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 18, alignItems: 'start' }}>
+                                    <div className="composer-grid">
 
-                                    {/* LEFT COLUMN */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-                                        {/* Unified Settings Card: POST TYPE + TONE + HASHTAGS */}
-                                        <div className="glass-card" style={{ padding: 16 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                                                <Sparkles size={15} color="var(--accent)" />
-                                                <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>✨ AI Post Composer</span>
+                                        {/* LEFT: one cohesive composer card */}
+                                        <div className="comp-card">
+                                            <div className="comp-head">
+                                                <div className="comp-head-icon"><Sparkles size={18} /></div>
+                                                <div>
+                                                    <h3>AI Post Composer</h3>
+                                                    <p>Draft, enhance and publish LinkedIn posts — all in one place</p>
+                                                </div>
                                             </div>
 
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                                                <div>
-                                                    <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>POST TYPE</label>
-                                                    <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.8rem' }}>
-                                                        {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
-                                                    </select>
-                                                </div>
-                                                <div>
-                                                    <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>TONE</label>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                                        {TONES.map(t => (
-                                                            <button key={t} className="btn btn-sm" onClick={() => setTone(t)} style={{ background: tone === t ? 'var(--accent-glow)' : 'var(--surface)', color: tone === t ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${tone === t ? 'var(--accent)' : 'var(--border)'}`, fontSize: '0.67rem', padding: '2px 7px' }}>
-                                                                {t}
-                                                            </button>
-                                                        ))}
+                                            {/* Section: post settings */}
+                                            <div className="comp-sec">
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
+                                                    <div>
+                                                        <label className="comp-label">Post Type</label>
+                                                        <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.82rem' }}>
+                                                            {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="comp-label">Tone</label>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                                            {TONES.map(t => (
+                                                                <button key={t} className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize' }}>{t}</button>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-
-                                            <div>
-                                                <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>HASHTAGS</label>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
-                                                    {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
-                                                        <button key={h} className="btn btn-sm btn-ghost" onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())} style={{ fontSize: '0.65rem', padding: '2px 7px', background: hashtags.includes(h) ? 'var(--accent-glow)' : undefined, color: hashtags.includes(h) ? 'var(--accent)' : undefined }}>
-                                                            {h}
-                                                        </button>
-                                                    ))}
+                                                <div style={{ marginTop: 16 }}>
+                                                    <label className="comp-label">Hashtags</label>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                                                        {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
+                                                            <button key={h} className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())}>{h}</button>
+                                                        ))}
+                                                    </div>
+                                                    <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.82rem' }} />
                                                 </div>
-                                                <input className="input" placeholder="Add custom hashtags..." value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.8rem' }} />
-                                            </div>
-                                        </div>
-
-                                        {/* AI Mode card: DeepSeek Generate / Write Manually */}
-                                        <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-                                            <div style={{ display: 'flex' }}>
-                                                <button
-                                                    className={`btn btn-sm ${writeMode === 'ai' ? 'btn-primary' : 'btn-ghost'}`}
-                                                    onClick={() => setWriteMode('ai')}
-                                                    style={{ flex: 1, borderRadius: 0, borderRight: '1px solid var(--border)', padding: '10px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                                                >
-                                                    <Sparkles size={13} /> ✨ Generate with DeepSeek
-                                                </button>
-                                                <button
-                                                    className={`btn btn-sm ${writeMode === 'manual' ? 'btn-primary' : 'btn-ghost'}`}
-                                                    onClick={() => setWriteMode('manual')}
-                                                    style={{ flex: 1, borderRadius: 0, padding: '10px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                                                >
-                                                    <Edit3 size={13} /> âœï¸ Write Manually
-                                                </button>
                                             </div>
 
-                                            <div style={{ padding: 14 }}>
+                                            {/* Section: content */}
+                                            <div className="comp-sec">
+                                                <div className="seg" style={{ marginBottom: 16 }}>
+                                                    <button className={`seg-btn ${writeMode === 'ai' ? 'active' : ''}`} onClick={() => setWriteMode('ai')}>
+                                                        <Sparkles size={14} /> Generate with AI
+                                                    </button>
+                                                    <button className={`seg-btn ${writeMode === 'manual' ? 'active' : ''}`} onClick={() => setWriteMode('manual')}>
+                                                        <Edit3 size={14} /> Write Manually
+                                                    </button>
+                                                </div>
+
                                                 {writeMode === 'ai' ? (
                                                     <>
-                                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
-                                                            {EMOJIS.map(e => <button key={e} className="btn btn-sm btn-ghost" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 6px', fontSize: '0.88rem' }}>{e}</button>)}
+                                                        <label className="comp-label">Prompt / Topic</label>
+                                                        <textarea className="textarea" placeholder="Describe what you want to post about… e.g. 'We're hiring Senior React developers in Bangalore, hybrid, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 104, fontSize: '0.85rem' }} />
+                                                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0 14px' }}>
+                                                            {EMOJIS.map(e => <button key={e} className="chip" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 9px', fontSize: '0.95rem' }}>{e}</button>)}
                                                         </div>
-                                                        <div style={{ marginBottom: 10 }}>
-                                                            <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>PROMPT / TOPIC</label>
-                                                            <textarea className="textarea" placeholder="Describe what you want to post about..." value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 88, fontSize: '0.83rem' }} />
-                                                        </div>
-                                                        <div style={{ display: 'flex', gap: 8 }}>
-                                                            <button className="btn btn-primary" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1, fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                <Sparkles size={13} /> {generatingAI ? 'Generating...' : '✨ Generate with DeepSeek'}
+                                                        <div style={{ display: 'flex', gap: 10 }}>
+                                                            <button className="cta" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1 }}>
+                                                                <Sparkles size={15} /> {generatingAI ? 'Generating…' : 'Generate with DeepSeek'}
                                                             </button>
-                                                            <button className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ flex: 1, color: 'var(--accent)', borderColor: 'var(--accent)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                <Sparkles size={13} /> {enhancingAI ? 'Enhancing...' : '💡 Enhance with DeepSeek'}
+                                                            <button className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                                                <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Enhance'}
                                                             </button>
                                                         </div>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <div style={{ marginBottom: 10 }}>
-                                                            <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>POST CONTENT</label>
-                                                            <textarea
-                                                                className="textarea"
-                                                                placeholder="Write your post here... The preview on the right updates as you type."
-                                                                value={manualContent}
-                                                                onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }}
-                                                                style={{ minHeight: 150, fontSize: '0.85rem' }}
-                                                            />
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 3 }}>
-                                                                <span>{manualContent.length} characters</span>
-                                                                <span>{manualContent.length > 3000 ? '⚠ï¸ Too long' : manualContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
-                                                            </div>
+                                                        <label className="comp-label">Post Content</label>
+                                                        <textarea
+                                                            className="textarea"
+                                                            placeholder="Write your post here… the preview on the right updates as you type."
+                                                            value={manualContent}
+                                                            onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }}
+                                                            style={{ minHeight: 168, fontSize: '0.86rem' }}
+                                                        />
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', margin: '7px 2px 14px' }}>
+                                                            <span>{manualContent.length} characters</span>
+                                                            <span>{manualContent.length > 3000 ? '⚠️ Too long' : manualContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
                                                         </div>
-                                                        <button className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                            <Sparkles size={13} /> {enhancingAI ? 'Enhancing...' : '✨ Edit & Enhance with DeepSeek'}
+                                                        <button className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                                            <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Edit & Enhance with DeepSeek'}
                                                         </button>
                                                     </>
                                                 )}
                                             </div>
-                                        </div>
 
-                                        {/* Schedule + Media: side by side in compact grid */}
-                                        <div className="glass-card" style={{ padding: 14 }}>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                                                <div>
-                                                    <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>SCHEDULE POST</label>
-                                                    <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} style={{ fontSize: '0.8rem' }} />
+                                            {/* Section: schedule + media */}
+                                            <div className="comp-sec">
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                                    <div>
+                                                        <label className="comp-label">Schedule</label>
+                                                        <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} style={{ fontSize: '0.8rem' }} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="comp-label">Media (optional)</label>
+                                                        {imageUrl ? (
+                                                            <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                                                                <img src={imageUrl} alt="media" style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 8, border: '1px solid var(--border)', display: 'block', objectFit: 'contain' }} />
+                                                                <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: 3 }}>
+                                                                    <X size={11} />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                                <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
+                                                                    {uploadingImage ? 'Uploading…' : '📎 Upload'}
+                                                                    <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
+                                                                        onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
+                                                                </label>
+                                                                <input className="input" placeholder="or paste URL" style={{ flex: 1, fontSize: '0.74rem' }}
+                                                                    onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>MEDIA (OPTIONAL)</label>
-                                                    {imageUrl ? (
-                                                        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
-                                                            <img src={imageUrl} alt="media" style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 6, border: '1px solid var(--border)', display: 'block', objectFit: 'contain' }} />
-                                                            <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: 3 }}>
-                                                                <X size={11} />
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                            <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
-                                                                {uploadingImage ? '...' : '📎 Upload'}
-                                                                <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
-                                                                    onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
-                                                            </label>
-                                                            <input className="input" placeholder="or paste URL" style={{ flex: 1, fontSize: '0.72rem' }}
-                                                                onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
-                                                        </div>
-                                                    )}
-                                                </div>
+                                            </div>
+
+                                            {/* Footer: publish options + CTA */}
+                                            <div className="comp-foot">
+                                                {isAdmin && (
+                                                    <label className="switch" style={{ marginBottom: 14 }}>
+                                                        <input type="checkbox" checked={publishDirectly} onChange={e => setPublishDirectly(e.target.checked)} />
+                                                        <span className="track" />
+                                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🚀 Publish directly to LinkedIn</span>
+                                                    </label>
+                                                )}
+                                                <button className="cta" onClick={handlePublishPost} disabled={savingPost || !previewContent}>
+                                                    {savingPost ? 'Processing…' : publishDirectly ? '🚀 Publish to LinkedIn' : isAdmin ? '✓ Save & Approve' : '📤 Submit for Review'}
+                                                </button>
                                             </div>
                                         </div>
 
-                                        {/* Publish Options + Submit */}
-                                        <div className="glass-card" style={{ padding: 14 }}>
-                                            {isAdmin && (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                                                    <input type="checkbox" id="publishDirectly" checked={publishDirectly} onChange={e => setPublishDirectly(e.target.checked)} style={{ width: 15, height: 15, cursor: 'pointer' }} />
-                                                    <label htmlFor="publishDirectly" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>🚀 Publish directly to LinkedIn</label>
+                                        {/* RIGHT: LinkedIn live preview — sticky */}
+                                        <div className="composer-preview">
+                                            <div className="preview-head">
+                                                <div className="comp-label" style={{ margin: 0 }}>LinkedIn Preview</div>
+                                                <span style={{ fontSize: '0.64rem', color: 'var(--success)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                    <span className="live-dot" /> Live
+                                                </span>
+                                            </div>
+
+                                            <LinkedInPreview
+                                                content={previewContent}
+                                                hashtags={hashtags}
+                                                imageUrl={imageUrl}
+                                                authorName={user?.full_name || 'GOrecruitAI'}
+                                                authorAvatar={user?.avatar_url}
+                                            />
+
+                                            {hashtags && (
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                                    {hashtags.split(/\s+/).filter(Boolean).map((h, i) => (
+                                                        <span key={i} style={{ color: '#0a66c2', fontSize: '0.73rem', fontWeight: 600, background: 'rgba(10,102,194,0.1)', padding: '2px 9px', borderRadius: 20 }}>
+                                                            {h.startsWith('#') ? h : `#${h}`}
+                                                        </span>
+                                                    ))}
                                                 </div>
                                             )}
-                                            <button
-                                                className="btn btn-primary w-full"
-                                                onClick={handlePublishPost}
-                                                disabled={savingPost || !previewContent}
-                                                style={{ padding: '11px 16px', fontSize: '0.88rem', fontWeight: 700 }}
-                                            >
-                                                {savingPost ? 'Processing...' : publishDirectly ? '🚀 Publish directly to LinkedIn' : isAdmin ? '📤 Save & Approve' : '📤 Submit for Review'}
-                                            </button>
                                         </div>
-                                    </div>
-
-                                    {/* RIGHT COLUMN: LinkedIn Live Preview — sticky */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'sticky', top: 16 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>LINKEDIN PREVIEW</div>
-                                            <div style={{ fontSize: '0.63rem', color: 'var(--success)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', display: 'inline-block' }} />
-                                                Live
-                                            </div>
-                                        </div>
-
-                                        <LinkedInPreview
-                                            content={previewContent}
-                                            hashtags={hashtags}
-                                            imageUrl={imageUrl}
-                                            authorName={user?.full_name || 'GOrecruitAI'}
-                                            authorAvatar={user?.avatar_url}
-                                        />
-
-                                        {hashtags && (
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                                                {hashtags.split(/\s+/).filter(Boolean).map((h, i) => (
-                                                    <span key={i} style={{ color: '#0a66c2', fontSize: '0.73rem', fontWeight: 600, background: 'rgba(10,102,194,0.1)', padding: '2px 9px', borderRadius: 20 }}>
-                                                        {h.startsWith('#') ? h : `#${h}`}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
                                     </div>
 
                                     {/* Bottom: Agents who posted / are working on this */}
                                     {(() => {
                                         const currentTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;
-                                        const assignedIds = currentTask?.assignments?.map((a: {agent_id: string}) => a.agent_id) || [];
+                                        const assignedIds = currentTask?.assignments?.map((a: { agent_id: string }) => a.agent_id) || [];
                                         const assignedAgents = assignedIds.length > 0 ? agents.filter(a => assignedIds.includes(a.id)) : [];
                                         // Fallback: agents who created recent published posts
                                         const creatorIds = new Set(publishedPosts.slice(0, 20).map(p => p.created_by_id).filter(Boolean));
@@ -2274,7 +2251,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                                 <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.full_name}</div>
                                                                 <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                                                                    {a.region === 'India' ? '🇮🇳' : a.region === 'USA' ? '🇺🇸' : a.region === 'Indonesia' ? '🇮🇩' : 'ðŸŒ'} {a.region}
+                                                                    {a.region === 'India' ? '🇮🇳' : a.region === 'USA' ? '🇺🇸' : a.region === 'Indonesia' ? '🇮🇩' : '🌐'} {a.region}
                                                                 </div>
                                                             </div>
                                                             <div style={{ display: 'flex', gap: 4 }}>
@@ -2573,234 +2550,234 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                     </div>
                                 );
                             })()
-                            : (
-                                /* List view */
-                                <div>
-                                    {/* KPI Summary Cards */}
-                                    {(() => {
-                                        let totalLikes = 0;
-                                        let totalComments = 0;
-                                        let totalShares = 0;
-                                        filteredHistoryPosts.forEach(p => {
-                                            const eng = p.employee_engagement || {};
-                                            Object.values(eng).forEach((e: any) => {
-                                                if (e.like) totalLikes++;
-                                                if (e.comment) totalComments++;
-                                                if (e.share) totalShares++;
+                                : (
+                                    /* List view */
+                                    <div>
+                                        {/* KPI Summary Cards */}
+                                        {(() => {
+                                            let totalLikes = 0;
+                                            let totalComments = 0;
+                                            let totalShares = 0;
+                                            filteredHistoryPosts.forEach(p => {
+                                                const eng = p.employee_engagement || {};
+                                                Object.values(eng).forEach((e: any) => {
+                                                    if (e.like) totalLikes++;
+                                                    if (e.comment) totalComments++;
+                                                    if (e.share) totalShares++;
+                                                });
                                             });
-                                        });
-                                        const totalEngagement = totalLikes + totalComments + totalShares;
-                                        const avgEngagement = filteredHistoryPosts.length > 0 ? (totalEngagement / filteredHistoryPosts.length).toFixed(1) : '0';
-
-                                        return (
-                                            <div className="grid-4" style={{ marginBottom: 20 }}>
-                                                <div className="glass-card" style={{ padding: 16 }}>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL POSTS</div>
-                                                    <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{publishedPosts.length}</div>
-                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>{filteredHistoryPosts.length} filtered</div>
-                                                </div>
-                                                <div className="glass-card" style={{ padding: 16 }}>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>THIS MONTH</div>
-                                                    <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{postsThisMonth}</div>
-                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Active postings</div>
-                                                </div>
-                                                <div className="glass-card" style={{ padding: 16 }}>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL ENGAGEMENT</div>
-                                                    <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4, color: 'var(--success)' }}>{totalEngagement}</div>
-                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Tracked clicks</div>
-                                                </div>
-                                                <div className="glass-card" style={{ padding: 16 }}>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>AVG PER POST</div>
-                                                    <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4, color: 'var(--accent)' }}>{avgEngagement}</div>
-                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Average engagement rate</div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-
-                                    {/* Filters bar */}
-                                    <div className="glass-card" style={{ padding: 16, marginBottom: 20 }}>
-                                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', flex: 1 }}>
-                                                <div style={{ minWidth: 200, flex: 1 }}>
-                                                    <input
-                                                        className="input"
-                                                        placeholder="Search posts..."
-                                                        value={historySearch}
-                                                        onChange={e => setHistorySearch(e.target.value)}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <select className="select" value={historyType} onChange={e => setHistoryType(e.target.value)}>
-                                                        <option value="all">All types</option>
-                                                        <option value="job_posting">Job posting</option>
-                                                        <option value="jd_post">JD post</option>
-                                                        <option value="industry_tip">Industry tip</option>
-                                                        <option value="ai_carousel">AI Carousel</option>
-                                                        <option value="resume_advice">Resume advice</option>
-                                                        <option value="general">General</option>
-                                                    </select>
-                                                </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>From:</span>
-                                                    <input className="input" type="date" value={historyFromDate} onChange={e => setHistoryFromDate(e.target.value)} style={{ width: 'auto' }} />
-                                                </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>To:</span>
-                                                    <input className="input" type="date" value={historyToDate} onChange={e => setHistoryToDate(e.target.value)} style={{ width: 'auto' }} />
-                                                </div>
-                                            </div>
-
-                                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                                {(historySearch || historyFromDate || historyToDate || historyType !== 'all') && (
-                                                    <button
-                                                        className="btn btn-ghost btn-sm"
-                                                        onClick={() => {
-                                                            setHistorySearch('');
-                                                            setHistoryFromDate('');
-                                                            setHistoryToDate('');
-                                                            setHistoryType('all');
-                                                        }}
-                                                        style={{ color: 'var(--danger)' }}
-                                                    >
-                                                        Clear
-                                                    </button>
-                                                )}
-                                                <button
-                                                    className="btn btn-primary"
-                                                    onClick={() => { setComposerSubTab('create'); setSelectedTaskId(null); setPreviewContent(''); setHashtags(''); setImageUrl(''); }}
-                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}
-                                                >
-                                                    <Plus size={14} /> New post
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Posts Cards Container */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
-                                        {filteredHistoryPosts.length === 0 && (
-                                            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: 8 }}>
-                                                No published posts found 📭
-                                            </div>
-                                        )}
-                                        {filteredHistoryPosts.map(p => {
-                                            const eng = p.employee_engagement || {};
-                                            let postLikes = 0, postComments = 0, postShares = 0;
-                                            Object.values(eng).forEach((e: any) => {
-                                                if (e.like) postLikes++;
-                                                if (e.comment) postComments++;
-                                                if (e.share) postShares++;
-                                            });
+                                            const totalEngagement = totalLikes + totalComments + totalShares;
+                                            const avgEngagement = filteredHistoryPosts.length > 0 ? (totalEngagement / filteredHistoryPosts.length).toFixed(1) : '0';
 
                                             return (
-                                                <div
-                                                    key={p.id}
-                                                    className="glass-card hover-glow"
-                                                    style={{
-                                                        padding: 16,
-                                                        display: 'flex',
-                                                        justifyContent: 'space-between',
-                                                        alignItems: 'center',
-                                                        gap: 16,
-                                                        transition: 'all 0.2s'
-                                                    }}
-                                                >
-                                                    {/* Left: Thumbnail & Details */}
-                                                    <div style={{ display: 'flex', gap: 14, flex: 1, minWidth: 0, alignItems: 'center' }}>
-                                                        {p.image_url ? (
-                                                            <div style={{ width: 64, height: 64, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                                {/\.(mp4|mov|webm)$/i.test(p.image_url) ? (
-                                                                    <div style={{ fontSize: '1.2rem' }}>🎥</div>
-                                                                ) : (
-                                                                    <img src={p.image_url} alt="thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                                )}
-                                                            </div>
-                                                        ) : (
-                                                            <div style={{ width: 64, height: 64, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '1.2rem', fontWeight: 'bold', flexShrink: 0 }}>
-                                                                📝
-                                                            </div>
-                                                        )}
-
-                                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                                                <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.62rem', fontWeight: 'bold', overflow: 'hidden' }}>
-                                                                    {p.created_by_avatar ? <img src={p.created_by_avatar} alt="avatar" style={{ width: '100%', height: '100%' }} /> : (p.created_by_name ? p.created_by_name[0] : 'A')}
-                                                                </div>
-                                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                                                                    {p.created_by_name || 'Agent'}
-                                                                </span>
-                                                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                                                    • {p.published_at ? new Date(p.published_at).toLocaleDateString() : new Date(p.created_at).toLocaleDateString()}
-                                                                </span>
-                                                                <span className="badge badge-accent" style={{ fontSize: '0.58rem', textTransform: 'uppercase', padding: '2px 6px' }}>
-                                                                    {p.region}
-                                                                </span>
-                                                            </div>
-
-                                                            <div
-                                                                style={{
-                                                                    fontSize: '0.85rem',
-                                                                    color: 'var(--text-primary)',
-                                                                    lineHeight: 1.4,
-                                                                    overflow: 'hidden',
-                                                                    textOverflow: 'ellipsis',
-                                                                    display: '-webkit-box',
-                                                                    WebkitLineClamp: 2,
-                                                                    WebkitBoxOrient: 'vertical'
-                                                                }}
-                                                                title={p.content}
-                                                            >
-                                                                {p.content}
-                                                            </div>
-
-                                                            <div style={{ display: 'flex', gap: 12, marginTop: 8, alignItems: 'center' }}>
-                                                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                                                    👍 {postLikes}
-                                                                </span>
-                                                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                                                    💬 {postComments}
-                                                                </span>
-                                                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                                                    🔁 {postShares}
-                                                                </span>
-                                                                {p.linkedin_post_id && (
-                                                                    <a
-                                                                        href={p.linkedin_post_id}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        style={{ fontSize: '0.72rem', color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2, marginLeft: 8 }}
-                                                                    >
-                                                                        Live Link ↗
-                                                                    </a>
-                                                                )}
-                                                            </div>
-                                                        </div>
+                                                <div className="grid-4" style={{ marginBottom: 20 }}>
+                                                    <div className="glass-card" style={{ padding: 16 }}>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL POSTS</div>
+                                                        <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{publishedPosts.length}</div>
+                                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>{filteredHistoryPosts.length} filtered</div>
                                                     </div>
-
-                                                    {/* Right: Actions */}
-                                                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                                                        <button
-                                                            className="btn btn-secondary btn-sm"
-                                                            onClick={() => handleViewPostDetails(p)}
-                                                            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                                                        >
-                                                            View post
-                                                        </button>
-                                                        <button
-                                                            className="btn btn-ghost btn-icon btn-sm"
-                                                            style={{ color: 'var(--danger)' }}
-                                                            onClick={() => handleDeleteHistoryPost(p.id)}
-                                                        >
-                                                            🗑️
-                                                        </button>
+                                                    <div className="glass-card" style={{ padding: 16 }}>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>THIS MONTH</div>
+                                                        <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4 }}>{postsThisMonth}</div>
+                                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Active postings</div>
+                                                    </div>
+                                                    <div className="glass-card" style={{ padding: 16 }}>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL ENGAGEMENT</div>
+                                                        <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4, color: 'var(--success)' }}>{totalEngagement}</div>
+                                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Tracked clicks</div>
+                                                    </div>
+                                                    <div className="glass-card" style={{ padding: 16 }}>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>AVG PER POST</div>
+                                                        <div style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: 4, color: 'var(--accent)' }}>{avgEngagement}</div>
+                                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Average engagement rate</div>
                                                     </div>
                                                 </div>
                                             );
-                                        })}
+                                        })()}
+
+                                        {/* Filters bar */}
+                                        <div className="glass-card" style={{ padding: 16, marginBottom: 20 }}>
+                                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', flex: 1 }}>
+                                                    <div style={{ minWidth: 200, flex: 1 }}>
+                                                        <input
+                                                            className="input"
+                                                            placeholder="Search posts..."
+                                                            value={historySearch}
+                                                            onChange={e => setHistorySearch(e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <select className="select" value={historyType} onChange={e => setHistoryType(e.target.value)}>
+                                                            <option value="all">All types</option>
+                                                            <option value="job_posting">Job posting</option>
+                                                            <option value="jd_post">JD post</option>
+                                                            <option value="industry_tip">Industry tip</option>
+                                                            <option value="ai_carousel">AI Carousel</option>
+                                                            <option value="resume_advice">Resume advice</option>
+                                                            <option value="general">General</option>
+                                                        </select>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>From:</span>
+                                                        <input className="input" type="date" value={historyFromDate} onChange={e => setHistoryFromDate(e.target.value)} style={{ width: 'auto' }} />
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>To:</span>
+                                                        <input className="input" type="date" value={historyToDate} onChange={e => setHistoryToDate(e.target.value)} style={{ width: 'auto' }} />
+                                                    </div>
+                                                </div>
+
+                                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                                    {(historySearch || historyFromDate || historyToDate || historyType !== 'all') && (
+                                                        <button
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => {
+                                                                setHistorySearch('');
+                                                                setHistoryFromDate('');
+                                                                setHistoryToDate('');
+                                                                setHistoryType('all');
+                                                            }}
+                                                            style={{ color: 'var(--danger)' }}
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        className="btn btn-primary"
+                                                        onClick={() => { setComposerSubTab('create'); setSelectedTaskId(null); setPreviewContent(''); setHashtags(''); setImageUrl(''); }}
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}
+                                                    >
+                                                        <Plus size={14} /> New post
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Posts Cards Container */}
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
+                                            {filteredHistoryPosts.length === 0 && (
+                                                <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: 8 }}>
+                                                    No published posts found 📭
+                                                </div>
+                                            )}
+                                            {filteredHistoryPosts.map(p => {
+                                                const eng = p.employee_engagement || {};
+                                                let postLikes = 0, postComments = 0, postShares = 0;
+                                                Object.values(eng).forEach((e: any) => {
+                                                    if (e.like) postLikes++;
+                                                    if (e.comment) postComments++;
+                                                    if (e.share) postShares++;
+                                                });
+
+                                                return (
+                                                    <div
+                                                        key={p.id}
+                                                        className="glass-card hover-glow"
+                                                        style={{
+                                                            padding: 16,
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                            alignItems: 'center',
+                                                            gap: 16,
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                    >
+                                                        {/* Left: Thumbnail & Details */}
+                                                        <div style={{ display: 'flex', gap: 14, flex: 1, minWidth: 0, alignItems: 'center' }}>
+                                                            {p.image_url ? (
+                                                                <div style={{ width: 64, height: 64, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                                    {/\.(mp4|mov|webm)$/i.test(p.image_url) ? (
+                                                                        <div style={{ fontSize: '1.2rem' }}>🎥</div>
+                                                                    ) : (
+                                                                        <img src={p.image_url} alt="thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                <div style={{ width: 64, height: 64, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '1.2rem', fontWeight: 'bold', flexShrink: 0 }}>
+                                                                    📝
+                                                                </div>
+                                                            )}
+
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                                                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.62rem', fontWeight: 'bold', overflow: 'hidden' }}>
+                                                                        {p.created_by_avatar ? <img src={p.created_by_avatar} alt="avatar" style={{ width: '100%', height: '100%' }} /> : (p.created_by_name ? p.created_by_name[0] : 'A')}
+                                                                    </div>
+                                                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                                                        {p.created_by_name || 'Agent'}
+                                                                    </span>
+                                                                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                                                        • {p.published_at ? new Date(p.published_at).toLocaleDateString() : new Date(p.created_at).toLocaleDateString()}
+                                                                    </span>
+                                                                    <span className="badge badge-accent" style={{ fontSize: '0.58rem', textTransform: 'uppercase', padding: '2px 6px' }}>
+                                                                        {p.region}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div
+                                                                    style={{
+                                                                        fontSize: '0.85rem',
+                                                                        color: 'var(--text-primary)',
+                                                                        lineHeight: 1.4,
+                                                                        overflow: 'hidden',
+                                                                        textOverflow: 'ellipsis',
+                                                                        display: '-webkit-box',
+                                                                        WebkitLineClamp: 2,
+                                                                        WebkitBoxOrient: 'vertical'
+                                                                    }}
+                                                                    title={p.content}
+                                                                >
+                                                                    {p.content}
+                                                                </div>
+
+                                                                <div style={{ display: 'flex', gap: 12, marginTop: 8, alignItems: 'center' }}>
+                                                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                                        👍 {postLikes}
+                                                                    </span>
+                                                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                                        💬 {postComments}
+                                                                    </span>
+                                                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                                        🔁 {postShares}
+                                                                    </span>
+                                                                    {p.linkedin_post_id && (
+                                                                        <a
+                                                                            href={p.linkedin_post_id}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            style={{ fontSize: '0.72rem', color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2, marginLeft: 8 }}
+                                                                        >
+                                                                            Live Link ↗
+                                                                        </a>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Right: Actions */}
+                                                        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                                                            <button
+                                                                className="btn btn-secondary btn-sm"
+                                                                onClick={() => handleViewPostDetails(p)}
+                                                                style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                                                            >
+                                                                View post
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-ghost btn-icon btn-sm"
+                                                                style={{ color: 'var(--danger)' }}
+                                                                onClick={() => handleDeleteHistoryPost(p.id)}
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                )}
                         </div>
                     )}
                 </div >

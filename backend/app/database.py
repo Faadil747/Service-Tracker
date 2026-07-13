@@ -2,8 +2,27 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
 
+import urllib.parse
+
+if all([settings.DB_SERVER, settings.DB_DATABASE, settings.DB_UID, settings.DB_PWD]):
+    # Safely escape ODBC credentials to handle symbols in passwords
+    driver_clean = settings.DB_DRIVER.strip("{}")
+    conn_str = (
+        f"Driver={{{driver_clean}}};"
+        f"Server={settings.DB_SERVER};"
+        f"Database={settings.DB_DATABASE};"
+        f"Uid={settings.DB_UID};"
+        f"Pwd={settings.DB_PWD};"
+        "Encrypt=yes;"
+        "TrustServerCertificate=yes;"
+    )
+    quoted_conn_str = urllib.parse.quote_plus(conn_str)
+    database_url = f"mssql+aioodbc:///?odbc_connect={quoted_conn_str}"
+else:
+    database_url = settings.DATABASE_URL
+
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    database_url,
     echo=False,
     future=True,
 )

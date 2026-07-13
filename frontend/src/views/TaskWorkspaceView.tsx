@@ -451,7 +451,10 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         const id = setInterval(loadAll, 7000);
         return () => clearInterval(id);
     }, [region]);
-    useEffect(() => { setPreviewContent(generatedContent); }, [generatedContent]);
+    useEffect(() => {
+        setPreviewContent(generatedContent);
+        setManualContent(generatedContent);
+    }, [generatedContent]);
 
     useEffect(() => {
         if (taskIdParam) {
@@ -615,6 +618,9 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         setEditingPostId(t.post.id);
         setPreviewContent(t.post.content);
         setGeneratedContent(t.post.content);
+        setManualContent(t.post.content);
+        setWriteMode('manual');
+        setPrompt(t.title + (t.description ? `\n\nContext:\n${t.description}` : ''));
         setTone(t.post.tone || 'professional');
         setHashtags(t.post.hashtags || '');
         setImageUrl(t.post.image_url || '');

@@ -10,10 +10,20 @@ _connect_args: dict = {}
 # the pool healthy. SQLite (local dev) needs none of this.
 if not _db_url.startswith("sqlite"):
     _engine_kwargs.update(pool_pre_ping=True, pool_recycle=280)
-    # Some managed MySQL hosts (Aiven, TiDB Cloud, PlanetScale) require TLS.
-    if settings.DB_SSL and _db_url.startswith("mysql"):
+    # Some managed hosts (Aiven, TiDB Cloud, PlanetScale) require TLS. Build a context
+    # the async driver (asyncmy / asyncpg) accepts via connect_args["ssl"].
+    if settings.DB_SSL and (_db_url.startswith("mysql") or _db_url.startswith("postgresql")):
         import ssl
-        _connect_args["ssl"] = ssl.create_default_context()
+        _ssl_ctx = ssl.create_default_context()
+        if settings.DB_SSL_CA:
+            # Full verification against the host's CA certificate.
+            _ssl_ctx.load_verify_locations(settings.DB_SSL_CA)
+        else:
+            # Encrypt without verifying the server cert (matches "ssl-mode=REQUIRED"),
+            # so managed hosts with their own CA connect without shipping the CA file.
+            _ssl_ctx.check_hostname = False
+            _ssl_ctx.verify_mode = ssl.CERT_NONE
+        _connect_args["ssl"] = _ssl_ctx
 
 engine = create_async_engine(_db_url, connect_args=_connect_args, **_engine_kwargs)
 

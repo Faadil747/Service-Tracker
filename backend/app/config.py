@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./service_tracker.db"
     # Set true when the managed MySQL host requires TLS (Aiven, TiDB Cloud, PlanetScale…).
     DB_SSL: bool = False
+    # Optional path to the host's CA certificate for full TLS verification. When empty
+    # and DB_SSL is true, the connection is still encrypted but the server cert isn't
+    # verified (matches "ssl-mode=REQUIRED"), which lets managed hosts connect out-of-box.
+    DB_SSL_CA: str = ""
 
     # AI — DeepSeek
     DEEPSEEK_API_KEY: str = ""

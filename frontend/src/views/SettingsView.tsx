@@ -243,64 +243,72 @@ export const SettingsView: React.FC = () => {
 
             {/* ── Profile ──────────────────────────────────────────────────── */}
             {tab === 'profile' && user && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
-                <div className="grid-2">
-                    <div className="chart-container">
-                        <div className="chart-title" style={{ marginBottom: 16 }}>My Profile</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 18 }}>
-                            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', fontWeight: 700, color: 'var(--accent)' }}>{user.full_name.charAt(0)}</div>
-                            <div>
-                                <div style={{ fontWeight: 700, fontSize: '1rem' }}>{user.full_name}</div>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{user.email}</div>
-                                <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
-                                    <span className={`badge ${user.role === 'admin' ? 'badge-purple' : user.role === 'developer' ? 'badge-info' : 'badge-accent'}`}>{user.role.toUpperCase()}</span>
-                                    <span className="badge badge-muted">{user.region}</span>
-                                </div>
-                            </div>
+              <div className="grid-2" style={{ maxWidth: 920, alignItems: 'start' }}>
+                {/* LEFT: editable profile */}
+                <div className="chart-container">
+                    <div className="chart-title" style={{ marginBottom: 16 }}>My Profile</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)', overflow: 'hidden', flexShrink: 0 }}>
+                            {user.avatar_url ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user.full_name.charAt(0)}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div className="form-group"><label className="form-label">Full name</label><input className="input" value={profile.full_name} onChange={e => setProfile(p => ({ ...p, full_name: e.target.value }))} /></div>
-                            <div className="form-group"><label className="form-label">Region</label>
-                                <select className="select" value={profile.region} onChange={e => setProfile(p => ({ ...p, region: e.target.value }))}>{REGIONS.map(r => <option key={r}>{r}</option>)}</select>
-                            </div>
-                            <div className="form-group"><label className="form-label">LinkedIn URL</label><input className="input" value={profile.linkedin_url} onChange={e => setProfile(p => ({ ...p, linkedin_url: e.target.value }))} placeholder="https://linkedin.com/in/…" /></div>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                <button className="btn btn-primary" onClick={handleSaveProfile} disabled={savingProfile}><Save size={14} /> {savingProfile ? 'Saving…' : 'Save changes'}</button>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: '1.02rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.full_name}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div>
+                            <div style={{ marginTop: 7, display: 'flex', gap: 6 }}>
+                                <span className={`badge ${user.role === 'admin' ? 'badge-purple' : user.role === 'developer' ? 'badge-info' : 'badge-accent'}`}>{user.role.toUpperCase()}</span>
+                                <span className="badge badge-muted">{user.region}</span>
                             </div>
                         </div>
                     </div>
-
-                    <div className="chart-container">
-                        <div className="chart-title" style={{ marginBottom: 6 }}>Account</div>
-                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>Your access level and quick links.</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Email</span><span style={{ fontWeight: 600, fontSize: '0.82rem' }}>{user.email}</span></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Role</span><span style={{ fontWeight: 600, fontSize: '0.82rem', textTransform: 'capitalize' }}>{user.role}</span></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Region</span><span style={{ fontWeight: 600, fontSize: '0.82rem' }}>{user.region}</span></div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div className="form-group"><label className="form-label">Full name</label><input className="input" value={profile.full_name} onChange={e => setProfile(p => ({ ...p, full_name: e.target.value }))} /></div>
+                        <div className="form-group"><label className="form-label">Region</label>
+                            <select className="select" value={profile.region} onChange={e => setProfile(p => ({ ...p, region: e.target.value }))}>{REGIONS.map(r => <option key={r}>{r}</option>)}</select>
+                        </div>
+                        <div className="form-group"><label className="form-label">LinkedIn URL</label><input className="input" value={profile.linkedin_url} onChange={e => setProfile(p => ({ ...p, linkedin_url: e.target.value }))} placeholder="https://linkedin.com/in/…" /></div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button className="btn btn-primary" onClick={handleSaveProfile} disabled={savingProfile} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Save size={14} /> {savingProfile ? 'Saving…' : 'Save changes'}</button>
                         </div>
                     </div>
                 </div>
 
-                {/* Change Password — available to admins and agents alike */}
-                <div className="chart-container" style={{ maxWidth: 440 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                        <Lock size={16} color="var(--accent)" />
-                        <div className="chart-title" style={{ margin: 0 }}>Change Password</div>
+                {/* RIGHT: account details + change password, stacked to balance the row */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div className="chart-container">
+                        <div className="chart-title" style={{ marginBottom: 6 }}>Account</div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 14 }}>Your access level and quick links.</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 14 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Email</span><span style={{ fontWeight: 600, fontSize: '0.82rem' }}>{user.email}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Role</span><span style={{ fontWeight: 600, fontSize: '0.82rem', textTransform: 'capitalize' }}>{user.role}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}><span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Region</span><span style={{ fontWeight: 600, fontSize: '0.82rem' }}>{user.region}</span></div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setTab('notifications')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Bell size={13} /> Notifications</button>
+                            {isAdmin && <button className="btn btn-secondary btn-sm" onClick={() => setTab('api')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🔑 API &amp; Connections</button>}
+                        </div>
                     </div>
-                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
-                        Update your login password. You'll need your current one to confirm it's you.
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <div className="form-group"><label className="form-label">Current password</label>
-                            <input className="input" type="password" autoComplete="current-password" value={pwForm.current} onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))} /></div>
-                        <div className="form-group"><label className="form-label">New password</label>
-                            <input className="input" type="password" autoComplete="new-password" placeholder="At least 6 characters" value={pwForm.next} onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))} /></div>
-                        <div className="form-group"><label className="form-label">Confirm new password</label>
-                            <input className="input" type="password" autoComplete="new-password" value={pwForm.confirm} onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} /></div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                            <button className="btn btn-primary" onClick={handleChangePassword} disabled={savingPassword} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Lock size={14} /> {savingPassword ? 'Updating…' : 'Update password'}
-                            </button>
+
+                    {/* Change Password — available to admins and agents alike */}
+                    <div className="chart-container">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <Lock size={16} color="var(--accent)" />
+                            <div className="chart-title" style={{ margin: 0 }}>Change Password</div>
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
+                            Update your login password. You'll need your current one to confirm it's you.
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            <div className="form-group"><label className="form-label">Current password</label>
+                                <input className="input" type="password" autoComplete="current-password" value={pwForm.current} onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))} /></div>
+                            <div className="form-group"><label className="form-label">New password</label>
+                                <input className="input" type="password" autoComplete="new-password" placeholder="At least 6 characters" value={pwForm.next} onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))} /></div>
+                            <div className="form-group"><label className="form-label">Confirm new password</label>
+                                <input className="input" type="password" autoComplete="new-password" value={pwForm.confirm} onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} /></div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <button className="btn btn-primary" onClick={handleChangePassword} disabled={savingPassword} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <Lock size={14} /> {savingPassword ? 'Updating…' : 'Update password'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

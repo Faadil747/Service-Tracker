@@ -10,6 +10,7 @@ import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { richRecurrenceDates, RICH_RECURRENCE_OPTIONS, WEEKDAY_OPTIONS, RichRecurrenceConfig, RichRecurrenceType } from '../utils/recurrence';
 import toast from 'react-hot-toast';
+import { DateTimePicker } from '../components/shared/DateTimePicker';
 
 const POST_TYPES = ['general', 'job_posting', 'jd_post', 'industry_tip', 'ai_carousel', 'resume_advice'];
 const TONES = ['professional', 'casual', 'enthusiastic', 'informative', 'inspirational'];
@@ -1488,7 +1489,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                     <div className="grid-2">
                                         <div>
                                             <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>DUE DATE</label>
-                                            <input className="input" type="datetime-local" value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} style={{ fontSize: '0.8rem' }} />
+                                            <DateTimePicker value={newTask.due_date} onChange={val => setNewTask(p => ({ ...p, due_date: val }))} />
                                         </div>
 
                                         {isAdmin && (

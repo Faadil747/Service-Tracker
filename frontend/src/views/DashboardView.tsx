@@ -13,6 +13,7 @@ import { useAuthStore } from '../store/authStore';
 import { Task, User } from '../types';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { DateTimePicker } from '../components/shared/DateTimePicker';
 import { AnalyticsHubView } from './AnalyticsHubView';
 import {
     ResponsiveContainer, AreaChart, Area,
@@ -651,7 +652,7 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                                     <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                                         <div>
                                             <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>DUE DATE</label>
-                                            <input className="input" type="datetime-local" value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} style={{ fontSize: '0.8rem' }} />
+                                            <DateTimePicker value={newTask.due_date} onChange={val => setNewTask(p => ({ ...p, due_date: val }))} />
                                         </div>
 
                                         {isAdmin && (

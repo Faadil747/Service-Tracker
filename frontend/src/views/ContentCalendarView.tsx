@@ -13,6 +13,7 @@ import { postsApi, tasksApi, usersApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { DateTimePicker } from '../components/shared/DateTimePicker';
 import { richRecurrenceDates, RICH_RECURRENCE_OPTIONS, WEEKDAY_OPTIONS, RichRecurrenceConfig, RichRecurrenceType } from '../utils/recurrence';
 
 // Safe date parsing to prevent RangeError from invalid, SQL Server formatted, or empty strings
@@ -989,12 +990,7 @@ export const ContentCalendarView: React.FC<Props> = ({ region }) => {
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                             <div>
                                                 <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Due Date & Time</label>
-                                                <input
-                                                    className="input" style={{ fontSize: '0.75rem' }}
-                                                    type="datetime-local"
-                                                    value={newTask.due_date}
-                                                    onChange={e => setNewTask(t => ({ ...t, due_date: e.target.value }))}
-                                                />
+                                                <DateTimePicker value={newTask.due_date} onChange={val => setNewTask(t => ({ ...t, due_date: val }))} />
                                             </div>
                                             <div>
                                                 <label className="form-label" style={{ fontSize: '0.68rem', marginBottom: 2 }}>Priority</label>

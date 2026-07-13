@@ -1340,6 +1340,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         <div style={{ marginTop: 14 }}>
                                             <textarea className="textarea" placeholder="Optional: describe the changes you want…" value={reviewComments[t.id] || ''} onChange={e => setReviewComments(prev => ({ ...prev, [t.id]: e.target.value }))} style={{ minHeight: 54, fontSize: '0.8rem' }} />
                                             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, flexWrap: 'wrap' }}>
+                                                <button className="btn btn-sm btn-secondary" style={{ color: 'var(--accent)' }} onClick={() => openPostForEditing(t)}>✏️ Edit Draft</button>
                                                 <button className="btn btn-sm" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.3)' }} onClick={() => { handleApproveTask(t.id, 'rejected', reviewComments[t.id], false); setDetailTaskId(null); }}>↩ Request Changes</button>
                                                 <button className="btn btn-sm" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => { handleApproveTask(t.id, 'approved', reviewComments[t.id], false); setDetailTaskId(null); }}>✓ Approve</button>
                                                 <button className="btn btn-sm btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => { handleApproveTask(t.id, 'approved', reviewComments[t.id], true); setDetailTaskId(null); }}>🚀 Approve &amp; Publish</button>
@@ -1350,6 +1351,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                     {/* Admin: an already-approved draft can be published directly from here too. */}
                                     {isAdmin && post && post.status === 'approved' && (
                                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
+                                            <button className="btn btn-sm btn-secondary" style={{ color: 'var(--accent)' }} onClick={() => openPostForEditing(t)}>✏️ Edit Draft</button>
                                             <button
                                                 className="btn btn-sm btn-success"
                                                 disabled={approvingId === t.id}
@@ -1358,6 +1360,13 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                             >
                                                 {approvingId === t.id ? '⏳ Publishing…' : '🚀 Publish Now'}
                                             </button>
+                                        </div>
+                                    )}
+
+                                    {/* Admin: if the post is rejected or in any other state, allow editing */}
+                                    {isAdmin && post && !['in_review', 'approved'].includes(post.status) && (
+                                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
+                                            <button className="btn btn-sm btn-secondary" style={{ color: 'var(--accent)' }} onClick={() => openPostForEditing(t)}>✏️ Edit Draft</button>
                                         </div>
                                     )}
 

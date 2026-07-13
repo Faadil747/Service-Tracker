@@ -18,7 +18,7 @@ services:
       - key: DATABASE_URL
         sync: false                  # mysql+asyncmy://user:pass@host:3306/db
       - key: DB_SSL
-        value: "false"               # set "true" if your MySQL host requires TLS
+        value: "true"                # managed MySQL/Postgres hosts require TLS
       - key: FRONTEND_URL
         sync: false                  # https://your-app.vercel.app
       - key: ALLOWED_ORIGINS

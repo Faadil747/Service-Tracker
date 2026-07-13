@@ -1035,6 +1035,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                 const isAssigned = t.assignments?.some(a => a.agent_id === user?.id);
                                                 const isClaimedByMe = t.claimed_by_id === user?.id;
                                                 const isClaimedByOther = t.claimed_by_id && t.claimed_by_id !== user?.id;
+                                                const canEdit = isClaimedByMe || isAssigned;
 
                                                 return (
                                                     <div
@@ -1106,7 +1107,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             )}
 
                                                             {/* Write a first draft (no post yet) */}
-                                                            {isClaimedByMe && !isAdmin && t.status !== 'pending_approval' && !t.post && (
+                                                            {canEdit && !isAdmin && t.status !== 'pending_approval' && !t.post && (
                                                                 <button
                                                                     className="btn btn-sm"
                                                                     onClick={() => {
@@ -1121,7 +1122,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             )}
 
                                                             {/* Edit a draft that was sent back for revision (saving resubmits it) */}
-                                                            {isClaimedByMe && !isAdmin && t.post?.status === 'rejected' && (
+                                                            {canEdit && !isAdmin && t.post?.status === 'rejected' && (
                                                                 <button
                                                                     className="btn btn-sm"
                                                                     onClick={() => openPostForEditing(t)}
@@ -1132,7 +1133,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             )}
 
                                                             {/* Agent: draft is under admin review */}
-                                                            {!isAdmin && isClaimedByMe && t.status === 'pending_approval' && (
+                                                            {!isAdmin && canEdit && t.status === 'pending_approval' && (
                                                                 <span className="badge badge-warning" style={{ fontSize: '0.68rem' }}>Under review</span>
                                                             )}
 
@@ -1162,7 +1163,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             )}
 
                                                             {/* Publish button for agent if task's post is approved */}
-                                                            {t.post?.status === 'approved' && isClaimedByMe && !isAdmin && (
+                                                            {t.post?.status === 'approved' && canEdit && !isAdmin && (
                                                                 <button
                                                                     className="btn btn-sm btn-success"
                                                                     onClick={() => {
@@ -1182,7 +1183,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                             )}
 
                                                             {/* Agent can edit an approved draft before publishing — saving sends it back for review */}
-                                                            {t.post?.status === 'approved' && isClaimedByMe && !isAdmin && (
+                                                            {t.post?.status === 'approved' && canEdit && !isAdmin && (
                                                                 <button
                                                                     className="btn btn-sm btn-ghost"
                                                                     onClick={() => openPostForEditing(t)}
@@ -1294,6 +1295,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                         const post = t.post;
                         const isClaimedByMe = t.claimed_by_id === user?.id;
                         const isAssigned = t.assignments?.some(a => a.agent_id === user?.id);
+                        const canEdit = isClaimedByMe || isAssigned;
                         const stageBadge = (() => {
                             if (t.status === 'completed') return <span className="badge badge-success">✅ Completed</span>;
                             if (t.status === 'pending_approval') return <span className="badge badge-warning">⏳ Awaiting admin approval</span>;
@@ -1376,23 +1378,23 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                             {!t.claimed_by_id && isAssigned && t.status === 'active' && (
                                                 <button className="btn btn-sm btn-primary" onClick={() => { handleAcceptTask(t.id); setDetailTaskId(null); }}>Accept Task</button>
                                             )}
-                                            {isClaimedByMe && post && post.status === 'approved' && (
+                                            {canEdit && post && post.status === 'approved' && (
                                                 <>
                                                     <button className="btn btn-sm btn-success" onClick={() => { setSelectedTaskId(t.id); setTab('composer'); setDetailTaskId(null); }}>Publish</button>
                                                     <button className="btn btn-sm btn-secondary" style={{ color: 'var(--accent)' }} onClick={() => openPostForEditing(t)}>✏️ Edit</button>
                                                 </>
                                             )}
-                                            {isClaimedByMe && t.status !== 'pending_approval' && post?.status === 'rejected' && (
+                                            {canEdit && t.status !== 'pending_approval' && post?.status === 'rejected' && (
                                                 <button className="btn btn-sm" style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => openPostForEditing(t)}>
                                                     <Sparkles size={13} /> Edit &amp; resubmit
                                                 </button>
                                             )}
-                                            {isClaimedByMe && t.status !== 'pending_approval' && !post && (
+                                            {canEdit && t.status !== 'pending_approval' && !post && (
                                                 <button className="btn btn-sm" style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => { setSelectedTaskId(t.id); setPrompt(t.title + (t.description ? `\n\nContext:\n${t.description}` : '')); setTab('composer'); setDetailTaskId(null); }}>
                                                     <Sparkles size={13} /> Write Post
                                                 </button>
                                             )}
-                                            {isClaimedByMe && t.status === 'pending_approval' && (
+                                            {canEdit && t.status === 'pending_approval' && (
                                                 <span className="badge badge-warning">Under review</span>
                                             )}
                                         </div>

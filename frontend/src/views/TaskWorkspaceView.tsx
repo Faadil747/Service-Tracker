@@ -477,6 +477,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 setTone(activeTask.post.tone || 'professional');
                 setHashtags(activeTask.post.hashtags || '');
                 setImageUrl(activeTask.post.image_url || '');
+                setEditingLinkUrl(activeTask.post.linkedin_post_id || '');
             }
         }
     }, [selectedTaskId]);
@@ -1678,185 +1679,162 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
                     {composerSubTab === 'create' ? (
                         <div style={{ animation: 'fadeIn 0.25s ease-in-out' }}>
-                            {selectedTaskId ? (() => {
-                                const activeTask = tasks.find(t => t.id === selectedTaskId);
-                                if (!activeTask) return null;
-                                const post = activeTask.post;
-                                if (!post) return <div className="text-center py-8">Loading post draft...</div>;
-
+                            {(() => {
+                                const activeTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;
+                                const post = activeTask?.post || null;
+                                const engagement = post?.employee_engagement || {};
                                 const filteredAgents = agents.filter(a =>
                                     !employeeSearch || a.full_name.toLowerCase().includes(employeeSearch.toLowerCase()) || (a.region && a.region.toLowerCase().includes(employeeSearch.toLowerCase()))
                                 );
 
-                                const engagement = post.employee_engagement || {};
-
                                 return (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                        {/* Header Bar */}
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 12 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                                <button
-                                                    className="btn btn-secondary btn-sm"
-                                                    onClick={() => { setSelectedTaskId(null); setTab('tasks'); }}
-                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
-                                                >
-                                                    ← Back to Tasks
-                                                </button>
-                                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                                    <span className="badge badge-accent" style={{ textTransform: 'uppercase', fontSize: '0.68rem', fontWeight: 600 }}>
-                                                        {imageUrl ? '🖼️ Media Post' : '📝 Text Post'}
-                                                    </span>
-                                                    <span className="badge badge-purple" style={{ textTransform: 'uppercase', fontSize: '0.68rem', fontWeight: 600 }}>
-                                                        {post.tone || tone}
-                                                    </span>
-                                                    <span className="badge badge-gray" style={{ textTransform: 'uppercase', fontSize: '0.68rem', fontWeight: 600 }}>
-                                                        {(post.post_type || postType).replace('_', ' ')}
-                                                    </span>
-                                                    <span className="badge badge-muted" style={{ textTransform: 'uppercase', fontSize: '0.68rem', fontWeight: 600 }}>
-                                                        {activeTask.region}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: post.status === 'approved' ? 'var(--success)' : post.status === 'published' ? 'var(--info)' : 'var(--accent)' }}>
-                                                Status: {post.status.toUpperCase().replace('_', ' ')}
-                                            </div>
-                                        </div>
-
-                                        {/* Two-column layout — same as generic composer */}
-                                        <div className="composer-grid">
-
-                                            {/* LEFT COLUMN */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-                                                {/* Settings Card: POST TYPE + TONE + HASHTAGS */}
-                                                <div className="glass-card" style={{ padding: 16 }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                                                        <Sparkles size={15} color="var(--accent)" />
-                                                        <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>✨ AI Post Composer</span>
+                                        {/* Back to Tasks and Status Bar when task is selected */}
+                                        {selectedTaskId && activeTask && (
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: -4, flexWrap: 'wrap', gap: 12 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                    <button
+                                                        className="btn btn-secondary btn-sm"
+                                                        onClick={() => { setSelectedTaskId(null); setTab('tasks'); }}
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+                                                    >
+                                                        ← Back to Tasks
+                                                    </button>
+                                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                        <span className="badge badge-accent" style={{ textTransform: 'uppercase', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                            {imageUrl ? '🖼️ Media Post' : '📝 Text Post'}
+                                                        </span>
+                                                        <span className="badge badge-purple" style={{ textTransform: 'uppercase', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                            {post?.tone || tone}
+                                                        </span>
+                                                        <span className="badge badge-gray" style={{ textTransform: 'uppercase', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                            {((post?.post_type || postType)).replace('_', ' ')}
+                                                        </span>
+                                                        <span className="badge badge-muted" style={{ textTransform: 'uppercase', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                            {activeTask.region}
+                                                        </span>
                                                     </div>
+                                                </div>
+                                                {post && (
+                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: post.status === 'approved' ? 'var(--success)' : post.status === 'published' ? 'var(--info)' : 'var(--accent)' }}>
+                                                        Status: {post.status.toUpperCase().replace('_', ' ')}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
 
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                                        <div className="composer-grid">
+                                            {/* LEFT: one cohesive composer card */}
+                                            <div className="comp-card">
+                                                <div className="comp-head">
+                                                    <div className="comp-head-icon"><Sparkles size={18} /></div>
+                                                    <div>
+                                                        <h3>AI Post Composer</h3>
+                                                        <p>Draft, enhance and publish LinkedIn posts — all in one place</p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Section: post settings */}
+                                                <div className="comp-sec">
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
                                                         <div>
-                                                            <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>POST TYPE</label>
-                                                            <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.8rem' }}>
+                                                            <label className="comp-label">Post Type</label>
+                                                            <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.82rem' }}>
                                                                 {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
                                                             </select>
                                                         </div>
                                                         <div>
-                                                            <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>TONE</label>
-                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                                            <label className="comp-label">Tone</label>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                                                 {TONES.map(t => (
-                                                                    <button key={t} className="btn btn-sm" onClick={() => setTone(t)} style={{ background: tone === t ? 'var(--accent-glow)' : 'var(--surface)', color: tone === t ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${tone === t ? 'var(--accent)' : 'var(--border)'}`, fontSize: '0.67rem', padding: '2px 7px' }}>
-                                                                        {t}
-                                                                    </button>
+                                                                    <button key={t} className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize' }}>{t}</button>
                                                                 ))}
                                                             </div>
                                                         </div>
                                                     </div>
-
-                                                    <div>
-                                                        <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>HASHTAGS</label>
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+                                                    <div style={{ marginTop: 16 }}>
+                                                        <label className="comp-label">Hashtags</label>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                                                             {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
-                                                                <button key={h} className="btn btn-sm btn-ghost" onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())} style={{ fontSize: '0.65rem', padding: '2px 7px', background: hashtags.includes(h) ? 'var(--accent-glow)' : undefined, color: hashtags.includes(h) ? 'var(--accent)' : undefined }}>
-                                                                    {h}
-                                                                </button>
+                                                                <button key={h} className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())}>{h}</button>
                                                             ))}
                                                         </div>
-                                                        <input className="input" placeholder="Add custom hashtags..." value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.8rem' }} />
+                                                        <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.82rem' }} />
                                                     </div>
                                                 </div>
 
-                                                {/* AI Mode card: DeepSeek Generate / Write Manually */}
-                                                <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-                                                    <div style={{ display: 'flex' }}>
-                                                        <button
-                                                            className={`btn btn-sm ${writeMode === 'ai' ? 'btn-primary' : 'btn-ghost'}`}
-                                                            onClick={() => setWriteMode('ai')}
-                                                            style={{ flex: 1, borderRadius: 0, borderRight: '1px solid var(--border)', padding: '10px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                                                        >
-                                                            <Sparkles size={13} /> ✨ Generate with DeepSeek
+                                                {/* Section: content */}
+                                                <div className="comp-sec">
+                                                    <div className="seg" style={{ marginBottom: 16 }}>
+                                                        <button className={`seg-btn ${writeMode === 'ai' ? 'active' : ''}`} onClick={() => setWriteMode('ai')}>
+                                                            <Sparkles size={14} /> Generate with AI
                                                         </button>
-                                                        <button
-                                                            className={`btn btn-sm ${writeMode === 'manual' ? 'btn-primary' : 'btn-ghost'}`}
-                                                            onClick={() => setWriteMode('manual')}
-                                                            style={{ flex: 1, borderRadius: 0, padding: '10px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                                                        >
-                                                            <Edit3 size={13} /> ✏️ Write Manually
+                                                        <button className={`seg-btn ${writeMode === 'manual' ? 'active' : ''}`} onClick={() => setWriteMode('manual')}>
+                                                            <Edit3 size={14} /> Write Manually
                                                         </button>
                                                     </div>
 
-                                                    <div style={{ padding: 14 }}>
-                                                        {writeMode === 'ai' ? (
-                                                            <>
-                                                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
-                                                                    {EMOJIS.map(e => <button key={e} className="btn btn-sm btn-ghost" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 6px', fontSize: '0.88rem' }}>{e}</button>)}
-                                                                </div>
-                                                                <div style={{ marginBottom: 10 }}>
-                                                                    <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>PROMPT / TOPIC</label>
-                                                                    <textarea className="textarea" placeholder="Describe what you want to post about..." value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 88, fontSize: '0.83rem' }} />
-                                                                </div>
-                                                                <div style={{ display: 'flex', gap: 8 }}>
-                                                                    <button className="btn btn-primary" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1, fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                        <Sparkles size={13} /> {generatingAI ? 'Generating...' : '✨ Generate with DeepSeek'}
-                                                                    </button>
-                                                                    <button className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ flex: 1, color: 'var(--accent)', borderColor: 'var(--accent)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                        <Sparkles size={13} /> {enhancingAI ? 'Enhancing...' : '💡 Enhance with DeepSeek'}
-                                                                    </button>
-                                                                </div>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <div style={{ marginBottom: 10 }}>
-                                                                    <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>POST CONTENT</label>
-                                                                    <textarea
-                                                                        className="textarea"
-                                                                        placeholder="Write your post here... The preview on the right updates as you type."
-                                                                        value={previewContent}
-                                                                        onChange={e => { setPreviewContent(e.target.value); setManualContent(e.target.value); }}
-                                                                        style={{ minHeight: 150, fontSize: '0.85rem' }}
-                                                                    />
-                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 3 }}>
-                                                                        <span>{previewContent.length} characters</span>
-                                                                        <span>{previewContent.length > 3000 ? '⚠️ Too long' : previewContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
-                                                                    </div>
-                                                                </div>
-                                                                <button className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                    <Sparkles size={13} /> {enhancingAI ? 'Enhancing...' : '✨ Edit & Enhance with DeepSeek'}
+                                                    {writeMode === 'ai' ? (
+                                                        <>
+                                                            <label className="comp-label">Prompt / Topic</label>
+                                                            <textarea className="textarea" placeholder="Describe what you want to post about… e.g. 'We're hiring Senior React developers in Bangalore, hybrid, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 104, fontSize: '0.85rem' }} />
+                                                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0 14px' }}>
+                                                                {EMOJIS.map(e => <button key={e} className="chip" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 9px', fontSize: '0.95rem' }}>{e}</button>)}
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: 10 }}>
+                                                                <button className="cta" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1 }}>
+                                                                    <Sparkles size={15} /> {generatingAI ? 'Generating…' : 'Generate with DeepSeek'}
                                                                 </button>
-                                                            </>
-                                                        )}
-                                                    </div>
+                                                                <button className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                                                    <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Enhance'}
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <label className="comp-label">Post Content</label>
+                                                            <textarea
+                                                                className="textarea"
+                                                                placeholder="Write your post here… the preview on the right updates as you type."
+                                                                value={manualContent}
+                                                                onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }}
+                                                                style={{ minHeight: 168, fontSize: '0.86rem' }}
+                                                            />
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', margin: '7px 2px 14px' }}>
+                                                                <span>{manualContent.length} characters</span>
+                                                                <span>{manualContent.length > 3000 ? '⚠️ Too long' : manualContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
+                                                            </div>
+                                                            <button className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                                                <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Edit & Enhance with DeepSeek'}
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
 
-                                                {/* Schedule + Media: side by side */}
-                                                <div className="glass-card" style={{ padding: 14 }}>
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                                {/* Section: schedule + media */}
+                                                <div className="comp-sec">
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                                                         <div>
-                                                            <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>SCHEDULE POST</label>
+                                                            <label className="comp-label">Schedule</label>
                                                             <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} style={{ fontSize: '0.8rem' }} />
                                                         </div>
                                                         <div>
-                                                            <label style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4, letterSpacing: '0.06em' }}>MEDIA (OPTIONAL)</label>
+                                                            <label className="comp-label">Media (optional)</label>
                                                             {imageUrl ? (
                                                                 <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
-                                                                    {/\.(mp4|mov|webm)$/i.test(imageUrl) ? (
-                                                                        <video src={imageUrl} controls style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 6, display: 'block' }} />
-                                                                    ) : (
-                                                                        <img src={imageUrl} alt="attachment" style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 6, border: '1px solid var(--border)', display: 'block', objectFit: 'contain' }} />
-                                                                    )}
+                                                                    <img src={imageUrl} alt="media" style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 8, border: '1px solid var(--border)', display: 'block', objectFit: 'contain' }} />
                                                                     <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: 3 }}>
                                                                         <X size={11} />
                                                                     </button>
                                                                 </div>
                                                             ) : (
                                                                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                                    <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
-                                                                        {uploadingImage ? '...' : '📎 Upload'}
+                                                                    <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
+                                                                        {uploadingImage ? 'Uploading…' : '📎 Upload'}
                                                                         <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
                                                                             onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
                                                                     </label>
-                                                                    <input className="input" placeholder="or paste URL" style={{ flex: 1, fontSize: '0.72rem' }}
+                                                                    <input className="input" placeholder="or paste URL" style={{ flex: 1, fontSize: '0.74rem' }}
                                                                         onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
                                                                 </div>
                                                             )}
@@ -1864,191 +1842,82 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                     </div>
                                                 </div>
 
-                                                {/* LinkedIn post link input */}
-                                                <div className="glass-card" style={{ padding: 14 }}>
-                                                    <h4 style={{ margin: '0 0 8px 0', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>🔗 LinkedIn Post Link</h4>
-                                                    <div style={{ display: 'flex', gap: 8 }}>
-                                                        <input
-                                                            className="input"
-                                                            placeholder="https://www.linkedin.com/feed/update/urn:li:share:..."
-                                                            value={editingLinkUrl}
-                                                            onChange={e => setEditingLinkUrl(e.target.value)}
-                                                            style={{ fontSize: '0.8rem' }}
-                                                        />
-                                                        <button
-                                                            className="btn btn-primary"
-                                                            onClick={() => handleSaveLinkedInLink(editingLinkUrl)}
-                                                            style={{ fontSize: '0.8rem' }}
-                                                        >
-                                                            Save
-                                                        </button>
-                                                    </div>
-                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 6 }}>
-                                                        Paste the LinkedIn post URL here to complete the task and enable metrics syncing.
-                                                    </div>
-                                                </div>
-
-                                                {/* Submit / Publish */}
-                                                <div className="glass-card" style={{ padding: 14 }}>
-                                                    {isAdmin && (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                                                            <input type="checkbox" id="publishDirectly" checked={publishDirectly} onChange={e => setPublishDirectly(e.target.checked)} style={{ width: 15, height: 15, cursor: 'pointer' }} />
-                                                            <label htmlFor="publishDirectly" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>🚀 Publish directly to LinkedIn</label>
+                                                {/* Section: LinkedIn Link Input (only when task-based & post exists) */}
+                                                {selectedTaskId && post && (
+                                                    <div className="comp-sec">
+                                                        <label className="comp-label">LinkedIn Post Link</label>
+                                                        <div style={{ display: 'flex', gap: 10 }}>
+                                                            <input
+                                                                className="input"
+                                                                placeholder="https://www.linkedin.com/feed/update/urn:li:share:..."
+                                                                value={editingLinkUrl}
+                                                                onChange={e => setEditingLinkUrl(e.target.value)}
+                                                                style={{ fontSize: '0.82rem' }}
+                                                            />
+                                                            <button
+                                                                className="btn btn-primary"
+                                                                onClick={() => handleSaveLinkedInLink(editingLinkUrl)}
+                                                                style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                                                            >
+                                                                Save
+                                                            </button>
                                                         </div>
+                                                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8 }}>
+                                                            Paste the LinkedIn post URL here to complete the task and enable metrics syncing.
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                {/* Footer: publish options + CTA */}
+                                                <div className="comp-foot">
+                                                    {isAdmin && (
+                                                        <label className="switch" style={{ marginBottom: 14 }}>
+                                                            <input type="checkbox" checked={publishDirectly} onChange={e => setPublishDirectly(e.target.checked)} />
+                                                            <span className="track" />
+                                                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🚀 Publish directly to LinkedIn</span>
+                                                        </label>
                                                     )}
                                                     {(() => {
-                                                        const isApproved = post.status === 'approved';
+                                                        const isApproved = post?.status === 'approved';
                                                         if (isApproved && !isAdmin) {
                                                             return (
-                                                                <button className="btn btn-success w-full" onClick={handlePublishLive} disabled={savingPost}
-                                                                    style={{ padding: '11px 16px', fontSize: '0.88rem', fontWeight: 700 }}>
+                                                                <button className="cta" onClick={handlePublishLive} disabled={savingPost}>
                                                                     {savingPost ? 'Publishing...' : '🚀 Publish Live on LinkedIn'}
                                                                 </button>
                                                             );
                                                         }
                                                         return (
-                                                            <button
-                                                                className="btn btn-primary w-full"
-                                                                onClick={handlePublishPost}
-                                                                disabled={savingPost || !previewContent}
-                                                                style={{ padding: '11px 16px', fontSize: '0.88rem', fontWeight: 700 }}
-                                                            >
-                                                                {savingPost ? 'Processing...' : publishDirectly ? '🚀 Publish Directly to LinkedIn' : isAdmin ? '📤 Save & Approve' : '📤 Submit for Review'}
+                                                            <button className="cta" onClick={handlePublishPost} disabled={savingPost || !previewContent}>
+                                                                {savingPost ? 'Processing…' : publishDirectly ? '🚀 Publish to LinkedIn' : isAdmin ? '✓ Save & Approve' : '📤 Submit for Review'}
                                                             </button>
                                                         );
                                                     })()}
                                                 </div>
-
-                                                {/* Engagement Metrics Card */}
-                                                <div className="glass-card" style={{ padding: 16 }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                                        <h4 style={{ margin: 0, fontSize: '0.85rem' }}>📊 Engagement Metrics</h4>
-                                                        <button
-                                                            className="btn btn-secondary btn-sm"
-                                                            disabled={!post.linkedin_post_id}
-                                                            onClick={handleDemoSync}
-                                                            style={{ fontSize: '0.75rem', padding: '3px 8px' }}
-                                                        >
-                                                            Demo Sync
-                                                        </button>
-                                                    </div>
-                                                    <div className="grid-3" style={{ gap: 8 }}>
-                                                        <div style={{ background: 'var(--bg-tertiary)', padding: '10px 6px', borderRadius: 8, textAlign: 'center' }}>
-                                                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}>LINKEDIN LIKES</div>
-                                                            <div style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: 2, color: 'var(--accent)' }}>{historyPostMetrics.likes || 0}</div>
-                                                        </div>
-                                                        <div style={{ background: 'var(--bg-tertiary)', padding: '10px 6px', borderRadius: 8, textAlign: 'center' }}>
-                                                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}>COMMENTS</div>
-                                                            <div style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: 2, color: 'var(--purple)' }}>{historyPostMetrics.comments || 0}</div>
-                                                        </div>
-                                                        <div style={{ background: 'var(--bg-tertiary)', padding: '10px 6px', borderRadius: 8, textAlign: 'center' }}>
-                                                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}>SHARES</div>
-                                                            <div style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: 2, color: 'var(--teal)' }}>{historyPostMetrics.shares || 0}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Employee engagement card */}
-                                                <div className="glass-card" style={{ padding: 16 }}>
-                                                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.85rem' }}>👥 Employee Engagement</h4>
-                                                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>Tick the actions each employee took on this post:</p>
-
-                                                    <div style={{ position: 'relative', marginBottom: 12 }}>
-                                                        <input
-                                                            className="input"
-                                                            placeholder="Search employees..."
-                                                            value={employeeSearch}
-                                                            onChange={e => setEmployeeSearch(e.target.value)}
-                                                            style={{ fontSize: '0.8rem', paddingLeft: 30, height: 'auto', paddingTop: 6, paddingBottom: 6 }}
-                                                        />
-                                                        <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                                    </div>
-
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 180, overflowY: 'auto', paddingRight: 4 }}>
-                                                        {filteredAgents.map(a => {
-                                                            const empEng = engagement[a.id] || { like: false, comment: false, share: false };
-                                                            return (
-                                                                <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: 'var(--bg-tertiary)', borderRadius: 6 }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 'bold' }}>
-                                                                            {a.avatar_url ? <img src={a.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', borderRadius: '50%' }} /> : a.full_name[0].toUpperCase()}
-                                                                        </div>
-                                                                        <div>
-                                                                            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>{a.full_name}</div>
-                                                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>· {a.region}</div>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div style={{ display: 'flex', gap: 6 }}>
-                                                                        <button
-                                                                            className="btn btn-ghost"
-                                                                            onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'like', empEng.like)}
-                                                                            style={{ padding: '4px 8px', fontSize: '0.75rem', background: empEng.like ? 'var(--success-glow)' : 'transparent', color: empEng.like ? 'var(--success)' : 'var(--text-muted)', border: empEng.like ? '1px solid var(--success)' : '1px solid var(--border)' }}
-                                                                            title="Liked"
-                                                                        >
-                                                                            👍
-                                                                        </button>
-                                                                        <button
-                                                                            className="btn btn-ghost"
-                                                                            onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'comment', empEng.comment)}
-                                                                            style={{ padding: '4px 8px', fontSize: '0.75rem', background: empEng.comment ? 'var(--warning-glow)' : 'transparent', color: empEng.comment ? 'var(--warning)' : 'var(--text-muted)', border: empEng.comment ? '1px solid var(--warning)' : '1px solid var(--border)' }}
-                                                                            title="Commented"
-                                                                        >
-                                                                            💬
-                                                                        </button>
-                                                                        <button
-                                                                            className="btn btn-ghost"
-                                                                            onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'share', empEng.share)}
-                                                                            style={{ padding: '4px 8px', fontSize: '0.75rem', background: empEng.share ? 'var(--info-glow)' : 'transparent', color: empEng.share ? 'var(--info)' : 'var(--text-muted)', border: empEng.share ? '1px solid var(--info)' : '1px solid var(--border)' }}
-                                                                            title="Shared/Sent"
-                                                                        >
-                                                                            🔁
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                        {filteredAgents.length === 0 && (
-                                                            <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', padding: 10 }}>No matching agents found.</div>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {/* Author / who is working on this post */}
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                                                    <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.85rem', color: 'var(--accent)', overflow: 'hidden' }}>
-                                                        {post.created_by_avatar ? <img src={post.created_by_avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (post.created_by_name ? post.created_by_name[0] : 'A')}
-                                                    </div>
-                                                    <div>
-                                                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>Working on this: {post.created_by_name || 'Assigned Agent'}</div>
-                                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Role: Agent · Region: {activeTask.region}</div>
-                                                    </div>
-                                                </div>
-
                                             </div>
 
-                                            {/* RIGHT COLUMN: LinkedIn Live Preview — sticky */}
+                                            {/* RIGHT: LinkedIn live preview — sticky */}
                                             <div className="composer-preview">
-                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>LINKEDIN PREVIEW</div>
-                                                    <div style={{ fontSize: '0.63rem', color: 'var(--success)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', display: 'inline-block' }} />
-                                                        Live
-                                                    </div>
+                                                <div className="preview-head">
+                                                    <div className="comp-label" style={{ margin: 0 }}>LinkedIn Preview</div>
+                                                    <span style={{ fontSize: '0.64rem', color: 'var(--success)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                        <span className="live-dot" /> Live
+                                                    </span>
                                                 </div>
 
                                                 <LinkedInPreview
                                                     content={previewContent}
                                                     hashtags={hashtags}
                                                     imageUrl={imageUrl}
-                                                    authorName={post.created_by_name || 'GOrecruitAI'}
-                                                    authorAvatar={post.created_by_avatar}
-                                                    initialLikes={post.employee_engagement ? Object.values(post.employee_engagement).filter((v: any) => v.like).length : 0}
-                                                    initialComments={post.employee_engagement ? Object.values(post.employee_engagement).filter((v: any) => v.comment).length : 0}
-                                                    initialShares={post.employee_engagement ? Object.values(post.employee_engagement).filter((v: any) => v.share).length : 0}
-                                                    postStatus={post.status}
+                                                    authorName={post?.created_by_name || user?.full_name || 'GOrecruitAI'}
+                                                    authorAvatar={post?.created_by_avatar || user?.avatar_url}
+                                                    initialLikes={post?.employee_engagement ? Object.values(post.employee_engagement).filter((v: any) => v.like).length : 0}
+                                                    initialComments={post?.employee_engagement ? Object.values(post.employee_engagement).filter((v: any) => v.comment).length : 0}
+                                                    initialShares={post?.employee_engagement ? Object.values(post.employee_engagement).filter((v: any) => v.share).length : 0}
+                                                    postStatus={post?.status}
                                                 />
+
                                                 {hashtags && (
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 10, border: '1px solid var(--border)' }}>
                                                         {hashtags.split(/\s+/).filter(Boolean).map((h, i) => (
                                                             <span key={i} style={{ color: '#0a66c2', fontSize: '0.73rem', fontWeight: 600, background: 'rgba(10,102,194,0.1)', padding: '2px 9px', borderRadius: 20 }}>
                                                                 {h.startsWith('#') ? h : `#${h}`}
@@ -2056,223 +1925,147 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                         ))}
                                                     </div>
                                                 )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })() : (
-                                /* Generic post composer layout (when no task is selected) */
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                    <div className="composer-grid">
 
-                                        {/* LEFT: one cohesive composer card */}
-                                        <div className="comp-card">
-                                            <div className="comp-head">
-                                                <div className="comp-head-icon"><Sparkles size={18} /></div>
-                                                <div>
-                                                    <h3>AI Post Composer</h3>
-                                                    <p>Draft, enhance and publish LinkedIn posts — all in one place</p>
-                                                </div>
-                                            </div>
-
-                                            {/* Section: post settings */}
-                                            <div className="comp-sec">
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
-                                                    <div>
-                                                        <label className="comp-label">Post Type</label>
-                                                        <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.82rem' }}>
-                                                            {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
-                                                        </select>
-                                                    </div>
-                                                    <div>
-                                                        <label className="comp-label">Tone</label>
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                                            {TONES.map(t => (
-                                                                <button key={t} className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize' }}>{t}</button>
-                                                            ))}
+                                                {/* Task Engagement Metrics Card (when task is set & post has linkedin id) */}
+                                                {selectedTaskId && post?.linkedin_post_id && (
+                                                    <div className="glass-card" style={{ padding: 16, marginTop: 14 }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                                            <h4 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>📊 Engagement Metrics</h4>
+                                                            <button
+                                                                className="btn btn-secondary btn-sm"
+                                                                disabled={!post.linkedin_post_id}
+                                                                onClick={handleDemoSync}
+                                                                style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+                                                            >
+                                                                Demo Sync
+                                                            </button>
+                                                        </div>
+                                                        <div className="grid-3" style={{ gap: 8 }}>
+                                                            <div style={{ background: 'var(--bg-tertiary)', padding: '8px 4px', borderRadius: 8, textAlign: 'center', border: '1px solid var(--border)' }}>
+                                                                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>LIKES</div>
+                                                                <div style={{ fontSize: '1.15rem', fontWeight: 800, marginTop: 2, color: 'var(--accent)' }}>{historyPostMetrics.likes || 0}</div>
+                                                            </div>
+                                                            <div style={{ background: 'var(--bg-tertiary)', padding: '8px 4px', borderRadius: 8, textAlign: 'center', border: '1px solid var(--border)' }}>
+                                                                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>COMMENTS</div>
+                                                                <div style={{ fontSize: '1.15rem', fontWeight: 800, marginTop: 2, color: 'var(--purple)' }}>{historyPostMetrics.comments || 0}</div>
+                                                            </div>
+                                                            <div style={{ background: 'var(--bg-tertiary)', padding: '8px 4px', borderRadius: 8, textAlign: 'center', border: '1px solid var(--border)' }}>
+                                                                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>SHARES</div>
+                                                                <div style={{ fontSize: '1.15rem', fontWeight: 800, marginTop: 2, color: 'var(--teal)' }}>{historyPostMetrics.shares || 0}</div>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-                                                <div style={{ marginTop: 16 }}>
-                                                    <label className="comp-label">Hashtags</label>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                                                        {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
-                                                            <button key={h} className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())}>{h}</button>
+                                                )}
+
+                                                {/* Task Employee Engagement card (when task is set) */}
+                                                {selectedTaskId && post && (
+                                                    <div className="glass-card" style={{ padding: 16, marginTop: 14 }}>
+                                                        <h4 style={{ margin: '0 0 4px 0', fontSize: '0.82rem', fontWeight: 700 }}>👥 Employee Engagement</h4>
+                                                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>Tick actions employees took on this post:</p>
+                                                        
+                                                        <div style={{ position: 'relative', marginBottom: 10 }}>
+                                                            <input
+                                                                className="input"
+                                                                placeholder="Search employees..."
+                                                                value={employeeSearch}
+                                                                onChange={e => setEmployeeSearch(e.target.value)}
+                                                                style={{ fontSize: '0.78rem', paddingLeft: 28, height: 'auto', paddingTop: 5, paddingBottom: 5 }}
+                                                            />
+                                                            <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                                        </div>
+
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 160, overflowY: 'auto', paddingRight: 2 }}>
+                                                            {filteredAgents.map(a => {
+                                                                const empEng = engagement[a.id] || { like: false, comment: false, share: false };
+                                                                return (
+                                                                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 7px', background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                            <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--accent-glow)', border: '1px solid var(--accent)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                                                                                {a.avatar_url ? <img src={a.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', borderRadius: '50%' }} /> : a.full_name[0].toUpperCase()}
+                                                                            </div>
+                                                                            <div style={{ minWidth: 0 }}>
+                                                                                <div style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.full_name}</div>
+                                                                                <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>{a.region}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div style={{ display: 'flex', gap: 4 }}>
+                                                                            <button
+                                                                                className="btn btn-ghost btn-sm"
+                                                                                onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'like', empEng.like)}
+                                                                                style={{ padding: '2px 6px', fontSize: '0.7rem', background: empEng.like ? 'var(--success-glow)' : 'transparent', color: empEng.like ? 'var(--success)' : 'var(--text-muted)', border: empEng.like ? '1px solid var(--success)' : '1px solid var(--border)' }}
+                                                                                title="Liked"
+                                                                            >
+                                                                                👍
+                                                                            </button>
+                                                                            <button
+                                                                                className="btn btn-ghost btn-sm"
+                                                                                onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'comment', empEng.comment)}
+                                                                                style={{ padding: '2px 6px', fontSize: '0.7rem', background: empEng.comment ? 'var(--warning-glow)' : 'transparent', color: empEng.comment ? 'var(--warning)' : 'var(--text-muted)', border: empEng.comment ? '1px solid var(--warning)' : '1px solid var(--border)' }}
+                                                                                title="Commented"
+                                                                            >
+                                                                                💬
+                                                                            </button>
+                                                                            <button
+                                                                                className="btn btn-ghost btn-sm"
+                                                                                onClick={() => handleToggleEmployeeEngagement(post.id, a.id, 'share', empEng.share)}
+                                                                                style={{ padding: '2px 6px', fontSize: '0.7rem', background: empEng.share ? 'var(--info-glow)' : 'transparent', color: empEng.share ? 'var(--info)' : 'var(--text-muted)', border: empEng.share ? '1px solid var(--info)' : '1px solid var(--border)' }}
+                                                                                title="Shared/Sent"
+                                                                            >
+                                                                                🔁
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            {filteredAgents.length === 0 && (
+                                                                <div style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-muted)', padding: 8 }}>No matching agents found.</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Bottom generic agents card (only when no task is selected) */}
+                                        {!selectedTaskId && (() => {
+                                            const currentTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;
+                                            const assignedIds = currentTask?.assignments?.map((a: { agent_id: string }) => a.agent_id) || [];
+                                            const assignedAgents = assignedIds.length > 0 ? agents.filter(a => assignedIds.includes(a.id)) : [];
+                                            const creatorIds = new Set(publishedPosts.slice(0, 20).map(p => p.created_by_id).filter(Boolean));
+                                            const displayAgents = assignedAgents.length > 0 ? assignedAgents : agents.filter(a => creatorIds.has(a.id));
+                                            if (displayAgents.length === 0) return null;
+                                            return (
+                                                <div className="glass-card" style={{ padding: '14px 18px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                                        <span style={{ fontSize: '0.82rem', fontWeight: 700 }}>👥 Agents on this post</span>
+                                                        <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '2px 8px', borderRadius: 20, border: '1px solid var(--border)' }}>{displayAgents.length} agent{displayAgents.length !== 1 ? 's' : ''}</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                                        {displayAgents.map((a: User) => (
+                                                            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--bg-tertiary)', borderRadius: 10, border: '1px solid var(--border)', flex: '1 1 210px', minWidth: 0 }}>
+                                                                <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-glow), var(--accent))', border: '2px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 800, color: '#fff', overflow: 'hidden', flexShrink: 0 }}>
+                                                                    {a.avatar_url ? <img src={a.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : a.full_name[0].toUpperCase()}
+                                                                </div>
+                                                                <div style={{ minWidth: 0, flex: 1 }}>
+                                                                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.full_name}</div>
+                                                                    <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 1 }}>
+                                                                        {a.region === 'India' ? '🇮🇳' : a.region === 'USA' ? '🇺🇸' : a.region === 'Indonesia' ? '🇮🇩' : '🌐'} {a.region}
+                                                                    </div>
+                                                                </div>
+                                                                <div style={{ display: 'flex', gap: 4 }}>
+                                                                    <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--success-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Liked">
+                                                                        <ThumbsUp size={12} color="var(--success)" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         ))}
                                                     </div>
-                                                    <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.82rem' }} />
                                                 </div>
-                                            </div>
-
-                                            {/* Section: content */}
-                                            <div className="comp-sec">
-                                                <div className="seg" style={{ marginBottom: 16 }}>
-                                                    <button className={`seg-btn ${writeMode === 'ai' ? 'active' : ''}`} onClick={() => setWriteMode('ai')}>
-                                                        <Sparkles size={14} /> Generate with AI
-                                                    </button>
-                                                    <button className={`seg-btn ${writeMode === 'manual' ? 'active' : ''}`} onClick={() => setWriteMode('manual')}>
-                                                        <Edit3 size={14} /> Write Manually
-                                                    </button>
-                                                </div>
-
-                                                {writeMode === 'ai' ? (
-                                                    <>
-                                                        <label className="comp-label">Prompt / Topic</label>
-                                                        <textarea className="textarea" placeholder="Describe what you want to post about… e.g. 'We're hiring Senior React developers in Bangalore, hybrid, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 104, fontSize: '0.85rem' }} />
-                                                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0 14px' }}>
-                                                            {EMOJIS.map(e => <button key={e} className="chip" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 9px', fontSize: '0.95rem' }}>{e}</button>)}
-                                                        </div>
-                                                        <div style={{ display: 'flex', gap: 10 }}>
-                                                            <button className="cta" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1 }}>
-                                                                <Sparkles size={15} /> {generatingAI ? 'Generating…' : 'Generate with DeepSeek'}
-                                                            </button>
-                                                            <button className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-                                                                <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Enhance'}
-                                                            </button>
-                                                        </div>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <label className="comp-label">Post Content</label>
-                                                        <textarea
-                                                            className="textarea"
-                                                            placeholder="Write your post here… the preview on the right updates as you type."
-                                                            value={manualContent}
-                                                            onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }}
-                                                            style={{ minHeight: 168, fontSize: '0.86rem' }}
-                                                        />
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', margin: '7px 2px 14px' }}>
-                                                            <span>{manualContent.length} characters</span>
-                                                            <span>{manualContent.length > 3000 ? '⚠️ Too long' : manualContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
-                                                        </div>
-                                                        <button className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                            <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Edit & Enhance with DeepSeek'}
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-
-                                            {/* Section: schedule + media */}
-                                            <div className="comp-sec">
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                                                    <div>
-                                                        <label className="comp-label">Schedule</label>
-                                                        <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} style={{ fontSize: '0.8rem' }} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="comp-label">Media (optional)</label>
-                                                        {imageUrl ? (
-                                                            <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
-                                                                <img src={imageUrl} alt="media" style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 8, border: '1px solid var(--border)', display: 'block', objectFit: 'contain' }} />
-                                                                <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: 3 }}>
-                                                                    <X size={11} />
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                                <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
-                                                                    {uploadingImage ? 'Uploading…' : '📎 Upload'}
-                                                                    <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
-                                                                        onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
-                                                                </label>
-                                                                <input className="input" placeholder="or paste URL" style={{ flex: 1, fontSize: '0.74rem' }}
-                                                                    onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Footer: publish options + CTA */}
-                                            <div className="comp-foot">
-                                                {isAdmin && (
-                                                    <label className="switch" style={{ marginBottom: 14 }}>
-                                                        <input type="checkbox" checked={publishDirectly} onChange={e => setPublishDirectly(e.target.checked)} />
-                                                        <span className="track" />
-                                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🚀 Publish directly to LinkedIn</span>
-                                                    </label>
-                                                )}
-                                                <button className="cta" onClick={handlePublishPost} disabled={savingPost || !previewContent}>
-                                                    {savingPost ? 'Processing…' : publishDirectly ? '🚀 Publish to LinkedIn' : isAdmin ? '✓ Save & Approve' : '📤 Submit for Review'}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* RIGHT: LinkedIn live preview — sticky */}
-                                        <div className="composer-preview">
-                                            <div className="preview-head">
-                                                <div className="comp-label" style={{ margin: 0 }}>LinkedIn Preview</div>
-                                                <span style={{ fontSize: '0.64rem', color: 'var(--success)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
-                                                    <span className="live-dot" /> Live
-                                                </span>
-                                            </div>
-
-                                            <LinkedInPreview
-                                                content={previewContent}
-                                                hashtags={hashtags}
-                                                imageUrl={imageUrl}
-                                                authorName={user?.full_name || 'GOrecruitAI'}
-                                                authorAvatar={user?.avatar_url}
-                                            />
-
-                                            {hashtags && (
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 10, border: '1px solid var(--border)' }}>
-                                                    {hashtags.split(/\s+/).filter(Boolean).map((h, i) => (
-                                                        <span key={i} style={{ color: '#0a66c2', fontSize: '0.73rem', fontWeight: 600, background: 'rgba(10,102,194,0.1)', padding: '2px 9px', borderRadius: 20 }}>
-                                                            {h.startsWith('#') ? h : `#${h}`}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
+                                            );
+                                        })()}
                                     </div>
-
-                                    {/* Bottom: Agents who posted / are working on this */}
-                                    {(() => {
-                                        const currentTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null;
-                                        const assignedIds = currentTask?.assignments?.map((a: { agent_id: string }) => a.agent_id) || [];
-                                        const assignedAgents = assignedIds.length > 0 ? agents.filter(a => assignedIds.includes(a.id)) : [];
-                                        // Fallback: agents who created recent published posts
-                                        const creatorIds = new Set(publishedPosts.slice(0, 20).map(p => p.created_by_id).filter(Boolean));
-                                        const displayAgents = assignedAgents.length > 0 ? assignedAgents : agents.filter(a => creatorIds.has(a.id));
-                                        if (displayAgents.length === 0) return null;
-                                        return (
-                                            <div className="glass-card" style={{ padding: '14px 18px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                                    <span style={{ fontSize: '0.82rem', fontWeight: 700 }}>👥 Agents on this post</span>
-                                                    <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '2px 8px', borderRadius: 20, border: '1px solid var(--border)' }}>{displayAgents.length} agent{displayAgents.length !== 1 ? 's' : ''}</span>
-                                                </div>
-                                                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                                                    {displayAgents.map((a: User) => (
-                                                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--bg-tertiary)', borderRadius: 10, border: '1px solid var(--border)', flex: '1 1 210px', minWidth: 0 }}>
-                                                            <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-glow), var(--accent))', border: '2px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 800, color: '#fff', overflow: 'hidden', flexShrink: 0 }}>
-                                                                {a.avatar_url ? <img src={a.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : a.full_name[0].toUpperCase()}
-                                                            </div>
-                                                            <div style={{ minWidth: 0, flex: 1 }}>
-                                                                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.full_name}</div>
-                                                                <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                                                                    {a.region === 'India' ? '🇮🇳' : a.region === 'USA' ? '🇺🇸' : a.region === 'Indonesia' ? '🇮🇩' : '🌐'} {a.region}
-                                                                </div>
-                                                            </div>
-                                                            <div style={{ display: 'flex', gap: 4 }}>
-                                                                <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--success-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Liked">
-                                                                    <ThumbsUp size={12} color="var(--success)" />
-                                                                </div>
-                                                                <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--warning-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Commented">
-                                                                    <MessageSquare size={12} color="var(--warning)" />
-                                                                </div>
-                                                                <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--info-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Shared">
-                                                                    <Share2 size={12} color="var(--info)" />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            )}
+                                );
+                            })()}
                         </div>
                     ) : (
                         /* Published Posts History view */

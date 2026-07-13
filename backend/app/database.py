@@ -2,11 +2,20 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=False,
-    future=True,
-)
+_db_url = settings.DATABASE_URL
+_engine_kwargs = {"echo": False, "future": True}
+_connect_args: dict = {}
+
+# Managed databases (MySQL/Postgres) close idle connections; pre-ping + recycle keep
+# the pool healthy. SQLite (local dev) needs none of this.
+if not _db_url.startswith("sqlite"):
+    _engine_kwargs.update(pool_pre_ping=True, pool_recycle=280)
+    # Some managed MySQL hosts (Aiven, TiDB Cloud, PlanetScale) require TLS.
+    if settings.DB_SSL and _db_url.startswith("mysql"):
+        import ssl
+        _connect_args["ssl"] = ssl.create_default_context()
+
+engine = create_async_engine(_db_url, connect_args=_connect_args, **_engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

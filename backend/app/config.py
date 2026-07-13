@@ -9,8 +9,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours
 
-    # Database — default to SQLite for local dev; set to mssql+pyodbc://... for production
+    # Database — default to SQLite for local dev.
+    # Production (MySQL): mysql+asyncmy://user:password@host:3306/dbname
     DATABASE_URL: str = "sqlite+aiosqlite:///./service_tracker.db"
+    # Set true when the managed MySQL host requires TLS (Aiven, TiDB Cloud, PlanetScale…).
+    DB_SSL: bool = False
 
     # AI — DeepSeek
     DEEPSEEK_API_KEY: str = ""
@@ -56,6 +59,8 @@ class Settings(BaseSettings):
 
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
+    # Extra allowed origins for production (comma-separated), e.g. your Vercel domain(s).
+    ALLOWED_ORIGINS: str = ""
 
     # Public base URL of THIS backend — used to build shareable tracking links
     # (e.g. UTM short links on published posts) that resolve back to the click

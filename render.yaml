@@ -1,0 +1,43 @@
+# Render Blueprint for the FastAPI backend.
+# Deploy: push this repo to GitHub → Render → New → Blueprint → pick this repo.
+# Then fill the `sync: false` env vars in the Render dashboard (see DEPLOYMENT.md).
+services:
+  - type: web
+    name: social-tracker-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+      - key: SECRET_KEY
+        generateValue: true          # Render generates a strong value
+      - key: DATABASE_URL
+        sync: false                  # mysql+asyncmy://user:pass@host:3306/db
+      - key: DB_SSL
+        value: "false"               # set "true" if your MySQL host requires TLS
+      - key: FRONTEND_URL
+        sync: false                  # https://your-app.vercel.app
+      - key: ALLOWED_ORIGINS
+        sync: false                  # optional extra origins, comma-separated
+      - key: BACKEND_PUBLIC_URL
+        sync: false                  # https://social-tracker-api.onrender.com
+      - key: DEV_MODE
+        value: "false"
+      - key: DEEPSEEK_API_KEY
+        sync: false                  # optional (also settable in-app)
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: LINKEDIN_ACCESS_TOKEN
+        sync: false                  # optional (also settable in-app)
+      - key: LINKEDIN_ORG_ID
+        sync: false                  # optional
+      - key: ADMIN_EMAIL
+        sync: false                  # first admin login
+      - key: ADMIN_PASSWORD
+        sync: false                  # first admin password (strong!)
+      - key: ADMIN_NAME
+        value: Administrator

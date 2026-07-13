@@ -73,15 +73,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Allowed browser origins: the configured frontend + any extras from ALLOWED_ORIGINS
+# (comma-separated) + local dev ports. The regex additionally covers Vercel preview
+# deploys (https://<project>-<hash>.vercel.app) without listing each one.
+_cors_origins = [
+    settings.FRONTEND_URL,
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:3000",
+]
+_cors_origins += [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+_cors_origins = sorted(set(o for o in _cors_origins if o))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.FRONTEND_URL, 
-        "http://localhost:5173", 
-        "http://localhost:5174", 
-        "http://localhost:5175", 
-        "http://localhost:3000"
-    ],
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

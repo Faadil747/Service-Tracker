@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     # verified (matches "ssl-mode=REQUIRED"), which lets managed hosts connect out-of-box.
     DB_SSL_CA: str = ""
 
+    # MS SQL Server (Production)
+    DB_SERVER: Optional[str] = None
+    DB_DATABASE: Optional[str] = None
+    DB_UID: Optional[str] = None
+    DB_PWD: Optional[str] = None
+    DB_DRIVER: Optional[str] = "ODBC Driver 18 for SQL Server"
+
     # AI — DeepSeek
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_MODEL: str = "deepseek-chat"  # one-line config swap

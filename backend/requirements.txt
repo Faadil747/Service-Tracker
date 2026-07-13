@@ -17,4 +17,5 @@ email-validator>=2.1.0
 asyncmy>=0.2.9
 # bcrypt is imported directly by auth_service (passlib pulls it in too, but pin it explicitly).
 bcrypt>=4.0.1
-
+aioodbc>=0.5.0
+pyodbc>=5.0.0

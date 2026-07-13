@@ -46,6 +46,39 @@ async def _daily_sync_loop():
 async def lifespan(app: FastAPI):
     # Startup: create tables + launch the once-a-day snapshot scheduler.
     await init_db()
+
+    # Bootstrap the first admin from env vars (works on hosts without shell access,
+    # e.g. Render free tier). Creates the admin if missing; also resets its password
+    # when ADMIN_RESET=true, so you can recover a forgotten login without a shell.
+    try:
+        import uuid as _uuid
+        from sqlalchemy import select
+        from app.database import AsyncSessionLocal
+        from app.models import User
+        from app.services.auth_service import hash_password
+        _admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+        _admin_pw = os.getenv("ADMIN_PASSWORD", "").strip()
+        _admin_reset = os.getenv("ADMIN_RESET", "").strip().lower() in ("1", "true", "yes")
+        if _admin_email and _admin_pw:
+            async with AsyncSessionLocal() as _db:
+                _existing = (await _db.execute(select(User).where(User.email == _admin_email))).scalar_one_or_none()
+                if _existing is None:
+                    _db.add(User(
+                        id=str(_uuid.uuid4()), email=_admin_email,
+                        full_name=os.getenv("ADMIN_NAME", "Administrator").strip() or "Administrator",
+                        hashed_password=hash_password(_admin_pw), role="admin", region="Global", is_active=True,
+                    ))
+                    await _db.commit()
+                    print(f"Bootstrapped admin: {_admin_email}")
+                elif _admin_reset:
+                    _existing.hashed_password = hash_password(_admin_pw)
+                    _existing.role = "admin"
+                    _existing.is_active = True
+                    await _db.commit()
+                    print(f"Reset admin password: {_admin_email}")
+    except Exception as e:
+        print(f"Admin bootstrap skipped: {e}")
+
     # Apply any admin-saved API keys (from the Settings UI) onto the live config.
     try:
         from app.database import AsyncSessionLocal

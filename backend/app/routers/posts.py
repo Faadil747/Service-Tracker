@@ -588,9 +588,14 @@ async def update_post(
     if req.scheduled_at:
         post.scheduled_at = datetime.fromisoformat(req.scheduled_at)
 
-    # If an agent edits content that already passed (or failed) review, it must go
-    # back for re-approval — approved content can't be silently swapped before publish.
-    if not is_admin and content_changed and was_reviewed:
+    # If an agent edits content that already passed (or failed) review, or explicitly
+    # requests review (req.status == 'in_review'), it must go back for re-approval.
+    should_re_review = False
+    if not is_admin:
+        if (content_changed and was_reviewed) or req.status == "in_review" or req.status == PostStatus.in_review:
+            should_re_review = True
+
+    if should_re_review:
         post.status = PostStatus.in_review
         post.approved_by_id = None
         if post.task_id:
@@ -606,6 +611,15 @@ async def update_post(
                     reference_id=task.id,
                     reference_type="task",
                 )
+        else:
+            await notify_admins(
+                db,
+                type="pending_approval",
+                title=f"Post re-submitted: {post.title or post.content[:60]}",
+                body=f"{current_user.full_name} edited the post — it needs re-approval.",
+                reference_id=post.id,
+                reference_type="post",
+            )
     await db.commit()
     return _post_dict(post)
 

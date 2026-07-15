@@ -30,16 +30,22 @@ async def _daily_sync_loop():
     from app.services.linkedin_service import linkedin_service
     await asyncio.sleep(5)  # let startup settle
     while True:
+        retry_secs = 3600  # re-check hourly once today's snapshot is safely recorded
         try:
             if settings.LINKEDIN_AUTO_DAILY_SYNC and linkedin_service._has_credentials():
                 if not await _snapshot_exists_today():
                     print("[daily-sync] recording today's LinkedIn snapshot (1 API call)")
                     await linkedin_service.get_org_snapshot(force=True)
+                    # If it still didn't land (throttled/transient), retry in a few
+                    # minutes instead of losing the whole day to the hourly cadence.
+                    if not await _snapshot_exists_today():
+                        retry_secs = 300
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            print(f"[daily-sync] error (will retry next hour): {e}")
-        await asyncio.sleep(3600)  # re-check hourly; real fetch happens once/day
+            print(f"[daily-sync] error (will retry soon): {e}")
+            retry_secs = 300
+        await asyncio.sleep(retry_secs)
 
 
 @asynccontextmanager
@@ -90,6 +96,17 @@ async def lifespan(app: FastAPI):
             await load_api_configs_into_settings(_db)
     except Exception as e:
         print(f"API config load skipped: {e}")
+
+    # Seed the in-memory LinkedIn snapshot from the durable DB so the dashboard
+    # and Detailed Analytics show real data immediately after a cold restart
+    # (Render's ephemeral disk wipes the on-disk cache), instead of going blank
+    # until the next throttle-limited live sync.
+    try:
+        from app.services.linkedin_service import seed_snapshot_from_db
+        await seed_snapshot_from_db()
+    except Exception as e:
+        print(f"LinkedIn snapshot seed skipped: {e}")
+
     sync_task = asyncio.create_task(_daily_sync_loop())
     try:
         yield

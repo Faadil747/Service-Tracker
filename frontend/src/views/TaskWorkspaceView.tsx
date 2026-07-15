@@ -391,6 +391,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
 
     // AI Composer state
+    const [writeMode, setWriteMode] = useState<'manual' | 'ai'>('ai');
     const [aiProvider, setAiProvider] = useState<'deepseek' | 'openrouter/free'>('deepseek');
     const [prompt, setPrompt] = useState('');
     const [manualContent, setManualContent] = useState('');
@@ -606,6 +607,25 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
             setPublishDirectly(false); setImageUrl('');
             loadAll();
         } catch { toast.error('Failed to save post'); }
+        setSavingPost(false);
+    };
+
+    const handleSaveAsTemplate = async () => {
+        if (!previewContent.trim()) { toast.error('Nothing to save — generate or write a post first'); return; }
+        setSavingPost(true);
+        try {
+            await postsApi.create({
+                content: previewContent,
+                post_type: postType,
+                tone,
+                hashtags,
+                region,
+                image_url: imageUrl || undefined,
+                is_template: true,
+            });
+            toast.success('Saved to Library as a template');
+            loadAll();
+        } catch { toast.error('Failed to save template'); }
         setSavingPost(false);
     };
 
@@ -2040,6 +2060,16 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 </button>
                                                             );
                                                         })()}
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-secondary"
+                                                            onClick={handleSaveAsTemplate}
+                                                            disabled={savingPost || !previewContent}
+                                                            style={{ borderRadius: '20px', padding: '6px 14px', fontSize: '0.74rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+                                                            title="Save this content to the Library to reuse later"
+                                                        >
+                                                            <FileText size={13} /> Save as Template
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2788,22 +2818,27 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                             <div className="grid-auto">
                                 {templates.map(p => (
                                     <div key={p.id} className="glass-card glass-card-hover" style={{ padding: 16, cursor: 'pointer' }} onClick={() => {
+                                        // Load the template into the composer as editable content.
+                                        setWriteMode('manual');
+                                        setManualContent(p.content);
                                         setPreviewContent(p.content);
                                         setGeneratedContent(p.content);
-                                        setHashtags(p.hashtags);
+                                        setHashtags(p.hashtags || '');
                                         setPostType(p.post_type);
                                         setTone(p.tone);
+                                        setImageUrl(p.image_url || '');
                                         setTab('composer');
+                                        toast.success('Template loaded into the composer');
                                     }}>
                                         <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                                            <span className="badge badge-muted">{p.post_type.replace('_', ' ')}</span>
+                                            <span className="badge badge-muted">{p.post_type.replace(/_/g, ' ')}</span>
                                             <span className="badge badge-accent">{p.region}</span>
                                         </div>
                                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }} className="truncate">
-                                            {p.content.slice(0, 120)}...
+                                            {(p.content || '').slice(0, 120)}{(p.content || '').length > 120 ? '…' : ''}
                                         </p>
                                         <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{p.predicted_reach.toLocaleString()} predicted reach</span>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{p.tone || 'professional'} tone</span>
                                             <button className="btn btn-sm btn-ghost">Use Template →</button>
                                         </div>
                                     </div>

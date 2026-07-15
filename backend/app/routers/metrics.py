@@ -1,8 +1,9 @@
 from datetime import date, timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.config import settings
 from app.database import get_db
 from app.models import PostMetric, User, FollowerSnapshot
 from app.services.auth_service import get_current_user
@@ -335,9 +336,9 @@ async def daily_trend(
         .order_by(FollowerSnapshot.snapshot_date.asc())
     )
     rows = result.scalars().all()
-    trend = [
-        {
-            "date": str(r.snapshot_date),
+
+    def _point(r) -> dict:
+        return {
             "followers": r.followers,
             "impressions": r.impressions or 0,
             "unique_impressions": r.unique_impressions or 0,
@@ -349,11 +350,74 @@ async def daily_trend(
             "visitors": r.visitors or 0,
             "engagement_rate": r.engagement_rate or 0.0,
         }
-        for r in rows
-    ]
+
+    # Build a *continuous* daily series so every chart shows one point per
+    # calendar day, even on days LinkedIn wasn't (or couldn't be) synced.
+    # Real snapshots are used as-is; gap days carry the last known values
+    # forward. followers/impressions/etc. are cumulative lifetime totals, so a
+    # carried-forward day legitimately reads as zero day-over-day change (the
+    # follower line stays flat, the delta bars are 0) until the next real
+    # snapshot lands — nothing is estimated or fabricated. We start at the first
+    # real snapshot (never back-fill before we had data) and run through the
+    # anchor day.
+    by_date = {r.snapshot_date: r for r in rows}
+    trend: list[dict] = []
+    if rows:
+        last_vals: Optional[dict] = None
+        cur = rows[0].snapshot_date
+        one_day = timedelta(days=1)
+        while cur <= anchor:
+            r = by_date.get(cur)
+            if r is not None:
+                last_vals = _point(r)
+                trend.append({"date": str(cur), "filled": False, **last_vals})
+            elif last_vals is not None:
+                trend.append({"date": str(cur), "filled": True, **last_vals})
+            cur += one_day
+
     return {
         "days": days,
-        "snapshot_count": len(rows),
+        "snapshot_count": len(rows),   # real snapshots only (gap days excluded)
         "trend": trend,
         "has_enough_data": len(rows) >= 2,
+    }
+
+
+@router.post("/daily-sync")
+async def daily_sync(secret: str = Query(default=""), db: AsyncSession = Depends(get_db)):
+    """External-cron hook to record today's LinkedIn snapshot.
+
+    Hosts that sleep when idle (Render free tier) stop the in-process daily
+    scheduler, so days with no traffic never get a snapshot and the daily trend
+    charts stay empty. Point an external cron (Render Cron / GitHub Actions /
+    cron-job.org) at this endpoint every ~15–30 min: it also wakes the instance,
+    and it records at most ONE live LinkedIn fetch per day (idempotent — guarded
+    by today's existing row), so it stays well within LinkedIn's daily quota.
+
+    Protected by CRON_SECRET; the endpoint is disabled until that is configured.
+    """
+    if not settings.CRON_SECRET or secret != settings.CRON_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    today = date.today()
+    existing = (await db.execute(
+        select(FollowerSnapshot).where(FollowerSnapshot.snapshot_date == today)
+    )).scalar_one_or_none()
+    if existing is not None:
+        return {"status": "ok", "synced": False, "reason": "already recorded today", "date": str(today)}
+
+    if not linkedin_service._has_credentials():
+        return {"status": "skipped", "synced": False, "reason": "LinkedIn not configured"}
+
+    snap = await linkedin_service.get_org_snapshot(force=True)
+    recorded = (await db.execute(
+        select(FollowerSnapshot).where(FollowerSnapshot.snapshot_date == today)
+    )).scalar_one_or_none()
+    meta = snap.get("_meta", {}) if isinstance(snap, dict) else {}
+    return {
+        "status": "ok",
+        "synced": recorded is not None,
+        "rate_limited": bool(meta.get("rate_limited")),
+        "token_expired": bool(meta.get("token_expired")),
+        "date": str(today),
     }

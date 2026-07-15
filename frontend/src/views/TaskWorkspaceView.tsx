@@ -609,6 +609,38 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         setSavingPost(false);
     };
 
+    // Save the current content to the Library as a reusable draft. Keeps the
+    // composer intact so the user can keep editing / publishing afterwards.
+    const handleSaveDraft = async () => {
+        const content = (previewContent || manualContent || '').trim();
+        if (!content) { toast.error('Nothing to save — write or generate a post first'); return; }
+        setSavingPost(true);
+        try {
+            await postsApi.create({
+                content,
+                post_type: postType,
+                tone,
+                hashtags,
+                region,
+                image_url: imageUrl || undefined,
+                is_template: true,
+            });
+            toast.success('Draft saved to Library');
+            loadAll();
+        } catch { toast.error('Failed to save draft'); }
+        setSavingPost(false);
+    };
+
+    // Remove a saved draft from the Library.
+    const handleDeleteDraft = async (id: string) => {
+        if (!window.confirm('Delete this draft from the Library? This cannot be undone.')) return;
+        try {
+            await postsApi.delete(id);
+            setTemplates(prev => prev.filter(t => t.id !== id));
+            toast.success('Draft deleted');
+        } catch { toast.error('Failed to delete draft'); }
+    };
+
     const handleImageUpload = async (file: File | null) => {
         if (!file) return;
         if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { toast.error('Please choose an image or video file'); return; }
@@ -2025,6 +2057,16 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Publish directly</span>
                                                             </label>
                                                         )}
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-secondary"
+                                                            onClick={handleSaveDraft}
+                                                            disabled={savingPost || !(previewContent || manualContent)}
+                                                            style={{ borderRadius: '20px', padding: '6px 16px', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+                                                            title="Save this draft to the Library"
+                                                        >
+                                                            <FileText size={14} /> Save Draft
+                                                        </button>
                                                         {(() => {
                                                             const isApproved = post?.status === 'approved';
                                                             if (isApproved && !isAdmin) {
@@ -2776,35 +2818,50 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 tab === 'library' && (
                     <div>
                         <div style={{ marginBottom: 16 }}>
-                            <h4>📚 Post Templates & Library</h4>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Reuse successful posts as templates for new content</p>
+                            <h4>📚 Library — Saved Drafts</h4>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Drafts you saved from the composer. Click one to reuse it, or delete it.</p>
                         </div>
                         {templates.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
                                 <FileText size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-                                <p>No templates yet. Save a post as a template from the composer.</p>
+                                <p>No saved drafts yet. Use "Save Draft" in the composer to store one here.</p>
                             </div>
                         ) : (
                             <div className="grid-auto">
                                 {templates.map(p => (
                                     <div key={p.id} className="glass-card glass-card-hover" style={{ padding: 16, cursor: 'pointer' }} onClick={() => {
+                                        // Load the saved draft into the composer editor (editable).
+                                        setManualContent(p.content);
                                         setPreviewContent(p.content);
                                         setGeneratedContent(p.content);
-                                        setHashtags(p.hashtags);
+                                        setHashtags(p.hashtags || '');
                                         setPostType(p.post_type);
                                         setTone(p.tone);
+                                        setImageUrl(p.image_url || '');
+                                        setEditingPostId(null);
                                         setTab('composer');
+                                        toast.success('Draft loaded into the composer');
                                     }}>
                                         <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                                            <span className="badge badge-muted">{p.post_type.replace('_', ' ')}</span>
+                                            <span className="badge badge-muted">{(p.post_type || 'general').replace(/_/g, ' ')}</span>
                                             <span className="badge badge-accent">{p.region}</span>
                                         </div>
                                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }} className="truncate">
-                                            {p.content.slice(0, 120)}...
+                                            {(p.content || '').slice(0, 120)}{(p.content || '').length > 120 ? '…' : ''}
                                         </p>
                                         <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{p.predicted_reach.toLocaleString()} predicted reach</span>
-                                            <button className="btn btn-sm btn-ghost">Use Template →</button>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{p.tone || 'professional'} tone</span>
+                                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                                <button
+                                                    className="btn btn-sm btn-ghost"
+                                                    title="Delete draft"
+                                                    onClick={(e) => { e.stopPropagation(); handleDeleteDraft(p.id); }}
+                                                    style={{ color: 'var(--danger)', padding: '3px 7px' }}
+                                                >
+                                                    <Trash2 size={13} />
+                                                </button>
+                                                <button className="btn btn-sm btn-ghost" onClick={(e) => e.stopPropagation()} style={{ pointerEvents: 'none' }}>Use →</button>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}

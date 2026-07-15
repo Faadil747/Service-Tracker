@@ -30,6 +30,9 @@ run/
 *.db
 *.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
+*.db-journal
 
 # LinkedIn snapshot cache (real fetched data, persisted between restarts)
 linkedin_cache.json

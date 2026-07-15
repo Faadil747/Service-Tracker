@@ -58,8 +58,28 @@ if not _db_url.startswith("sqlite"):
             _ssl_ctx.check_hostname = False
             _ssl_ctx.verify_mode = ssl.CERT_NONE
         _connect_args["ssl"] = _ssl_ctx
+else:
+    # Local SQLite: bound the lock wait. If several dev processes touch the same DB
+    # file (e.g. leftover `--reload` servers), they contend on SQLite's single write
+    # lock; without a bound, a request can block indefinitely and the server appears
+    # hung (pages never load). 30s wait, then a clear error instead of a freeze.
+    _connect_args["timeout"] = 30
 
 engine = create_async_engine(_db_url, connect_args=_connect_args, **_engine_kwargs)
+
+if _db_url.startswith("sqlite"):
+    # WAL lets readers run concurrently with the single writer (far less lock
+    # contention than the default rollback journal); busy_timeout caps any lock
+    # wait so a busy DB errors fast instead of hanging the request forever.
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine.sync_engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _rec):  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

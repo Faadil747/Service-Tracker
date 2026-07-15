@@ -1,6 +1,21 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy import String as _SAString, Text as _SAText
 from app.config import settings
+
+
+# On MS SQL Server, render string columns as NVARCHAR (unicode) instead of the
+# default VARCHAR (non-unicode) so emojis and international text are preserved.
+# These hooks only fire for the "mssql" dialect — no effect on SQLite/MySQL/Postgres.
+@compiles(_SAString, "mssql")
+def _mssql_nvarchar(element, compiler, **kw):
+    return f"NVARCHAR({element.length})" if element.length else "NVARCHAR(max)"
+
+
+@compiles(_SAText, "mssql")
+def _mssql_ntext(element, compiler, **kw):
+    return "NVARCHAR(max)"
 
 import urllib.parse
 import ssl
@@ -71,67 +86,49 @@ async def get_db():
 
 
 async def init_db():
-    """Create all tables on startup."""
+    """Create all tables on startup.
+
+    `create_all` builds the full, current schema from the models — so a freshly
+    provisioned managed database (MS SQL / MySQL / Postgres) gets every column and
+    needs nothing else. The raw ALTER statements below only exist to migrate older
+    *SQLite* dev databases in place, and are skipped everywhere else. This matters
+    for MS SQL especially: a failed statement can doom the surrounding transaction,
+    so we never run these idempotent-by-failure ALTERs there."""
     async with engine.begin() as conn:
-        # Import all models to ensure they are registered
+        # Import all models so every table is registered before create_all.
         from app.models import user, task, post, metrics, notification, alert, comment, link_tracking  # noqa
         await conn.run_sync(Base.metadata.create_all)
-        
-        # Automatic gentle schema patch for alerts and tasks/posts relations
-        try:
-            from sqlalchemy import text
-            await conn.execute(text('ALTER TABLE alerts ADD target_user_id VARCHAR(36) NULL'))
-            await conn.execute(text('ALTER TABLE alerts ADD resolved_at DATETIME NULL'))
-            await conn.execute(text('ALTER TABLE alerts ADD resolved_by_id VARCHAR(36) NULL'))
-        except Exception:
-            pass
 
-        try:
-            from sqlalchemy import text
-            await conn.execute(text('ALTER TABLE tasks ADD claimed_by_id VARCHAR(36) NULL'))
-        except Exception:
-            pass
+        # Managed DBs are provisioned fresh — create_all already did everything.
+        if not _db_url.startswith("sqlite"):
+            return
 
-        try:
-            from sqlalchemy import text
-            await conn.execute(text('ALTER TABLE posts ADD task_id VARCHAR(36) NULL'))
-        except Exception:
-            pass
-
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE posts ADD review_comment TEXT DEFAULT ''"))
-        except Exception:
-            pass
-
-        # Extend the daily snapshot with per-day metric columns so a real
-        # multi-metric 14-day trend accumulates. Each ALTER is independent so a
-        # partially-migrated DB fills in only the missing columns.
-        from sqlalchemy import text as _text
-        for _col in (
-            "impressions INTEGER DEFAULT 0",
-            "unique_impressions INTEGER DEFAULT 0",
-            "clicks INTEGER DEFAULT 0",
-            "likes INTEGER DEFAULT 0",
-            "comments INTEGER DEFAULT 0",
-            "shares INTEGER DEFAULT 0",
-            "visitors INTEGER DEFAULT 0",
-            "engagement_rate FLOAT DEFAULT 0",
-        ):
-            try:
-                await conn.execute(_text(f"ALTER TABLE follower_snapshots ADD {_col}"))
-            except Exception:
-                pass
-
-        # Task Workspace / AI Composer columns (from the tasks + composer feature set).
-        # Each ALTER is independent so a partially-migrated DB fills only what's missing.
-        for _stmt in (
+        # Legacy in-place patches for older SQLite dev DBs (each is safe to fail if
+        # the column already exists). Every column here is also defined on a model,
+        # so create_all covers fresh databases without any of these.
+        from sqlalchemy import text
+        legacy_alters = [
+            "ALTER TABLE alerts ADD target_user_id VARCHAR(36) NULL",
+            "ALTER TABLE alerts ADD resolved_at DATETIME NULL",
+            "ALTER TABLE alerts ADD resolved_by_id VARCHAR(36) NULL",
+            "ALTER TABLE tasks ADD claimed_by_id VARCHAR(36) NULL",
+            "ALTER TABLE posts ADD task_id VARCHAR(36) NULL",
+            "ALTER TABLE posts ADD review_comment TEXT DEFAULT ''",
+            "ALTER TABLE follower_snapshots ADD impressions INTEGER DEFAULT 0",
+            "ALTER TABLE follower_snapshots ADD unique_impressions INTEGER DEFAULT 0",
+            "ALTER TABLE follower_snapshots ADD clicks INTEGER DEFAULT 0",
+            "ALTER TABLE follower_snapshots ADD likes INTEGER DEFAULT 0",
+            "ALTER TABLE follower_snapshots ADD comments INTEGER DEFAULT 0",
+            "ALTER TABLE follower_snapshots ADD shares INTEGER DEFAULT 0",
+            "ALTER TABLE follower_snapshots ADD visitors INTEGER DEFAULT 0",
+            "ALTER TABLE follower_snapshots ADD engagement_rate FLOAT DEFAULT 0",
             "ALTER TABLE posts ADD employee_engagement TEXT DEFAULT '{}'",
             "ALTER TABLE posts ADD priority VARCHAR(20) DEFAULT 'medium'",
             "ALTER TABLE tasks ADD priority VARCHAR(20) DEFAULT 'medium'",
             "ALTER TABLE tasks ADD recurrence_end_date DATETIME NULL",
-        ):
+        ]
+        for _stmt in legacy_alters:
             try:
-                await conn.execute(_text(_stmt))
+                await conn.execute(text(_stmt))
             except Exception:
                 pass

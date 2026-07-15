@@ -149,13 +149,26 @@ export const AnalyticsHubView: React.FC<Props> = ({ region, embedded = false }) 
     const trendRows: any[] = dailyTrend?.trend || [];
     const trendDeltas: any[] = [];
     for (let i = 1; i < trendRows.length; i++) {
-        const fd = trendRows[i].followers - trendRows[i - 1].followers;
+        const prev = trendRows[i - 1];
+        const curr = trendRows[i];
+        const fd = curr.followers - prev.followers;
+
+        // Prevent huge spikes from 0 baseline (first snapshot sync).
+        // If the previous snapshot had 0, treat delta as 0.
+        const impressionsDelta = (prev.impressions > 0 && curr.impressions > 0)
+            ? Math.max(0, curr.impressions - prev.impressions)
+            : 0;
+
+        const engagementDelta = (prev.engagement > 0 && curr.engagement > 0)
+            ? Math.max(0, curr.engagement - prev.engagement)
+            : 0;
+
         trendDeltas.push({
-            day: fmtDay(trendRows[i].date),
+            day: fmtDay(curr.date),
             gained: Math.max(0, fd),
             lost: Math.abs(Math.min(0, fd)),
-            engagement: Math.max(0, trendRows[i].engagement - trendRows[i - 1].engagement),
-            impressions: Math.max(0, trendRows[i].impressions - trendRows[i - 1].impressions),
+            engagement: engagementDelta,
+            impressions: impressionsDelta,
         });
     }
     const hasTrend = trendDeltas.length >= 1;

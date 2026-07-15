@@ -1104,19 +1104,48 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
                             }
                             const deltas: any[] = [];
                             for (let i = 1; i < t.length; i++) {
+                                const prev = t[i - 1];
+                                const curr = t[i];
+                                const netVal = curr.followers - prev.followers;
+
+                                // Prevent 0-baseline snapshot spikes
+                                const impressionsDelta = (prev.impressions > 0 && curr.impressions > 0)
+                                    ? Math.max(0, curr.impressions - prev.impressions)
+                                    : 0;
+
+                                const engagementDelta = (prev.engagement > 0 && curr.engagement > 0)
+                                    ? Math.max(0, curr.engagement - prev.engagement)
+                                    : 0;
+
                                 deltas.push({
-                                    day: fmtDay(t[i].date),
-                                    net: t[i].followers - t[i - 1].followers,
-                                    impressions: Math.max(0, t[i].impressions - t[i - 1].impressions),
-                                    engagement: Math.max(0, t[i].engagement - t[i - 1].engagement),
+                                    day: fmtDay(curr.date),
+                                    net: netVal,
+                                    impressions: impressionsDelta,
+                                    engagement: engagementDelta,
                                 });
                             }
                             const series = t.map((r: any) => ({ day: fmtDay(r.date), followers: r.followers }));
-                            const first = t[0], last = t[t.length - 1];
-                            const totFollowers = last.followers - first.followers;
-                            const totImpr = Math.max(0, last.impressions - first.impressions);
-                            const totEng = Math.max(0, last.engagement - first.engagement);
-                            const totClicks = Math.max(0, last.clicks - first.clicks);
+                            const last = t[t.length - 1];
+
+                            // Helper to find the first non-zero snapshot for cumulative metrics
+                            const getFirstNonZero = (key: string): number => {
+                                for (const r of t) {
+                                    if (r[key] > 0) return r[key];
+                                }
+                                return 0;
+                            };
+
+                            const firstFollowers = t[0]?.followers || 0;
+                            const totFollowers = last.followers - firstFollowers;
+
+                            const firstImpr = getFirstNonZero('impressions');
+                            const totImpr = firstImpr > 0 ? Math.max(0, last.impressions - firstImpr) : 0;
+
+                            const firstEng = getFirstNonZero('engagement');
+                            const totEng = firstEng > 0 ? Math.max(0, last.engagement - firstEng) : 0;
+
+                            const firstClicks = getFirstNonZero('clicks');
+                            const totClicks = firstClicks > 0 ? Math.max(0, last.clicks - firstClicks) : 0;
                             const fv = series.map((s: any) => s.followers);
                             const minF = Math.min(...fv), maxF = Math.max(...fv);
                             const pad = Math.max(5, Math.round((maxF - minF) * 0.15));

@@ -11,7 +11,6 @@ import { DashboardView } from './views/DashboardView';
 import { TaskWorkspaceView } from './views/TaskWorkspaceView';
 import { SettingsView } from './views/SettingsView';
 import { ContentCalendarView } from './views/ContentCalendarView';
-import { LinkAnalyticsView } from './views/LinkAnalyticsView';
 import { ReportsView } from './views/ReportsView';
 import { EngagementView } from './views/EngagementView';
 import { EmployeesView } from './views/EmployeesView';
@@ -99,9 +98,6 @@ const App: React.FC = () => {
                 } />
                 <Route path="/calendar" element={
                     <ProtectedLayout>{(r) => <ContentCalendarView region={r} />}</ProtectedLayout>
-                } />
-                <Route path="/links" element={
-                    <ProtectedLayout roles={['admin', 'agent', 'developer', 'ceo']}>{(r) => <LinkAnalyticsView region={r} />}</ProtectedLayout>
                 } />
                 <Route path="/reports" element={
                     <ProtectedLayout roles={['admin', 'developer', 'ceo']}>{(r) => <ReportsView region={r} />}</ProtectedLayout>

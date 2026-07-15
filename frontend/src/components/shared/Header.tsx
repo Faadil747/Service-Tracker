@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
     Bell, LogOut, Zap, CheckSquare, LayoutDashboard, TrendingUp,
-    Settings, Calendar, Link2, Users, ChevronDown, Menu, X,
+    Settings, Calendar, Users, ChevronDown, Menu, X,
     AlertTriangle, BarChart3, Copy, Check, Camera, ExternalLink, UserCog
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -21,7 +21,6 @@ const getNavItems = (role: string) => [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/workspace', icon: CheckSquare, label: 'Workspace', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/calendar', icon: Calendar, label: 'Calendar', roles: ['admin', 'agent', 'developer', 'ceo'] },
-    { to: '/links', icon: Link2, label: 'Link Analytics', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'developer', 'ceo'] },
     { to: '/engagement', icon: TrendingUp, label: 'Engagement', roles: ['admin', 'agent', 'developer', 'ceo'] },
     { to: '/employees', icon: Users, label: 'Employees', roles: ['admin'] },

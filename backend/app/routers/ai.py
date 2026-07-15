@@ -31,9 +31,10 @@ class SentimentRequest(BaseModel):
 @router.post("/generate-post")
 async def generate_post(
     req: GeneratePostRequest,
+    provider: Optional[str] = "deepseek",
     current_user: User = Depends(get_current_user),
 ):
-    """Generate a LinkedIn post draft using DeepSeek (server-side only)."""
+    """Generate a LinkedIn post draft using DeepSeek or OpenRouter (server-side only)."""
     result = await ai_service.generate_post(
         prompt=req.prompt,
         post_type=req.post_type,
@@ -41,6 +42,7 @@ async def generate_post(
         hashtags=req.hashtags,
         region=req.region,
         add_emojis=req.add_emojis,
+        provider=provider,
     )
     return result
 
@@ -144,14 +146,64 @@ async def trending_topics(
 async def improve_post(
     content: str,
     goal: str = "engagement",
+    provider: Optional[str] = "deepseek",
     current_user: User = Depends(get_current_user),
 ):
-    """Use DeepSeek to improve an existing LinkedIn post draft."""
+    """Use DeepSeek or OpenRouter to improve an existing LinkedIn post draft."""
     from app.config import settings
+    
+    if provider == "openrouter/free":
+        if not settings.OPENROUTER_API_KEY:
+            return {"content": content, "source": "unchanged", "message": "OpenRouter not configured"}
+        import httpx, json
+        print("[AI Router] Routing enhance request to OpenRouter (Llama 3.3)...")
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{settings.OPENROUTER_BASE_URL}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:8000",
+                        "X-Title": "LinkedIn Tracker Dual-Model Dev Branch",
+                    },
+                    json={
+                        "model": settings.OPENROUTER_MODEL_ID,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a LinkedIn content expert for GOrecruitAI. "
+                                    f"Improve the given LinkedIn post to maximise {goal}. "
+                                    "Keep the core message but enhance structure, emojis, and CTAs. "
+                                    "You must return your response as a JSON object with a single key 'content' containing the improved post text."
+                                ),
+                            },
+                            {"role": "user", "content": content},
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 800,
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+                resp.raise_for_status()
+                raw_content = resp.json()["choices"][0]["message"]["content"]
+                try:
+                    parsed = json.loads(raw_content)
+                    improved = parsed.get("content", raw_content) if isinstance(parsed, dict) else raw_content
+                except Exception:
+                    improved = raw_content
+                improved = ai_service._clean_post(improved)
+                return {"content": improved, "source": "openrouter"}
+        except Exception as e:
+            return {"content": content, "source": "unchanged", "error": str(e)}
+
+    # Default to DeepSeek logic
     if not settings.DEEPSEEK_API_KEY:
         return {"content": content, "source": "unchanged", "message": "DeepSeek not configured"}
 
     import httpx
+    print("[AI Router] Routing enhance request to DeepSeek...")
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(

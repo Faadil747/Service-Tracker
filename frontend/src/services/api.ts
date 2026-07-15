@@ -95,8 +95,8 @@ export const postsApi = {
 
 // ── AI ────────────────────────────────────────────────────────────────────
 export const aiApi = {
-    generatePost: (data: object) => api.post('/api/ai/generate-post', data),
-    improvePost: (content: string, goal?: string) => api.post('/api/ai/improve-post', null, { params: { content, goal } }),
+    generatePost: (data: object, provider?: string) => api.post('/api/ai/generate-post', data, { params: { provider } }),
+    improvePost: (content: string, goal?: string, provider?: string) => api.post('/api/ai/improve-post', null, { params: { content, goal, provider } }),
     predictReach: (data: object) => api.post('/api/ai/predict-reach', data),
     hashtags: (topic: string, region?: string) => api.post('/api/ai/hashtags', null, { params: { topic, region } }),
     sentiment: (comment: string) => api.post('/api/ai/sentiment', { comment }),

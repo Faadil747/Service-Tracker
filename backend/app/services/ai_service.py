@@ -10,9 +10,11 @@ import httpx
 from app.config import settings
 
 
-SYSTEM_PROMPT = """You are an expert LinkedIn copywriter for GOrecruitAI, a recruitment company.
+SYSTEM_PROMPT = """You are a dedicated social media manager and team member managing the LinkedIn page for GOrecruitAI, a recruitment company.
 
 Write ONE ready-to-publish LinkedIn post. Follow these rules strictly:
+- Speak from the perspective of a team member (e.g., use "we", "our team", "us") representing GOrecruitAI.
+- Tone should be collaborative, engaging, professional, and authentic—like a human social media manager.
 - Use clear, professional English with correct spelling and grammar. Proofread before you answer.
 - Output PLAIN text only. Do NOT use any markdown (no **bold**, *italics*, __underline__, backticks, or "#" headings) and do NOT use decorative Unicode fonts (no 𝐛𝐨𝐥𝐝 or 𝘪𝘵𝘢𝘭𝘪𝘤 look-alike characters). Use standard letters only so it renders identically everywhere.
 - Structure it for LinkedIn: a strong one-line hook, then short scannable paragraphs (1-2 sentences) separated by blank lines. Use "• " for any bullet points.
@@ -22,6 +24,8 @@ Write ONE ready-to-publish LinkedIn post. Follow these rules strictly:
 - Return ONLY the finished post text. No labels, no preamble, no "Here is your post", no explanations."""
 
 
+from fastapi import HTTPException
+
 async def generate_post(
     prompt: str,
     post_type: str = "general",
@@ -29,9 +33,121 @@ async def generate_post(
     hashtags: Optional[list[str]] = None,
     region: str = "Global",
     add_emojis: bool = True,
+    provider: str = "deepseek",
 ) -> dict:
-    """Generate a LinkedIn post draft using DeepSeek."""
+    """Generate a LinkedIn post draft using DeepSeek or OpenRouter."""
+    if provider == "openrouter/free":
+        if not settings.OPENROUTER_API_KEY:
+            return _stub_post(prompt, post_type, tone, hashtags, region)
 
+        hashtag_str = " ".join(f"#{h.lstrip('#')}" for h in (hashtags or [])) if hashtags else ""
+        user_msg = f"""Write one LinkedIn post.
+
+Topic: {prompt}
+Post type: {post_type.replace('_', ' ')}
+Tone: {tone}
+Region focus: {region}
+Emojis: {'yes, a few tasteful ones' if add_emojis else 'none'}
+Hashtags to include: {hashtag_str or 'choose 3-6 relevant ones'}
+
+Return only the finished post text, ready to paste into LinkedIn."""
+
+        # Define a list of high-quality free models to try in sequence if rate-limited
+        models_to_try = [
+            settings.OPENROUTER_MODEL_ID,
+            "qwen/qwen-2.5-72b-instruct:free",
+            "google/gemma-2-9b-it:free",
+            "meta-llama/llama-3-8b-instruct:free",
+            "openrouter/free"
+        ]
+        
+        # Deduplicate while preserving order
+        seen = set()
+        models_to_try = [m for m in models_to_try if m and not (m in seen or seen.add(m))]
+
+        last_error = None
+        for model in models_to_try:
+            print(f"[AI Service] Routing generation request to OpenRouter ({model})...")
+            try:
+                json_payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_PROMPT + "\n\nYou must return your response as a JSON object with a single key 'content' containing the post."},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 1000,
+                }
+                
+                # Check if model typically supports JSON mode parameter (large or auto-routing endpoints)
+                supports_json = "llama-3.3" in model or "qwen-2.5-72b" in model or "openrouter/free" in model
+                if supports_json:
+                    json_payload["response_format"] = {"type": "json_object"}
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(
+                        f"{settings.OPENROUTER_BASE_URL}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "http://localhost:8000",
+                            "X-Title": "LinkedIn Tracker Dual-Model Dev Branch",
+                        },
+                        json=json_payload,
+                    )
+                    
+                    # If JSON format caused a 400 Bad Request (not supported by model), retry without it
+                    if resp.status_code == 400 and "response_format" in json_payload:
+                        print(f"[AI Service] Model {model} rejected JSON format. Retrying without JSON format...")
+                        del json_payload["response_format"]
+                        resp = await client.post(
+                            f"{settings.OPENROUTER_BASE_URL}/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                                "Content-Type": "application/json",
+                                "HTTP-Referer": "http://localhost:8000",
+                                "X-Title": "LinkedIn Tracker Dual-Model Dev Branch",
+                            },
+                            json=json_payload,
+                        )
+
+                    resp.raise_for_status()
+                    raw_content = resp.json()["choices"][0]["message"]["content"]
+                    try:
+                        parsed = json.loads(raw_content)
+                        content = parsed.get("content", raw_content) if isinstance(parsed, dict) else raw_content
+                    except Exception:
+                        content = raw_content
+                    content = _clean_post(content)
+                    return {"content": content, "source": "openrouter", "model": model}
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                status_code = e.response.status_code
+                response_text = e.response.text
+                print(f"[AI Service] Model {model} failed with status {status_code}: {response_text}. Trying next fallback model...")
+                continue
+            except Exception as e:
+                last_error = e
+                print(f"[AI Service] Model {model} encountered error: {str(e)}. Trying next fallback model...")
+                continue
+
+        # If we got here, all models in the fallback chain failed
+        if last_error and isinstance(last_error, httpx.HTTPStatusError) and last_error.response.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail="OpenRouter free models are currently heavily rate-limited (Too Many Requests). Please try again in a few seconds or switch to DeepSeek."
+            )
+        
+        detail_msg = f"Failed to generate post via OpenRouter fallback chain. Last error: {str(last_error)}"
+        if last_error and isinstance(last_error, httpx.HTTPStatusError):
+            detail_msg = f"OpenRouter API error: {last_error.response.text}"
+            
+        raise HTTPException(
+            status_code=502,
+            detail=detail_msg
+        )
+
+    # Default to DeepSeek logic
     if not settings.DEEPSEEK_API_KEY:
         return _stub_post(prompt, post_type, tone, hashtags, region)
 
@@ -47,27 +163,46 @@ Hashtags to include: {hashtag_str or 'choose 3-6 relevant ones'}
 
 Return only the finished post text, ready to paste into LinkedIn."""
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{settings.DEEPSEEK_BASE_URL}/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": settings.DEEPSEEK_MODEL,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-                "temperature": 0.8,
-                "max_tokens": 1000,
-            },
+    print("[AI Service] Routing generation request to DeepSeek...")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{settings.DEEPSEEK_BASE_URL}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.DEEPSEEK_MODEL,
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.8,
+                    "max_tokens": 1000,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = _clean_post(data["choices"][0]["message"]["content"])
+            return {"content": content, "source": "deepseek", "model": settings.DEEPSEEK_MODEL}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail="DeepSeek API is currently rate-limited. Please try again in a few seconds."
+            )
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"DeepSeek API error: {e.response.text}"
         )
-        resp.raise_for_status()
-        data = resp.json()
-        content = _clean_post(data["choices"][0]["message"]["content"])
-        return {"content": content, "source": "deepseek", "model": settings.DEEPSEEK_MODEL}
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to connect to DeepSeek: {str(e)}"
+        )
 
 
 async def predict_reach(content: str, region: str = "Global") -> dict:

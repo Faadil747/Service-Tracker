@@ -391,6 +391,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
     // AI Composer state
     const [writeMode, setWriteMode] = useState<'manual' | 'ai'>('ai');
+    const [aiProvider, setAiProvider] = useState<'deepseek' | 'openrouter/free'>('deepseek');
     const [prompt, setPrompt] = useState('');
     const [manualContent, setManualContent] = useState('');
     const [postType, setPostType] = useState('general');
@@ -401,7 +402,7 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [enhancingAI, setEnhancingAI] = useState(false);
     const [previewContent, setPreviewContent] = useState('');
     const [scheduledAt, setScheduledAt] = useState('');
-    const [_predictedReach, setPredictedReach] = useState<any>(null);
+    const [predictedReach, setPredictedReach] = useState<any>(null);
     const [savingPost, setSavingPost] = useState(false);
     const [editingPostId, setEditingPostId] = useState<string | null>(null);
     const [publishDirectly, setPublishDirectly] = useState(false);
@@ -520,15 +521,19 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                 hashtags: hashtags.split(' ').filter(Boolean),
                 region: region === 'Global' ? 'Global' : region,
                 add_emojis: true,
-            });
+            }, aiProvider);
             const content = typeof res.data.content === 'string' ? res.data.content : JSON.stringify(res.data.content);
             setGeneratedContent(content);
-            toast.success('Content generated!');
+            const modelName = aiProvider === 'openrouter/free' ? 'Llama 3.3' : 'DeepSeek';
+            toast.success(`Content generated using ${modelName}!`);
 
             // Get reach prediction
             const reachRes = await aiApi.predictReach({ content, region });
             setPredictedReach(reachRes.data);
-        } catch { toast.error('AI generation failed'); }
+        } catch (err: any) {
+            const msg = err.response?.data?.detail || err.message || 'AI generation failed';
+            toast.error(msg);
+        }
         setGeneratingAI(false);
     };
 
@@ -536,16 +541,20 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         if (!manualContent) return;
         setEnhancingAI(true);
         try {
-            const res = await aiApi.improvePost(manualContent, 'engagement');
+            const res = await aiApi.improvePost(manualContent, 'engagement', aiProvider);
             if (res.data.error) throw new Error(res.data.error);
             setManualContent(res.data.content);
             setPreviewContent(res.data.content);
-            toast.success('Content enhanced!');
+            const modelName = aiProvider === 'openrouter/free' ? 'Llama 3.3' : 'DeepSeek';
+            toast.success(`Content enhanced using ${modelName}!`);
 
             // Optionally predict reach
             const reachRes = await aiApi.predictReach({ content: res.data.content, region });
             setPredictedReach(reachRes.data);
-        } catch (err: any) { toast.error(err.message || 'AI enhancement failed'); }
+        } catch (err: any) {
+            const msg = err.response?.data?.detail || err.message || 'AI enhancement failed';
+            toast.error(msg);
+        }
         setEnhancingAI(false);
     };
 
@@ -1750,58 +1759,62 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                     </div>
                                                 </div>
 
-                                                {/* Section: post settings */}
-                                                <div className="comp-sec">
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
+                                                {/* Section: AI Configuration & Mode */}
+                                                <div className="comp-sec" style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border)' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                                         <div>
-                                                            <label className="comp-label">Post Type</label>
-                                                            <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.82rem' }}>
-                                                                {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
-                                                            </select>
+                                                            <label className="comp-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                                                <span>AI Model Provider</span>
+                                                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'none' }}>Toggle generation pipeline</span>
+                                                            </label>
+                                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                                <button
+                                                                    type="button"
+                                                                    className={`btn ${aiProvider === 'deepseek' ? 'btn-primary' : 'btn-secondary'}`}
+                                                                    onClick={() => setAiProvider('deepseek')}
+                                                                    style={{ flex: 1, fontSize: '0.78rem', fontWeight: 600, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                                                                >
+                                                                    🤖 DeepSeek R1/Chat
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className={`btn ${aiProvider === 'openrouter/free' ? 'btn-primary' : 'btn-secondary'}`}
+                                                                    onClick={() => setAiProvider('openrouter/free')}
+                                                                    style={{ flex: 1, fontSize: '0.78rem', fontWeight: 600, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                                                                >
+                                                                    🦙 Llama 3.3 (Free)
+                                                                </button>
+                                                            </div>
                                                         </div>
+                                                        
                                                         <div>
-                                                            <label className="comp-label">Tone</label>
-                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                                                {TONES.map(t => (
-                                                                    <button key={t} className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize' }}>{t}</button>
-                                                                ))}
+                                                            <label className="comp-label" style={{ marginBottom: 6 }}>Composition Mode</label>
+                                                            <div className="seg">
+                                                                <button type="button" className={`seg-btn ${writeMode === 'ai' ? 'active' : ''}`} onClick={() => setWriteMode('ai')}>
+                                                                    <Sparkles size={14} /> Generate with AI
+                                                                </button>
+                                                                <button type="button" className={`seg-btn ${writeMode === 'manual' ? 'active' : ''}`} onClick={() => setWriteMode('manual')}>
+                                                                    <Edit3 size={14} /> Write Manually
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div style={{ marginTop: 16 }}>
-                                                        <label className="comp-label">Hashtags</label>
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                                                            {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
-                                                                <button key={h} className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())}>{h}</button>
-                                                            ))}
-                                                        </div>
-                                                        <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.82rem' }} />
-                                                    </div>
                                                 </div>
 
-                                                {/* Section: content */}
+                                                {/* Section: Main Content Input */}
                                                 <div className="comp-sec">
-                                                    <div className="seg" style={{ marginBottom: 16 }}>
-                                                        <button className={`seg-btn ${writeMode === 'ai' ? 'active' : ''}`} onClick={() => setWriteMode('ai')}>
-                                                            <Sparkles size={14} /> Generate with AI
-                                                        </button>
-                                                        <button className={`seg-btn ${writeMode === 'manual' ? 'active' : ''}`} onClick={() => setWriteMode('manual')}>
-                                                            <Edit3 size={14} /> Write Manually
-                                                        </button>
-                                                    </div>
-
                                                     {writeMode === 'ai' ? (
                                                         <>
                                                             <label className="comp-label">Prompt / Topic</label>
                                                             <textarea className="textarea" placeholder="Describe what you want to post about… e.g. 'We're hiring Senior React developers in Bangalore, hybrid, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 104, fontSize: '0.85rem' }} />
                                                             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0 14px' }}>
-                                                                {EMOJIS.map(e => <button key={e} className="chip" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 9px', fontSize: '0.95rem' }}>{e}</button>)}
+                                                                {EMOJIS.map(e => <button key={e} type="button" className="chip" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 9px', fontSize: '0.95rem' }}>{e}</button>)}
                                                             </div>
                                                             <div style={{ display: 'flex', gap: 10 }}>
-                                                                <button className="cta" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1 }}>
-                                                                    <Sparkles size={15} /> {generatingAI ? 'Generating…' : 'Generate with DeepSeek'}
+                                                                <button type="button" className="cta" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1 }}>
+                                                                    <Sparkles size={15} /> {generatingAI ? 'Generating…' : aiProvider === 'openrouter/free' ? 'Generate with Llama 3.3' : 'Generate with DeepSeek'}
                                                                 </button>
-                                                                <button className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                                                <button type="button" className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                                                                     <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Enhance'}
                                                                 </button>
                                                             </div>
@@ -1820,12 +1833,46 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 <span>{manualContent.length} characters</span>
                                                                 <span>{manualContent.length > 3000 ? '⚠️ Too long' : manualContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
                                                             </div>
-                                                            <button className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Edit & Enhance with DeepSeek'}
+                                                            <button type="button" className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                                                <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : aiProvider === 'openrouter/free' ? 'Enhance with Llama 3.3' : 'Enhance with DeepSeek'}
                                                             </button>
                                                         </>
                                                     )}
                                                 </div>
+
+                                                {/* Section: Optional Generation Settings */}
+                                                {writeMode === 'ai' && (
+                                                    <div className="comp-sec" style={{ borderTop: '1px solid var(--border)' }}>
+                                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                            <span>⚙️ Styling & Formatting (Optional)</span>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
+                                                            <div>
+                                                                <label className="comp-label">Post Type</label>
+                                                                <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.82rem' }}>
+                                                                    {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <label className="comp-label">Tone</label>
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                                                    {TONES.map(t => (
+                                                                        <button key={t} type="button" className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize' }}>{t}</button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ marginTop: 16 }}>
+                                                            <label className="comp-label">Hashtags</label>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                                                                {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
+                                                                    <button key={h} type="button" className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())}>{h}</button>
+                                                                ))}
+                                                            </div>
+                                                            <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.82rem' }} />
+                                                        </div>
+                                                    </div>
+                                                )}
 
                                                 {/* Section: schedule + media */}
                                                 <div className="comp-sec">
@@ -1939,6 +1986,40 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                                 {h.startsWith('#') ? h : `#${h}`}
                                                             </span>
                                                         ))}
+                                                    </div>
+                                                )}
+
+                                                {/* AI Reach Prediction Card */}
+                                                {predictedReach && (
+                                                    <div className="glass-card" style={{ padding: 18, marginTop: 14, background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%)', border: '1px solid rgba(99, 102, 241, 0.15)', borderRadius: 12 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                                            <div style={{ background: 'var(--accent)', color: '#fff', width: 24, height: 24, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem' }}>✨</div>
+                                                            <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>AI Reach Prediction</h4>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                                                            <div style={{ background: 'var(--bg-secondary)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                                                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Est. Reach</div>
+                                                                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent)', marginTop: 2 }}>
+                                                                    {(predictedReach.predicted_reach || predictedReach.predictedReach || 1200).toLocaleString()}+
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ background: 'var(--bg-secondary)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                                                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Confidence</div>
+                                                                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--success)', marginTop: 2 }}>
+                                                                    {predictedReach.confidence || 75}%
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {predictedReach.tips && predictedReach.tips.length > 0 && (
+                                                            <div>
+                                                                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Optimization Tips</div>
+                                                                <ul style={{ margin: 0, paddingLeft: 16, fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                                    {predictedReach.tips.map((tip: string, idx: number) => (
+                                                                        <li key={idx}>{tip}</li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 

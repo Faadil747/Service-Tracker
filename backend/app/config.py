@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     DB_UID: Optional[str] = None
     DB_PWD: Optional[str] = None
     DB_DRIVER: Optional[str] = "ODBC Driver 18 for SQL Server"
+    DB_ENCRYPT: bool = True
 
     # AI — DeepSeek
     DEEPSEEK_API_KEY: str = ""
@@ -86,9 +87,16 @@ class Settings(BaseSettings):
     # Feature flags
     DEV_MODE: bool = True  # enables sandbox / mock data endpoints
 
+    # Admin bootstrap
+    ADMIN_EMAIL: str = ""
+    ADMIN_PASSWORD: str = ""
+    ADMIN_NAME: str = "Administrator"
+    ADMIN_RESET: bool = False
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 settings = Settings()

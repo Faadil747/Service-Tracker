@@ -8,13 +8,14 @@ import ssl
 if all([settings.DB_SERVER, settings.DB_DATABASE, settings.DB_UID, settings.DB_PWD]):
     # Safely escape ODBC credentials to handle symbols in passwords
     driver_clean = settings.DB_DRIVER.strip("{}")
+    encrypt_val = "yes" if settings.DB_ENCRYPT else "no"
     conn_str = (
         f"Driver={{{driver_clean}}};"
         f"Server={settings.DB_SERVER};"
         f"Database={settings.DB_DATABASE};"
         f"Uid={settings.DB_UID};"
         f"Pwd={settings.DB_PWD};"
-        "Encrypt=yes;"
+        f"Encrypt={encrypt_val};"
         "TrustServerCertificate=yes;"
     )
     quoted_conn_str = urllib.parse.quote_plus(conn_str)

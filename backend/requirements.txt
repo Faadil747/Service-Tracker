@@ -13,8 +13,12 @@ aiofiles>=23.2.1
 python-dotenv>=1.0.0
 email-validator>=2.1.0
 # ── Production database drivers ──────────────────────────────
-# MySQL (async) — used in production. asyncmy ships prebuilt wheels for Linux.
+# MySQL (async) — asyncmy ships prebuilt wheels for Linux.
 asyncmy>=0.2.9
+# MS SQL Server (async via ODBC). Needs the Microsoft ODBC Driver + unixODBC at the
+# OS level — installed by the Dockerfile (Render's native Python runtime can't).
+pyodbc>=5.1.0
+aioodbc>=0.5.0
 # bcrypt is imported directly by auth_service (passlib pulls it in too, but pin it explicitly).
 bcrypt>=4.0.1
 aioodbc>=0.5.0

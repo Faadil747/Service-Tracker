@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-    Sparkles, CheckCircle, Eye, FileText, Plus, X, Trash2, Edit3,
-    ThumbsUp, MessageSquare, Repeat, Send, Search, Globe, Share2
+    Sparkles, CheckCircle, Eye, FileText, Plus, X, Trash2,
+    ThumbsUp, MessageSquare, Repeat, Send, Search, Globe, Share2, Loader2,
+    Image, Calendar
 } from 'lucide-react';
 import { tasksApi, postsApi, aiApi, metricsApi, usersApi, API_BASE_URL } from '../services/api';
 import { useAuthStore } from '../store/authStore';
@@ -390,7 +391,6 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
 
 
     // AI Composer state
-    const [writeMode, setWriteMode] = useState<'manual' | 'ai'>('ai');
     const [aiProvider, setAiProvider] = useState<'deepseek' | 'openrouter/free'>('deepseek');
     const [prompt, setPrompt] = useState('');
     const [manualContent, setManualContent] = useState('');
@@ -408,6 +408,11 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [publishDirectly, setPublishDirectly] = useState(false);
     const [imageUrl, setImageUrl] = useState('');
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [showMediaPopover, setShowMediaPopover] = useState(false);
+    const [showSchedulePopover, setShowSchedulePopover] = useState(false);
+    const [showSettingsPopover, setShowSettingsPopover] = useState(false);
+    const [showAiPromptPopover, setShowAiPromptPopover] = useState(true);
+    const [showModelDropdown, setShowModelDropdown] = useState(false);
     const [reviewComments, setReviewComments] = useState<Record<string, string>>({});
     const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -629,7 +634,6 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
         setPreviewContent(t.post.content);
         setGeneratedContent(t.post.content);
         setManualContent(t.post.content);
-        setWriteMode('manual');
         setPrompt(t.title + (t.description ? `\n\nContext:\n${t.description}` : ''));
         setTone(t.post.tone || 'professional');
         setHashtags(t.post.hashtags || '');
@@ -1749,215 +1753,296 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                         )}
 
                                         <div className="composer-grid">
-                                            {/* LEFT: one cohesive composer card */}
-                                            <div className="comp-card">
-                                                <div className="comp-head">
-                                                    <div className="comp-head-icon"><Sparkles size={18} /></div>
-                                                    <div>
-                                                        <h3>AI Post Composer</h3>
-                                                        <p>Draft, enhance and publish LinkedIn posts — all in one place</p>
+                                            {/* LEFT: LinkedIn-style Post Editor Card */}
+                                            <div className="linkedin-editor-card" style={{ flexGrow: 1, minWidth: 0 }}>
+                                                <div className="linkedin-editor-header">
+                                                    <div className="linkedin-editor-avatar">
+                                                        {post?.created_by_avatar || user?.avatar_url ? (
+                                                            <img src={post?.created_by_avatar || user?.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                                                        ) : (
+                                                            (post?.created_by_name || user?.full_name || 'GO').slice(0, 2).toUpperCase()
+                                                        )}
                                                     </div>
-                                                </div>
-
-                                                {/* Section: AI Configuration & Mode */}
-                                                <div className="comp-sec" style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border)' }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                                        <div>
-                                                            <label className="comp-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                                                <span>AI Model Provider</span>
-                                                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'none' }}>Toggle generation pipeline</span>
-                                                            </label>
-                                                            <div style={{ display: 'flex', gap: 8 }}>
-                                                                <button
-                                                                    type="button"
-                                                                    className={`btn ${aiProvider === 'deepseek' ? 'btn-primary' : 'btn-secondary'}`}
-                                                                    onClick={() => setAiProvider('deepseek')}
-                                                                    style={{ flex: 1, fontSize: '0.78rem', fontWeight: 600, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                                                                >
-                                                                    🤖 DeepSeek R1/Chat
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    className={`btn ${aiProvider === 'openrouter/free' ? 'btn-primary' : 'btn-secondary'}`}
-                                                                    onClick={() => setAiProvider('openrouter/free')}
-                                                                    style={{ flex: 1, fontSize: '0.78rem', fontWeight: 600, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                                                                >
-                                                                    🦙 Llama 3.3 (Free)
-                                                                </button>
-                                                            </div>
-                                                        </div>
+                                                    <div className="linkedin-editor-meta">
+                                                        <div className="linkedin-editor-name">{post?.created_by_name || user?.full_name || 'Administrator'}</div>
                                                         
-                                                        <div>
-                                                            <label className="comp-label" style={{ marginBottom: 6 }}>Composition Mode</label>
-                                                            <div className="seg">
-                                                                <button type="button" className={`seg-btn ${writeMode === 'ai' ? 'active' : ''}`} onClick={() => setWriteMode('ai')}>
-                                                                    <Sparkles size={14} /> Generate with AI
-                                                                </button>
-                                                                <button type="button" className={`seg-btn ${writeMode === 'manual' ? 'active' : ''}`} onClick={() => setWriteMode('manual')}>
-                                                                    <Edit3 size={14} /> Write Manually
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Section: Main Content Input */}
-                                                <div className="comp-sec">
-                                                    {writeMode === 'ai' ? (
-                                                        <>
-                                                            <label className="comp-label">Prompt / Topic</label>
-                                                            <textarea className="textarea" placeholder="Describe what you want to post about… e.g. 'We're hiring Senior React developers in Bangalore, hybrid, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 104, fontSize: '0.85rem' }} />
-                                                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0 14px' }}>
-                                                                {EMOJIS.map(e => <button key={e} type="button" className="chip" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 9px', fontSize: '0.95rem' }}>{e}</button>)}
-                                                            </div>
-                                                            <div style={{ display: 'flex', gap: 10 }}>
-                                                                <button type="button" className="cta" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1 }}>
-                                                                    <Sparkles size={15} /> {generatingAI ? 'Generating…' : aiProvider === 'openrouter/free' ? 'Generate with Llama 3.3' : 'Generate with DeepSeek'}
-                                                                </button>
-                                                                <button type="button" className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-                                                                    <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Enhance'}
-                                                                </button>
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <label className="comp-label">Post Content</label>
-                                                            <textarea
-                                                                className="textarea"
-                                                                placeholder="Write your post here… the preview on the right updates as you type."
-                                                                value={manualContent}
-                                                                onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }}
-                                                                style={{ minHeight: 168, fontSize: '0.86rem' }}
-                                                            />
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', margin: '7px 2px 14px' }}>
-                                                                <span>{manualContent.length} characters</span>
-                                                                <span>{manualContent.length > 3000 ? '⚠️ Too long' : manualContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
-                                                            </div>
-                                                            <button type="button" className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : aiProvider === 'openrouter/free' ? 'Enhance with Llama 3.3' : 'Enhance with DeepSeek'}
+                                                        {/* Model Switcher Dropdown */}
+                                                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                            <button
+                                                                type="button"
+                                                                className="model-dropdown-btn"
+                                                                onClick={() => setShowModelDropdown(!showModelDropdown)}
+                                                            >
+                                                                {aiProvider === 'deepseek' ? '🤖 DeepSeek R1' : '🦙 Llama 3.3'} ▾
                                                             </button>
-                                                        </>
-                                                    )}
-                                                </div>
-
-                                                {/* Section: Optional Generation Settings */}
-                                                {writeMode === 'ai' && (
-                                                    <div className="comp-sec" style={{ borderTop: '1px solid var(--border)' }}>
-                                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                            <span>⚙️ Styling & Formatting (Optional)</span>
-                                                        </div>
-                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
-                                                            <div>
-                                                                <label className="comp-label">Post Type</label>
-                                                                <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.82rem' }}>
-                                                                    {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
-                                                                </select>
-                                                            </div>
-                                                            <div>
-                                                                <label className="comp-label">Tone</label>
-                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                                                    {TONES.map(t => (
-                                                                        <button key={t} type="button" className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize' }}>{t}</button>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div style={{ marginTop: 16 }}>
-                                                            <label className="comp-label">Hashtags</label>
-                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                                                                {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
-                                                                    <button key={h} type="button" className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())}>{h}</button>
-                                                                ))}
-                                                            </div>
-                                                            <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.82rem' }} />
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Section: schedule + media */}
-                                                <div className="comp-sec">
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                                                        <div>
-                                                            <label className="comp-label">Schedule</label>
-                                                            <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} style={{ fontSize: '0.8rem' }} />
-                                                        </div>
-                                                        <div>
-                                                            <label className="comp-label">Media (optional)</label>
-                                                            {imageUrl ? (
-                                                                <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
-                                                                    <img src={imageUrl} alt="media" style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 8, border: '1px solid var(--border)', display: 'block', objectFit: 'contain' }} />
-                                                                    <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: 3 }}>
-                                                                        <X size={11} />
+                                                            {showModelDropdown && (
+                                                                <div className="model-dropdown-menu">
+                                                                    <button
+                                                                        type="button"
+                                                                        className={`model-dropdown-item ${aiProvider === 'deepseek' ? 'active' : ''}`}
+                                                                        onClick={() => { setAiProvider('deepseek'); setShowModelDropdown(false); }}
+                                                                    >
+                                                                        🤖 DeepSeek R1/Chat
                                                                     </button>
-                                                                </div>
-                                                            ) : (
-                                                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                                    <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
-                                                                        {uploadingImage ? 'Uploading…' : '📎 Upload'}
-                                                                        <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
-                                                                            onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
-                                                                    </label>
-                                                                    <input className="input" placeholder="or paste URL" style={{ flex: 1, fontSize: '0.74rem' }}
-                                                                        onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
+                                                                    <button
+                                                                        type="button"
+                                                                        className={`model-dropdown-item ${aiProvider === 'openrouter/free' ? 'active' : ''}`}
+                                                                        onClick={() => { setAiProvider('openrouter/free'); setShowModelDropdown(false); }}
+                                                                    >
+                                                                        🦙 Llama 3.3 (Free)
+                                                                    </button>
                                                                 </div>
                                                             )}
                                                         </div>
                                                     </div>
                                                 </div>
 
-                                                {/* Section: LinkedIn Link Input (only when task-based & post exists) */}
-                                                {selectedTaskId && post && (
-                                                    <div className="comp-sec">
-                                                        <label className="comp-label">LinkedIn Post Link</label>
-                                                        <div style={{ display: 'flex', gap: 10 }}>
-                                                            <input
-                                                                className="input"
-                                                                placeholder="https://www.linkedin.com/feed/update/urn:li:share:..."
-                                                                value={editingLinkUrl}
-                                                                onChange={e => setEditingLinkUrl(e.target.value)}
-                                                                style={{ fontSize: '0.82rem' }}
+                                                <div className="linkedin-editor-body">
+                                                    {/* Popover 1: AI Prompt Input (Generate) */}
+                                                    {showAiPromptPopover && (
+                                                        <div className="editor-popover">
+                                                            <div className="editor-popover-title">
+                                                                <span>🤖 Ask AI to Write</span>
+                                                                <button type="button" className="editor-popover-close" onClick={() => setShowAiPromptPopover(false)}>✕</button>
+                                                            </div>
+                                                            <textarea
+                                                                className="textarea"
+                                                                placeholder="Describe what you want the AI to write about..."
+                                                                value={prompt}
+                                                                onChange={e => setPrompt(e.target.value)}
+                                                                style={{ minHeight: 70, fontSize: '0.85rem', marginBottom: 8 }}
                                                             />
+                                                            {/* Floating Emoji Dock */}
+                                                            <div className="emoji-dock" style={{ margin: '4px 0 10px' }}>
+                                                                {EMOJIS.map(e => (
+                                                                    <button key={e} type="button" className="emoji-dock-btn" onClick={() => setPrompt(p => p + e)}>
+                                                                        {e}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
                                                             <button
-                                                                className="btn btn-primary"
-                                                                onClick={() => handleSaveLinkedInLink(editingLinkUrl)}
-                                                                style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                                                                type="button"
+                                                                className={`cta ${aiProvider === 'openrouter/free' ? 'cta-llama' : 'cta-ds'}`}
+                                                                onClick={handleGenerateAI}
+                                                                disabled={generatingAI || !prompt}
                                                             >
-                                                                Save
+                                                                {generatingAI ? (
+                                                                    <>
+                                                                        <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                                                                        <span>Writing post...</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Sparkles size={16} />
+                                                                        <span>{aiProvider === 'openrouter/free' ? 'Write with Llama 3.3' : 'Write with DeepSeek'}</span>
+                                                                    </>
+                                                                )}
                                                             </button>
                                                         </div>
-                                                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8 }}>
-                                                            Paste the LinkedIn post URL here to complete the task and enable metrics syncing.
-                                                        </p>
-                                                    </div>
-                                                )}
-
-                                                {/* Footer: publish options + CTA */}
-                                                <div className="comp-foot">
-                                                    {isAdmin && (
-                                                        <label className="switch" style={{ marginBottom: 14 }}>
-                                                            <input type="checkbox" checked={publishDirectly} onChange={e => setPublishDirectly(e.target.checked)} />
-                                                            <span className="track" />
-                                                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🚀 Publish directly to LinkedIn</span>
-                                                        </label>
                                                     )}
-                                                    {(() => {
-                                                        const isApproved = post?.status === 'approved';
-                                                        if (isApproved && !isAdmin) {
+
+                                                    {/* Popover 2: Media Adding */}
+                                                    {showMediaPopover && (
+                                                        <div className="editor-popover">
+                                                            <div className="editor-popover-title">
+                                                                <span>🖼️ Add Media (Photo / Video)</span>
+                                                                <button type="button" className="editor-popover-close" onClick={() => setShowMediaPopover(false)}>✕</button>
+                                                            </div>
+                                                             {imageUrl ? (
+                                                                 <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                                                                     <img src={imageUrl} alt="media" style={{ maxWidth: '100%', maxHeight: 100, borderRadius: 8, border: '1px solid #ddd', objectFit: 'contain' }} />
+                                                                     <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: 3 }}>
+                                                                         <X size={11} />
+                                                                     </button>
+                                                                 </div>
+                                                             ) : (
+                                                                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                                                                     <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0 }}>
+                                                                         {uploadingImage ? 'Uploading…' : '📎 Choose File'}
+                                                                         <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
+                                                                             onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
+                                                                     </label>
+                                                                     <input className="input" placeholder="or paste Image URL" style={{ flex: 1 }}
+                                                                         onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
+                                                                 </div>
+                                                             )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Popover 3: Schedule */}
+                                                    {showSchedulePopover && (
+                                                        <div className="editor-popover">
+                                                            <div className="editor-popover-title">
+                                                                <span>📅 Schedule Post</span>
+                                                                <button type="button" className="editor-popover-close" onClick={() => setShowSchedulePopover(false)}>✕</button>
+                                                            </div>
+                                                            <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
+                                                        </div>
+                                                    )}
+
+                                                    {/* Popover 4: Advanced Settings (Post Type / Tone / Hashtags) */}
+                                                    {showSettingsPopover && (
+                                                        <div className="editor-popover">
+                                                            <div className="editor-popover-title">
+                                                                <span>⚙️ Post Options & Tone</span>
+                                                                <button type="button" className="editor-popover-close" onClick={() => setShowSettingsPopover(false)}>✕</button>
+                                                            </div>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 12, marginBottom: 12 }}>
+                                                                <div>
+                                                                    <label className="comp-label">Post Type</label>
+                                                                    <select className="select" value={postType} onChange={e => setPostType(e.target.value)}>
+                                                                        {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="comp-label">Tone</label>
+                                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                                                        {TONES.map(t => (
+                                                                            <button key={t} type="button" className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize', padding: '3px 8px', fontSize: '0.7rem' }}>{t}</button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <label className="comp-label">Hashtags</label>
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+                                                                    {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
+                                                                        <button key={h} type="button" className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())} style={{ padding: '3px 8px', fontSize: '0.7rem' }}>{h}</button>
+                                                                    ))}
+                                                                </div>
+                                                                <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} />
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Main Text Editor Area */}
+                                                    <div style={{ marginTop: (showAiPromptPopover || showMediaPopover || showSchedulePopover || showSettingsPopover) ? 16 : 0, display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+                                                        <label className="comp-label">Edit Post Content</label>
+                                                        <textarea
+                                                            className="linkedin-editor-textarea"
+                                                            placeholder="What do you want to talk about?"
+                                                            value={manualContent}
+                                                            onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }}
+                                                            style={{ minHeight: '220px' }}
+                                                        />
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8 }}>
+                                                            <span>{manualContent.length} characters</span>
+                                                            <span>{manualContent.length > 3000 ? '⚠️ Too long' : '✅ Good length'}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* LinkedIn Editor Toolbar */}
+                                                <div className="linkedin-editor-toolbar">
+                                                    <div className="toolbar-left">
+                                                        {/* AI Generator Button */}
+                                                        <button
+                                                            type="button"
+                                                            className={`toolbar-btn ${showAiPromptPopover ? 'active' : ''}`}
+                                                            onClick={() => {
+                                                                setShowAiPromptPopover(!showAiPromptPopover);
+                                                                setShowMediaPopover(false);
+                                                                setShowSchedulePopover(false);
+                                                                setShowSettingsPopover(false);
+                                                            }}
+                                                            title="Ask AI to Write"
+                                                        >
+                                                            <Sparkles size={18} />
+                                                        </button>
+
+                                                        {/* Media Button */}
+                                                        <button
+                                                            type="button"
+                                                            className={`toolbar-btn ${showMediaPopover ? 'active' : ''}`}
+                                                            onClick={() => {
+                                                                setShowMediaPopover(!showMediaPopover);
+                                                                setShowAiPromptPopover(false);
+                                                                setShowSchedulePopover(false);
+                                                                setShowSettingsPopover(false);
+                                                            }}
+                                                            title="Add Photo / Video"
+                                                        >
+                                                            <Image size={18} />
+                                                        </button>
+
+                                                        {/* Schedule Button */}
+                                                        <button
+                                                            type="button"
+                                                            className={`toolbar-btn ${showSchedulePopover ? 'active' : ''}`}
+                                                            onClick={() => {
+                                                                 setShowSchedulePopover(!showSchedulePopover);
+                                                                 setShowAiPromptPopover(false);
+                                                                 setShowMediaPopover(false);
+                                                                 setShowSettingsPopover(false);
+                                                            }}
+                                                            title="Schedule"
+                                                        >
+                                                            <Calendar size={18} />
+                                                        </button>
+
+                                                        {/* Post Configuration Settings Button */}
+                                                        <button
+                                                            type="button"
+                                                            className={`toolbar-btn ${showSettingsPopover ? 'active' : ''}`}
+                                                            onClick={() => {
+                                                                setShowSettingsPopover(!showSettingsPopover);
+                                                                setShowAiPromptPopover(false);
+                                                                setShowMediaPopover(false);
+                                                                setShowSchedulePopover(false);
+                                                            }}
+                                                            title="Settings"
+                                                        >
+                                                            <FileText size={18} />
+                                                        </button>
+
+                                                        {/* Enhance Post Action Button */}
+                                                        <button
+                                                            type="button"
+                                                            className="enhance-pill-btn"
+                                                            onClick={handleEnhanceAI}
+                                                            disabled={enhancingAI || !manualContent}
+                                                        >
+                                                            {enhancingAI ? (
+                                                                <>
+                                                                    <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                                                                    <span>Enhancing...</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Sparkles size={13} />
+                                                                    <span>Enhance post</span>
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Publish / Action button */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                        {isAdmin && (
+                                                            <label className="switch" style={{ margin: 0 }}>
+                                                                <input type="checkbox" checked={publishDirectly} onChange={e => setPublishDirectly(e.target.checked)} />
+                                                                <span className="track" />
+                                                                <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Publish directly</span>
+                                                            </label>
+                                                        )}
+                                                        {(() => {
+                                                            const isApproved = post?.status === 'approved';
+                                                            if (isApproved && !isAdmin) {
+                                                                return (
+                                                                    <button className="btn btn-primary" onClick={handlePublishLive} disabled={savingPost} style={{ borderRadius: '20px', padding: '6px 18px', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                                        {savingPost ? 'Publishing...' : '🚀 Publish Live'}
+                                                                    </button>
+                                                                );
+                                                            }
                                                             return (
-                                                                <button className="cta" onClick={handlePublishLive} disabled={savingPost}>
-                                                                    {savingPost ? 'Publishing...' : '🚀 Publish Live on LinkedIn'}
+                                                                <button className="btn btn-primary" onClick={handlePublishPost} disabled={savingPost || !previewContent} style={{ borderRadius: '20px', padding: '6px 18px', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                                    {savingPost ? 'Processing…' : publishDirectly ? '🚀 Publish' : isAdmin ? '✓ Save & Approve' : '📤 Submit'}
                                                                 </button>
                                                             );
-                                                        }
-                                                        return (
-                                                            <button className="cta" onClick={handlePublishPost} disabled={savingPost || !previewContent}>
-                                                                {savingPost ? 'Processing…' : publishDirectly ? '🚀 Publish to LinkedIn' : isAdmin ? '✓ Save & Approve' : '📤 Submit for Review'}
-                                                            </button>
-                                                        );
-                                                    })()}
+                                                        })()}
+                                                    </div>
                                                 </div>
                                             </div>
-
                                             {/* RIGHT: LinkedIn live preview — sticky */}
                                             <div className="composer-preview">
                                                 <div className="preview-head">

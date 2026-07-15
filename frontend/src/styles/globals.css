@@ -1862,3 +1862,462 @@ a {
 .key-field-input > .key-input-wrap { position: relative; flex: 1; min-width: 0; }
 .settings-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); display: flex; }
 .settings-card-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+/* ─── LinkedIn-style Post Editor Redesign ──────────────────────────────── */
+.linkedin-editor-card {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.linkedin-editor-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #f3f3f3;
+}
+
+.linkedin-editor-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #0a66c2;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+
+.linkedin-editor-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.linkedin-editor-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #191919;
+}
+
+.linkedin-editor-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.linkedin-editor-textarea {
+  border: none !important;
+  resize: none !important;
+  outline: none !important;
+  width: 100%;
+  min-height: 200px;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: #191919;
+  font-family: inherit;
+  padding: 0;
+  background: transparent;
+}
+
+.linkedin-editor-textarea::placeholder {
+  color: #757575;
+}
+
+.linkedin-editor-toolbar {
+  padding: 12px 20px;
+  background: #ffffff;
+  border-top: 1px solid #f3f3f3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-btn {
+  background: transparent;
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toolbar-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #191919;
+}
+
+.toolbar-btn.active {
+  background: rgba(10, 102, 194, 0.08);
+  color: #0a66c2;
+}
+
+.enhance-pill-btn {
+  border: 1px solid #0a66c2;
+  background: #ffffff;
+  color: #0a66c2;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.enhance-pill-btn:hover:not(:disabled) {
+  background: rgba(10, 102, 194, 0.04);
+  box-shadow: 0 0 0 1px #0a66c2;
+}
+
+.enhance-pill-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editor-popover {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 12px;
+  animation: slideDown 0.2s ease-out;
+}
+
+.editor-popover-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.editor-popover-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.editor-popover-close:hover {
+  color: var(--text-primary);
+}
+
+/* Model selector item dropdown styles */
+.model-dropdown-btn {
+  background: #f3f6f8;
+  border: 1px solid #d0d0d0;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #666666;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.model-dropdown-btn:hover {
+  background: #eef3f8;
+  border-color: #0a66c2;
+  color: #0a66c2;
+}
+
+.model-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  z-index: 100;
+  min-width: 170px;
+  box-shadow: var(--shadow-md);
+  margin-top: 4px;
+  overflow: hidden;
+  animation: slideDown 0.15s ease-out;
+}
+
+.model-dropdown-item {
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-dropdown-item:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.model-dropdown-item.active {
+  background: var(--accent-glow);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+
+/* ─── Premium AI Workspace Redesign ────────────────────────────────────── */
+.workspace-card-themed {
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+/* DeepSeek active card theme */
+.workspace-card-themed.theme-deepseek {
+  border-color: rgba(37, 99, 235, 0.3);
+  box-shadow: 0 12px 30px -10px rgba(37, 99, 235, 0.12), var(--shadow-sm);
+}
+.workspace-card-themed.theme-deepseek .comp-head {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+}
+
+/* Llama 3.3 active card theme */
+.workspace-card-themed.theme-llama {
+  border-color: rgba(124, 58, 237, 0.3);
+  box-shadow: 0 12px 30px -10px rgba(124, 58, 237, 0.12), var(--shadow-sm);
+}
+.workspace-card-themed.theme-llama .comp-head {
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%);
+}
+
+/* Custom Model Toggle Dock */
+.model-toggle-dock {
+  display: flex;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  gap: 4px;
+}
+
+.model-toggle-item {
+  flex: 1;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+}
+
+.model-toggle-item:hover:not(.active) {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.model-toggle-item.active-ds {
+  background: #ffffff;
+  color: #2563eb;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.1);
+}
+
+.model-toggle-item.active-llama {
+  background: #ffffff;
+  color: #7c3aed;
+  box-shadow: 0 4px 10px rgba(124, 58, 237, 0.1);
+}
+
+/* Interactive Emoji Dock */
+.emoji-dock {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.emoji-dock-btn {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.emoji-dock-btn:hover {
+  transform: scale(1.22) translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+}
+
+.emoji-dock-btn:active {
+  transform: scale(0.95);
+}
+
+/* Advanced Options Toggle Link */
+.advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  transition: all var(--transition-fast);
+  margin-top: 8px;
+}
+
+.advanced-toggle:hover {
+  background: #e2e8f0;
+  color: var(--text-primary);
+}
+
+.advanced-section-wrapper {
+  overflow: hidden;
+  transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+
+/* Interactive buttons and CTAs */
+.cta-ds {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 6px 20px -4px rgba(37, 99, 235, 0.4);
+}
+.cta-ds:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  box-shadow: 0 10px 24px -4px rgba(37, 99, 235, 0.5);
+  transform: translateY(-1.5px);
+}
+
+.cta-llama {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  box-shadow: 0 6px 20px -4px rgba(124, 58, 237, 0.4);
+}
+.cta-llama:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+  box-shadow: 0 10px 24px -4px rgba(124, 58, 237, 0.5);
+  transform: translateY(-1.5px);
+}
+
+.enhance-btn {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  color: var(--text-secondary);
+  font-weight: 600;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.enhance-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  color: var(--text-primary);
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+.enhance-btn.active-ds {
+  color: #2563eb;
+  border-color: #2563eb;
+}
+.enhance-btn.active-ds:hover {
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.enhance-btn.active-llama {
+  color: #7c3aed;
+  border-color: #7c3aed;
+}
+.enhance-btn.active-llama:hover {
+  background: rgba(124, 58, 237, 0.04);
+}
+
+/* LinkedIn action button overrides */
+.linkedin-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #666666;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.linkedin-action-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #191919;
+}
+
+.linkedin-action-btn.active-like {
+  color: #0a66c2;
+}
+.linkedin-action-btn.active-like:hover {
+  background: rgba(10, 102, 194, 0.08);
+}
+
+.linkedin-action-btn.active-repost {
+  color: #059669;
+}
+.linkedin-action-btn.active-repost:hover {
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.linkedin-action-btn.active-send {
+  color: #2563eb;
+}
+.linkedin-action-btn.active-send:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+

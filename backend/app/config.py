@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     DEEPSEEK_MODEL: str = "deepseek-chat"  # one-line config swap
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
 
+    # AI — OpenRouter
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_MODEL_ID: str = "meta-llama/llama-3.3-70b-instruct:free"
+
     # LinkedIn OAuth
     LINKEDIN_CLIENT_ID: str = ""
     LINKEDIN_CLIENT_SECRET: str = ""

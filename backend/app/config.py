@@ -25,11 +25,17 @@ class Settings(BaseSettings):
     DB_UID: Optional[str] = None
     DB_PWD: Optional[str] = None
     DB_DRIVER: Optional[str] = "ODBC Driver 18 for SQL Server"
+    DB_ENCRYPT: bool = True
 
     # AI — DeepSeek
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_MODEL: str = "deepseek-chat"  # one-line config swap
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+
+    # AI — OpenRouter
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_MODEL_ID: str = "meta-llama/llama-3.3-70b-instruct:free"
 
     # LinkedIn OAuth
     LINKEDIN_CLIENT_ID: str = ""
@@ -81,9 +87,16 @@ class Settings(BaseSettings):
     # Feature flags
     DEV_MODE: bool = True  # enables sandbox / mock data endpoints
 
+    # Admin bootstrap
+    ADMIN_EMAIL: str = ""
+    ADMIN_PASSWORD: str = ""
+    ADMIN_NAME: str = "Administrator"
+    ADMIN_RESET: bool = False
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 settings = Settings()

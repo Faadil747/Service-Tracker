@@ -56,14 +56,19 @@ async def list_posts(
     db: AsyncSession = Depends(get_db),
 ):
     q = select(Post).options(joinedload(Post.creator))
-    if current_user.role == "agent":
-        q = q.where(Post.created_by_id == current_user.id)
+    if is_template:
+        # The template Library is a shared team resource — everyone sees every
+        # template (no per-agent scoping), so saved templates are reusable by all.
+        q = q.where(Post.is_template == True)
+    else:
+        # Keep templates out of the normal post lists (kanban / published / etc.).
+        q = q.where(Post.is_template == False)
+        if current_user.role == "agent":
+            q = q.where(Post.created_by_id == current_user.id)
     if status:
         q = q.where(Post.status == status)
     if region and region != "Global":
         q = q.where(Post.region == region)
-    if is_template is not None:
-        q = q.where(Post.is_template == is_template)
     q = q.order_by(Post.created_at.desc())
     result = await db.execute(q)
     posts = result.scalars().all()
@@ -78,6 +83,35 @@ async def create_post(
 ):
     sched = datetime.fromisoformat(req.scheduled_at) if req.scheduled_at else None
     is_admin = current_user.role == "admin"
+
+    # Templates are library entries, not workflow posts: save straight to the
+    # shared Library with no task linkage, no review notifications, and out of the
+    # kanban board (status stays draft; the list/kanban queries filter templates).
+    if req.is_template:
+        post = Post(
+            id=str(uuid.uuid4()),
+            title=req.title,
+            content=req.content,
+            post_type=req.post_type,
+            region=req.region,
+            tone=req.tone,
+            hashtags=req.hashtags,
+            image_url=req.image_url or "",
+            is_template=True,
+            created_by_id=current_user.id,
+            status=PostStatus.draft,
+        )
+        post.creator = current_user
+        db.add(post)
+        db.add(ActivityLog(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            action="save_template",
+            entity_type="post",
+            entity_id=post.id,
+        ))
+        await db.commit()
+        return _post_dict(post)
 
     # Resolve the requested status safely.
     requested = None
@@ -634,7 +668,7 @@ async def kanban_board(
     statuses = ["draft", "rejected", "in_review", "approved", "scheduled"]
     board = {}
     for s in statuses:
-        q = select(Post).options(joinedload(Post.creator)).where(Post.status == s)
+        q = select(Post).options(joinedload(Post.creator)).where(Post.status == s, Post.is_template == False)
         if region and region != "Global":
             q = q.where(Post.region == region)
         if current_user.role == "agent":

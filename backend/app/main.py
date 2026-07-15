@@ -56,16 +56,19 @@ async def lifespan(app: FastAPI):
         from app.database import AsyncSessionLocal
         from app.models import User
         from app.services.auth_service import hash_password
-        _admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
-        _admin_pw = os.getenv("ADMIN_PASSWORD", "").strip()
-        _admin_reset = os.getenv("ADMIN_RESET", "").strip().lower() in ("1", "true", "yes")
+        from app.config import settings as _settings
+        # Read from settings so it works both locally (.env via pydantic) and in
+        # production (real env vars). os.getenv alone doesn't see the local .env.
+        _admin_email = (_settings.ADMIN_EMAIL or os.getenv("ADMIN_EMAIL", "")).strip().lower()
+        _admin_pw = (_settings.ADMIN_PASSWORD or os.getenv("ADMIN_PASSWORD", "")).strip()
+        _admin_reset = bool(_settings.ADMIN_RESET) or os.getenv("ADMIN_RESET", "").strip().lower() in ("1", "true", "yes")
         if _admin_email and _admin_pw:
             async with AsyncSessionLocal() as _db:
                 _existing = (await _db.execute(select(User).where(User.email == _admin_email))).scalar_one_or_none()
                 if _existing is None:
                     _db.add(User(
                         id=str(_uuid.uuid4()), email=_admin_email,
-                        full_name=os.getenv("ADMIN_NAME", "Administrator").strip() or "Administrator",
+                        full_name=(_settings.ADMIN_NAME or "Administrator").strip() or "Administrator",
                         hashed_password=hash_password(_admin_pw), role="admin", region="Global", is_active=True,
                     ))
                     await _db.commit()

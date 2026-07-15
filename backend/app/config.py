@@ -81,9 +81,16 @@ class Settings(BaseSettings):
     # Feature flags
     DEV_MODE: bool = True  # enables sandbox / mock data endpoints
 
+    # First-admin bootstrap (read from .env locally + real env vars in prod).
+    ADMIN_EMAIL: str = ""
+    ADMIN_PASSWORD: str = ""
+    ADMIN_NAME: str = "Administrator"
+    ADMIN_RESET: bool = False  # set true to reset the admin's password on next boot
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # tolerate extra .env vars (ADMIN_*, OPENROUTER_*, etc.) instead of crashing
 
 
 settings = Settings()

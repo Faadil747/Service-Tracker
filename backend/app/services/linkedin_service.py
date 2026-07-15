@@ -157,6 +157,60 @@ def _get_refresh_lock() -> asyncio.Lock:
     return _refresh_lock
 
 
+async def seed_snapshot_from_db() -> None:
+    """Seed the in-memory snapshot from the most recent FollowerSnapshot row.
+
+    Render's free tier has an EPHEMERAL filesystem, so the on-disk cache is wiped
+    on every restart/redeploy. Without this, after a cold start the dashboard and
+    the whole "Detailed Analytics" section go blank until the next successful live
+    sync — and LinkedIn day-throttles the stats endpoints, so that can be hours.
+    Seeding from the durable DB means: (1) real numbers show immediately, and
+    (2) the daily-persist path has a real 'followers' value to carry forward so
+    the daily trend keeps accumulating instead of leaving gap days. Marked stale
+    so the UI never presents old data as a fresh live reading.
+    """
+    global _SNAPSHOT, _LAST_FETCH_TS
+    if _SNAPSHOT:  # disk cache or a live fetch already populated it
+        return
+    try:
+        from app.database import AsyncSessionLocal
+        from app.models import FollowerSnapshot
+        from sqlalchemy import select, desc
+
+        async with AsyncSessionLocal() as session:
+            row = (await session.execute(
+                select(FollowerSnapshot).order_by(desc(FollowerSnapshot.snapshot_date))
+            )).scalars().first()
+        if row is None or not row.followers:
+            return
+        _SNAPSHOT = {
+            "followers": int(row.followers or 0),
+            "organic_followers": int(row.organic_followers or 0),
+            "paid_followers": int(row.paid_followers or 0),
+            "impressions": int(row.impressions or 0),
+            "unique_impressions": int(row.unique_impressions or 0),
+            "clicks": int(row.clicks or 0),
+            "likes": int(row.likes or 0),
+            "comments": int(row.comments or 0),
+            "shares": int(row.shares or 0),
+            "visitors": int(row.visitors or 0),
+            "engagement_rate": float(row.engagement_rate or 0.0),
+            "_meta": {
+                "available": True,
+                "served_from_db": True,
+                "stale": True,
+                "snapshot_date": str(row.snapshot_date),
+                "last_updated": row.updated_at.isoformat() if getattr(row, "updated_at", None) else None,
+            },
+        }
+        # Conservative: keep _LAST_FETCH_TS at 0 so the sync debounce never treats
+        # this stale DB seed as a recent live fetch and suppresses the next sync.
+        _LAST_FETCH_TS = 0.0
+        print(f"[LinkedIn] seeded in-memory snapshot from DB row {row.snapshot_date}")
+    except Exception as e:
+        print(f"[LinkedIn] snapshot DB-seed failed: {e}")
+
+
 class LinkedInService:
     def __init__(self):
         self.base_url = "https://api.linkedin.com/rest"
@@ -469,6 +523,13 @@ class LinkedInService:
             "engagement_rate": float(snap.get("engagement_rate") or 0.0),
         }
 
+        # Cumulative lifetime totals must never regress to 0: a throttled/partial
+        # fetch that yields 0 for one of these must NOT overwrite a real value we
+        # already recorded today, or the day-over-day delta charts get corrupted
+        # (a spurious 0 makes the next real reading look like a giant one-day spike).
+        _CUMULATIVE = {"followers", "organic_followers", "paid_followers", "impressions",
+                       "unique_impressions", "clicks", "likes", "comments", "shares"}
+
         today = date.today()
         async with AsyncSessionLocal() as session:
             result = await session.execute(
@@ -477,11 +538,18 @@ class LinkedInService:
             row = result.scalar_one_or_none()
             if row is None:
                 session.add(FollowerSnapshot(snapshot_date=today, **fields))
-            elif any(getattr(row, k) != v for k, v in fields.items()):
-                for k, v in fields.items():
-                    setattr(row, k, v)
             else:
-                return  # unchanged — nothing to write
+                changed = False
+                for k, v in fields.items():
+                    cur = getattr(row, k)
+                    # Keep the existing real value instead of zeroing it out.
+                    if k in _CUMULATIVE and (v or 0) == 0 and (cur or 0) > 0:
+                        continue
+                    if cur != v:
+                        setattr(row, k, v)
+                        changed = True
+                if not changed:
+                    return  # unchanged — nothing to write
             await session.commit()
 
     # ── individual fetchers (raise _Throttled on 429, _TokenExpired on 401) ──

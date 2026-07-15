@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     # tracker. Set to the deployed API domain in production.
     BACKEND_PUBLIC_URL: str = "http://localhost:8000"
 
+    # Secret for the external daily-sync cron hook (POST /api/metrics/daily-sync).
+    # On hosts that sleep when idle (Render free tier), an in-process scheduler
+    # can't guarantee a snapshot every day — point an external cron (Render Cron,
+    # GitHub Actions, cron-job.org) at that endpoint with ?secret=<this> to record
+    # today's snapshot and keep the instance awake. Empty ⇒ the endpoint is disabled.
+    CRON_SECRET: str = ""
+
     # Feature flags
     DEV_MODE: bool = True  # enables sandbox / mock data endpoints
 

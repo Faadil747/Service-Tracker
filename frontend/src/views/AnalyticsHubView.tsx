@@ -171,7 +171,9 @@ export const AnalyticsHubView: React.FC<Props> = ({ region, embedded = false }) 
             impressions: impressionsDelta,
         });
     }
-    const hasTrend = trendDeltas.length >= 1;
+    // Require >=2 REAL snapshots (not gap-filled carry-forward rows) before
+    // showing a daily trend — otherwise the chart is a misleading flat line of 0s.
+    const hasTrend = (dailyTrend?.snapshot_count || 0) >= 2;
 
     const TrendChart = ({ title, keyName, color, sub }: { title: string; keyName: string; color: string; sub: string }) => (
         <div className="chart-container">

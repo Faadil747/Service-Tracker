@@ -1091,7 +1091,11 @@ export const DashboardView: React.FC<{ region: string }> = ({ region }) => {
 
                         {(() => {
                             const t = dailyTrend?.trend || [];
-                            if (t.length < 2) {
+                            // Gate on REAL snapshots, not the gap-filled series length:
+                            // the trend now carries days forward to stay continuous, so
+                            // t.length can be >=2 from a single real sync. Needs >=2 real
+                            // days to show a genuine day-over-day trend (else it's a flat 0).
+                            if ((dailyTrend?.snapshot_count || 0) < 2) {
                                 return (
                                     <div className="glass-card" style={{ padding: 22, textAlign: 'center' }}>
                                         <div style={{ fontSize: '1.4rem', marginBottom: 8 }}>📅</div>

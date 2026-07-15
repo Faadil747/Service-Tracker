@@ -16,6 +16,7 @@ Anything LinkedIn will not give us with the current token (per-post
 likes/comments → 403, day-by-day history → unsupported in this API version) is
 simply reported as unavailable rather than filled with random data.
 """
+import asyncio
 import json
 import os
 import time
@@ -101,6 +102,61 @@ def _load_persisted_token() -> None:
         print(f"[LinkedIn] token load failed: {e}")
 
 
+async def _persist_refreshed_token_to_db(access_token: str, refresh_token: str) -> None:
+    """Persist rotated tokens to the DURABLE ApiConfig table.
+
+    The on-disk _TOKEN_FILE is ephemeral on hosts like Render — it's wiped on
+    every restart/redeploy. LinkedIn ROTATES the refresh token on each exchange,
+    so after a restart the disk file is gone and the app falls back to the stale
+    .env refresh token that LinkedIn already invalidated → the next refresh fails
+    and the integration goes dark. That was the #1 loophole behind "tokens expire
+    very fast". Writing to ApiConfig (reloaded at startup by
+    load_api_configs_into_settings) keeps the rotated tokens across restarts.
+    """
+    import uuid
+    try:
+        from app.database import AsyncSessionLocal
+        from app.models import ApiConfig
+        from sqlalchemy import select
+
+        pairs = [("LINKEDIN_ACCESS_TOKEN", access_token)]
+        if refresh_token:
+            pairs.append(("LINKEDIN_REFRESH_TOKEN", refresh_token))
+        async with AsyncSessionLocal() as session:
+            for key, val in pairs:
+                if not val:
+                    continue
+                row = (await session.execute(
+                    select(ApiConfig).where(ApiConfig.key_name == key)
+                )).scalar_one_or_none()
+                if row:
+                    row.value_encrypted = val
+                else:
+                    session.add(ApiConfig(
+                        id=str(uuid.uuid4()), key_name=key, value_encrypted=val,
+                        description="auto-rotated by LinkedIn token refresh",
+                    ))
+            await session.commit()
+    except Exception as e:
+        print(f"[LinkedIn] token DB-persist failed: {e}")
+
+
+# Serialize token refreshes. LinkedIn rotates the refresh token on every use, so
+# two concurrent refreshes would each try to spend the same refresh token — the
+# second reuses an already-consumed token and fails, breaking the chain. A lock
+# (plus a double-check inside it) guarantees exactly one refresh per expiry.
+_refresh_lock: Optional[asyncio.Lock] = None
+
+
+def _get_refresh_lock() -> asyncio.Lock:
+    # Lazily created so it binds to the running event loop; the getter has no
+    # await point, so this is race-free between coroutines.
+    global _refresh_lock
+    if _refresh_lock is None:
+        _refresh_lock = asyncio.Lock()
+    return _refresh_lock
+
+
 class LinkedInService:
     def __init__(self):
         self.base_url = "https://api.linkedin.com/rest"
@@ -125,47 +181,61 @@ class LinkedInService:
             headers.update(extra)
         return headers
 
-    async def _refresh_access_token(self) -> bool:
+    async def _refresh_access_token(self, stale_token: Optional[str] = None) -> bool:
         """Exchange the refresh token for a fresh access token so the integration
         keeps working when LinkedIn's 60-day access token expires. Updates the
-        in-memory token (and rotated refresh token) and returns True on success.
-        A no-op returning False when no refresh token / client creds are set."""
-        rt = settings.LINKEDIN_REFRESH_TOKEN
-        if not (rt and settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET):
+        in-memory token (and rotated refresh token), persists both to disk AND
+        the durable DB, and returns True on success. A no-op returning False when
+        no refresh token / client creds are set.
+
+        `stale_token` is the access token that just 401'd; passing it lets us
+        skip the network call when another coroutine already refreshed while we
+        were queued on the lock (LinkedIn rotates the refresh token per use, so a
+        redundant second refresh would fail on an already-spent token)."""
+        if not (settings.LINKEDIN_REFRESH_TOKEN and settings.LINKEDIN_CLIENT_ID and settings.LINKEDIN_CLIENT_SECRET):
             return False
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    "https://www.linkedin.com/oauth/v2/accessToken",
-                    data={
-                        "grant_type": "refresh_token",
-                        "refresh_token": rt,
-                        "client_id": settings.LINKEDIN_CLIENT_ID,
-                        "client_secret": settings.LINKEDIN_CLIENT_SECRET,
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-            if resp.status_code == 200:
-                d = resp.json()
-                new_token = d.get("access_token")
-                if new_token:
-                    settings.LINKEDIN_ACCESS_TOKEN = new_token
-                    if d.get("refresh_token"):
-                        settings.LINKEDIN_REFRESH_TOKEN = d["refresh_token"]
-                    _persist_refreshed_token(new_token, settings.LINKEDIN_REFRESH_TOKEN)
-                    print("[LinkedIn] access token refreshed successfully")
-                    return True
-            print(f"[LinkedIn] token refresh failed: HTTP {resp.status_code} {resp.text[:160]}")
-        except Exception as e:
-            print(f"[LinkedIn] token refresh error: {e}")
+        async with _get_refresh_lock():
+            # Another coroutine may have refreshed while we waited for the lock.
+            if stale_token and settings.LINKEDIN_ACCESS_TOKEN != stale_token:
+                return True
+            rt = settings.LINKEDIN_REFRESH_TOKEN  # re-read: a prior refresh may have rotated it
+            if not rt:
+                return False
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(
+                        "https://www.linkedin.com/oauth/v2/accessToken",
+                        data={
+                            "grant_type": "refresh_token",
+                            "refresh_token": rt,
+                            "client_id": settings.LINKEDIN_CLIENT_ID,
+                            "client_secret": settings.LINKEDIN_CLIENT_SECRET,
+                        },
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                if resp.status_code == 200:
+                    d = resp.json()
+                    new_token = d.get("access_token")
+                    if new_token:
+                        settings.LINKEDIN_ACCESS_TOKEN = new_token
+                        if d.get("refresh_token"):
+                            settings.LINKEDIN_REFRESH_TOKEN = d["refresh_token"]
+                        _persist_refreshed_token(new_token, settings.LINKEDIN_REFRESH_TOKEN)
+                        await _persist_refreshed_token_to_db(new_token, settings.LINKEDIN_REFRESH_TOKEN)
+                        print("[LinkedIn] access token refreshed successfully")
+                        return True
+                print(f"[LinkedIn] token refresh failed: HTTP {resp.status_code} {resp.text[:160]}")
+            except Exception as e:
+                print(f"[LinkedIn] token refresh error: {e}")
         return False
 
     async def _authed_get(self, client: httpx.AsyncClient, url: str, params: Optional[dict] = None) -> httpx.Response:
         """GET with the current token. On 401 (expired) it refreshes once and
         retries; if it still 401s it raises _TokenExpired. 429 -> _Throttled."""
-        resp = await client.get(url, headers=self._auth_headers(), params=params)
+        token_used = self._access_token()
+        resp = await client.get(url, headers=self._auth_headers(token=token_used), params=params)
         if resp.status_code == 401:
-            if await self._refresh_access_token():
+            if await self._refresh_access_token(stale_token=token_used):
                 resp = await client.get(url, headers=self._auth_headers(), params=params)
             if resp.status_code == 401:
                 raise _TokenExpired()

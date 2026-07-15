@@ -335,9 +335,9 @@ async def daily_trend(
         .order_by(FollowerSnapshot.snapshot_date.asc())
     )
     rows = result.scalars().all()
-    trend = [
-        {
-            "date": str(r.snapshot_date),
+
+    def _point(r) -> dict:
+        return {
             "followers": r.followers,
             "impressions": r.impressions or 0,
             "unique_impressions": r.unique_impressions or 0,
@@ -349,11 +349,34 @@ async def daily_trend(
             "visitors": r.visitors or 0,
             "engagement_rate": r.engagement_rate or 0.0,
         }
-        for r in rows
-    ]
+
+    # Build a *continuous* daily series so every chart shows one point per
+    # calendar day, even on days LinkedIn wasn't (or couldn't be) synced.
+    # Real snapshots are used as-is; gap days carry the last known values
+    # forward. followers/impressions/etc. are cumulative lifetime totals, so a
+    # carried-forward day legitimately reads as zero day-over-day change (the
+    # follower line stays flat, the delta bars are 0) until the next real
+    # snapshot lands — nothing is estimated or fabricated. We start at the first
+    # real snapshot (never back-fill before we had data) and run through the
+    # anchor day.
+    by_date = {r.snapshot_date: r for r in rows}
+    trend: list[dict] = []
+    if rows:
+        last_vals: Optional[dict] = None
+        cur = rows[0].snapshot_date
+        one_day = timedelta(days=1)
+        while cur <= anchor:
+            r = by_date.get(cur)
+            if r is not None:
+                last_vals = _point(r)
+                trend.append({"date": str(cur), "filled": False, **last_vals})
+            elif last_vals is not None:
+                trend.append({"date": str(cur), "filled": True, **last_vals})
+            cur += one_day
+
     return {
         "days": days,
-        "snapshot_count": len(rows),
+        "snapshot_count": len(rows),   # real snapshots only (gap days excluded)
         "trend": trend,
         "has_enough_data": len(rows) >= 2,
     }

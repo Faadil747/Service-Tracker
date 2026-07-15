@@ -11,6 +11,39 @@ from app.services.linkedin_service import linkedin_service
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
 
+async def _db_snapshot_fallback(db: AsyncSession) -> Optional[dict]:
+    """Last-known company-page KPIs from the persisted daily snapshots. Used when the
+    live LinkedIn cache is empty — e.g. after a restart, since the cache lives on the
+    (ephemeral) filesystem — so the dashboard keeps showing the real, last-saved
+    numbers instead of blanking out. Never fabricated; it's the last real sync."""
+    row = (await db.execute(
+        select(FollowerSnapshot).order_by(FollowerSnapshot.snapshot_date.desc()).limit(1)
+    )).scalar_one_or_none()
+    if not row or not row.followers:
+        return None
+    ts = row.updated_at or row.created_at
+    return {
+        "followers": row.followers,
+        "organic_followers": row.organic_followers,
+        "paid_followers": row.paid_followers,
+        "impressions": row.impressions,
+        "unique_impressions": row.unique_impressions,
+        "clicks": row.clicks,
+        "likes": row.likes,
+        "comments": row.comments,
+        "shares": row.shares,
+        "visitors": row.visitors,
+        "engagement_rate": row.engagement_rate,
+        "_meta": {
+            "available": True,
+            "served_from_cache": True,
+            "served_from_db": True,
+            "last_updated": ts.isoformat() if ts else None,
+            "reason": "LinkedIn API throttled — showing the last saved daily snapshot.",
+        },
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Real LinkedIn company-page overview (cached, throttle-aware, real-only)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -18,14 +51,20 @@ router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 async def linkedin_overview(
     force: bool = False,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """The single source of truth for company-page KPIs.
 
     Returns only real values fetched from LinkedIn. Fields LinkedIn is currently
     throttling are served from the last real snapshot and listed in
-    `_meta.stale_fields`; nothing is fabricated.
+    `_meta.stale_fields`; nothing is fabricated. When the live cache is empty
+    (e.g. right after a restart), falls back to the last saved DB snapshot.
     """
     snapshot = await linkedin_service.get_org_snapshot(force=force)
+    if not snapshot.get("_meta", {}).get("available"):
+        fallback = await _db_snapshot_fallback(db)
+        if fallback:
+            return fallback
     return snapshot
 
 
@@ -61,9 +100,15 @@ async def sync_page_metrics(
 async def dashboard_summary(
     region: Optional[str] = None,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Hero-tile summary derived from the real LinkedIn snapshot."""
+    """Hero-tile summary derived from the real LinkedIn snapshot (falls back to the
+    last saved DB snapshot when the live cache is empty)."""
     snapshot = await linkedin_service.get_org_snapshot()
+    if not snapshot.get("_meta", {}).get("available"):
+        fallback = await _db_snapshot_fallback(db)
+        if fallback:
+            snapshot = fallback
     meta = snapshot.get("_meta", {})
     return {
         "total_followers": snapshot.get("followers"),

@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
     Sparkles, CheckCircle, Eye, FileText, Plus, X, Trash2, Edit3,
-    ThumbsUp, MessageSquare, Repeat, Send, Search, Globe, Share2,
-    ChevronDown, Calendar as CalendarIcon, Image as ImageIcon, Hash, SlidersHorizontal
+    ThumbsUp, MessageSquare, Repeat, Send, Search, Globe, Share2
 } from 'lucide-react';
 import { tasksApi, postsApi, aiApi, metricsApi, usersApi, API_BASE_URL } from '../services/api';
 import { useAuthStore } from '../store/authStore';
@@ -409,10 +408,6 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
     const [publishDirectly, setPublishDirectly] = useState(false);
     const [imageUrl, setImageUrl] = useState('');
     const [uploadingImage, setUploadingImage] = useState(false);
-    // Progressive disclosure: keep the composer LinkedIn-simple by default and
-    // tuck the advanced controls (model, tone, post type, hashtags, schedule,
-    // media) behind one "Customize" expander.
-    const [showCustomize, setShowCustomize] = useState(false);
     const [reviewComments, setReviewComments] = useState<Record<string, string>>({});
     const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -1764,26 +1759,60 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                     </div>
                                                 </div>
 
-                                                {/* -- Composition mode: the one essential choice, up top -- */}
-                                                <div className="comp-sec">
-                                                    <div className="seg" style={{ marginBottom: 14 }}>
-                                                        <button type="button" className={`seg-btn ${writeMode === 'ai' ? 'active' : ''}`} onClick={() => setWriteMode('ai')}>
-                                                            <Sparkles size={14} /> Generate with AI
-                                                        </button>
-                                                        <button type="button" className={`seg-btn ${writeMode === 'manual' ? 'active' : ''}`} onClick={() => setWriteMode('manual')}>
-                                                            <Edit3 size={14} /> Write Manually
-                                                        </button>
+                                                {/* Section: AI Configuration & Mode */}
+                                                <div className="comp-sec" style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border)' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                                        <div>
+                                                            <label className="comp-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                                                <span>AI Model Provider</span>
+                                                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'none' }}>Toggle generation pipeline</span>
+                                                            </label>
+                                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                                <button
+                                                                    type="button"
+                                                                    className={`btn ${aiProvider === 'deepseek' ? 'btn-primary' : 'btn-secondary'}`}
+                                                                    onClick={() => setAiProvider('deepseek')}
+                                                                    style={{ flex: 1, fontSize: '0.78rem', fontWeight: 600, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                                                                >
+                                                                    🤖 DeepSeek R1/Chat
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className={`btn ${aiProvider === 'openrouter/free' ? 'btn-primary' : 'btn-secondary'}`}
+                                                                    onClick={() => setAiProvider('openrouter/free')}
+                                                                    style={{ flex: 1, fontSize: '0.78rem', fontWeight: 600, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                                                                >
+                                                                    🦙 Llama 3.3 (Free)
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div>
+                                                            <label className="comp-label" style={{ marginBottom: 6 }}>Composition Mode</label>
+                                                            <div className="seg">
+                                                                <button type="button" className={`seg-btn ${writeMode === 'ai' ? 'active' : ''}`} onClick={() => setWriteMode('ai')}>
+                                                                    <Sparkles size={14} /> Generate with AI
+                                                                </button>
+                                                                <button type="button" className={`seg-btn ${writeMode === 'manual' ? 'active' : ''}`} onClick={() => setWriteMode('manual')}>
+                                                                    <Edit3 size={14} /> Write Manually
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                     </div>
+                                                </div>
 
+                                                {/* Section: Main Content Input */}
+                                                <div className="comp-sec">
                                                     {writeMode === 'ai' ? (
                                                         <>
-                                                            <textarea className="textarea" placeholder="What do you want to post about? e.g. 'We're hiring Senior React developers in Bangalore - hybrid, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 112, fontSize: '0.9rem' }} />
+                                                            <label className="comp-label">Prompt / Topic</label>
+                                                            <textarea className="textarea" placeholder="Describe what you want to post about… e.g. 'We're hiring Senior React developers in Bangalore, hybrid, competitive salary'" value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 104, fontSize: '0.85rem' }} />
                                                             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0 14px' }}>
                                                                 {EMOJIS.map(e => <button key={e} type="button" className="chip" onClick={() => setPrompt(p => p + e)} style={{ padding: '3px 9px', fontSize: '0.95rem' }}>{e}</button>)}
                                                             </div>
                                                             <div style={{ display: 'flex', gap: 10 }}>
                                                                 <button type="button" className="cta" onClick={handleGenerateAI} disabled={generatingAI || !prompt} style={{ flex: 1 }}>
-                                                                    <Sparkles size={15} /> {generatingAI ? 'Generating…' : '✨ Generate post'}
+                                                                    <Sparkles size={15} /> {generatingAI ? 'Generating…' : aiProvider === 'openrouter/free' ? 'Generate with Llama 3.3' : 'Generate with DeepSeek'}
                                                                 </button>
                                                                 <button type="button" className="btn btn-secondary" onClick={handleEnhanceAI} disabled={enhancingAI || !previewContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                                                                     <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : 'Enhance'}
@@ -1792,108 +1821,88 @@ export const TaskWorkspaceView: React.FC<{ region: string }> = ({ region }) => {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <textarea className="textarea" placeholder="Write your post here… the preview on the right updates as you type." value={manualContent} onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }} style={{ minHeight: 176, fontSize: '0.9rem' }} />
+                                                            <label className="comp-label">Post Content</label>
+                                                            <textarea
+                                                                className="textarea"
+                                                                placeholder="Write your post here… the preview on the right updates as you type."
+                                                                value={manualContent}
+                                                                onChange={e => { setManualContent(e.target.value); setPreviewContent(e.target.value); }}
+                                                                style={{ minHeight: 168, fontSize: '0.86rem' }}
+                                                            />
                                                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', margin: '7px 2px 14px' }}>
                                                                 <span>{manualContent.length} characters</span>
                                                                 <span>{manualContent.length > 3000 ? '⚠️ Too long' : manualContent.length > 2000 ? '⚡ Long post' : '✅ Good length'}</span>
                                                             </div>
                                                             <button type="button" className="btn btn-secondary w-full" onClick={handleEnhanceAI} disabled={enhancingAI || !manualContent} style={{ color: 'var(--accent)', borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                                <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : '✨ Enhance with AI'}
+                                                                <Sparkles size={14} /> {enhancingAI ? 'Enhancing…' : aiProvider === 'openrouter/free' ? 'Enhance with Llama 3.3' : 'Enhance with DeepSeek'}
                                                             </button>
                                                         </>
                                                     )}
                                                 </div>
 
-                                                {/* -- Customize: everything advanced tucked behind one expander -- */}
-                                                <div className="comp-sec" style={{ paddingTop: 0 }}>
-                                                    <button type="button" onClick={() => setShowCustomize(v => !v)}
-                                                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                                                        <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', fontWeight: 700 }}>
-                                                            <SlidersHorizontal size={15} /> Customize
-                                                            {(() => {
-                                                                const n = [hashtags, scheduledAt, imageUrl].filter(Boolean).length
-                                                                    + (writeMode === 'ai' && postType !== 'general' ? 1 : 0)
-                                                                    + (writeMode === 'ai' && tone !== 'professional' ? 1 : 0);
-                                                                return n > 0
-                                                                    ? <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#fff', background: 'var(--accent)', borderRadius: 20, padding: '1px 8px' }}>{n}</span>
-                                                                    : <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--text-muted)' }}>model · tone · hashtags · schedule · media</span>;
-                                                            })()}
-                                                        </span>
-                                                        <ChevronDown size={16} style={{ transform: showCustomize ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                                                    </button>
-
-                                                    {showCustomize && (
-                                                        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 18 }}>
-                                                            {/* AI model */}
+                                                {/* Section: Optional Generation Settings */}
+                                                {writeMode === 'ai' && (
+                                                    <div className="comp-sec" style={{ borderTop: '1px solid var(--border)' }}>
+                                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                            <span>⚙️ Styling & Formatting (Optional)</span>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
                                                             <div>
-                                                                <label className="comp-label" style={{ marginBottom: 6 }}>AI model</label>
-                                                                <div style={{ display: 'flex', gap: 8 }}>
-                                                                    <button type="button" className={`btn ${aiProvider === 'deepseek' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAiProvider('deepseek')} style={{ flex: 1, fontSize: '0.78rem', fontWeight: 600, padding: '8px 12px' }}>🤖 DeepSeek</button>
-                                                                    <button type="button" className={`btn ${aiProvider === 'openrouter/free' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAiProvider('openrouter/free')} style={{ flex: 1, fontSize: '0.78rem', fontWeight: 600, padding: '8px 12px' }}>🦙 Llama 3.3 (Free)</button>
-                                                                </div>
+                                                                <label className="comp-label">Post Type</label>
+                                                                <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.82rem' }}>
+                                                                    {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
+                                                                </select>
                                                             </div>
-
-                                                            {/* Post type + tone (used when generating with AI) */}
-                                                            {writeMode === 'ai' && (
-                                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
-                                                                    <div>
-                                                                        <label className="comp-label">Post type</label>
-                                                                        <select className="select" value={postType} onChange={e => setPostType(e.target.value)} style={{ fontSize: '0.82rem' }}>
-                                                                            {POST_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
-                                                                        </select>
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="comp-label">Tone</label>
-                                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                                                            {TONES.map(t => (
-                                                                                <button key={t} type="button" className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize' }}>{t}</button>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-
-                                                            {/* Hashtags */}
                                                             <div>
-                                                                <label className="comp-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Hash size={13} /> Hashtags</label>
-                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                                                                    {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
-                                                                        <button key={h} type="button" className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())}>{h}</button>
+                                                                <label className="comp-label">Tone</label>
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                                                    {TONES.map(t => (
+                                                                        <button key={t} type="button" className={`chip ${tone === t ? 'on' : ''}`} onClick={() => setTone(t)} style={{ textTransform: 'capitalize' }}>{t}</button>
                                                                     ))}
-                                                                </div>
-                                                                <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.82rem' }} />
-                                                            </div>
-
-                                                            {/* Schedule + media */}
-                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                                                                <div>
-                                                                    <label className="comp-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><CalendarIcon size={13} /> Schedule</label>
-                                                                    <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} style={{ fontSize: '0.8rem' }} />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="comp-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><ImageIcon size={13} /> Media</label>
-                                                                    {imageUrl ? (
-                                                                        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
-                                                                            <img src={imageUrl} alt="media" style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 8, border: '1px solid var(--border)', display: 'block', objectFit: 'contain' }} />
-                                                                            <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: 3 }}>
-                                                                                <X size={11} />
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                                            <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
-                                                                                {uploadingImage ? 'Uploading…' : '📎 Upload'}
-                                                                                <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
-                                                                                    onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
-                                                                            </label>
-                                                                            <input className="input" placeholder="or paste URL" style={{ flex: 1, fontSize: '0.74rem' }}
-                                                                                onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
-                                                                        </div>
-                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    )}
+                                                        <div style={{ marginTop: 16 }}>
+                                                            <label className="comp-label">Hashtags</label>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                                                                {['#Hiring', '#GOrecruitAI', '#HRTech', '#Jobs', '#AIRecruitment'].map(h => (
+                                                                    <button key={h} type="button" className={`chip ${hashtags.includes(h) ? 'on' : ''}`} onClick={() => setHashtags(p => p.includes(h) ? p.replace(h, '').trim() : `${p} ${h}`.trim())}>{h}</button>
+                                                                ))}
+                                                            </div>
+                                                            <input className="input" placeholder="Add custom hashtags…" value={hashtags} onChange={e => setHashtags(e.target.value)} style={{ fontSize: '0.82rem' }} />
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Section: schedule + media */}
+                                                <div className="comp-sec">
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                                        <div>
+                                                            <label className="comp-label">Schedule</label>
+                                                            <input className="input" type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} style={{ fontSize: '0.8rem' }} />
+                                                        </div>
+                                                        <div>
+                                                            <label className="comp-label">Media (optional)</label>
+                                                            {imageUrl ? (
+                                                                <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                                                                    <img src={imageUrl} alt="media" style={{ maxWidth: '100%', maxHeight: 64, borderRadius: 8, border: '1px solid var(--border)', display: 'block', objectFit: 'contain' }} />
+                                                                    <button className="btn btn-sm btn-ghost" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: 3 }}>
+                                                                        <X size={11} />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                                    <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImage ? 'default' : 'pointer', margin: 0, fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
+                                                                        {uploadingImage ? 'Uploading…' : '📎 Upload'}
+                                                                        <input type="file" accept="image/*,video/*" style={{ display: 'none' }} disabled={uploadingImage}
+                                                                            onChange={e => { handleImageUpload(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
+                                                                    </label>
+                                                                    <input className="input" placeholder="or paste URL" style={{ flex: 1, fontSize: '0.74rem' }}
+                                                                        onBlur={e => { const v = e.target.value.trim(); if (v) setImageUrl(v); }} />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
 
                                                 {/* Section: LinkedIn Link Input (only when task-based & post exists) */}

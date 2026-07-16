@@ -2,7 +2,7 @@ import os
 import asyncio
 from datetime import date
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
@@ -167,11 +167,36 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
-@app.get("/")
-async def root():
-    return {"name": "Service Tracker API", "version": "1.0.0", "status": "running"}
-
-
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+# ── Optional single-process hosting ──────────────────────────────────────────
+# If a built frontend is present at backend/static, THIS process serves the SPA
+# AND the API on one port — no separate web server, CORS, or domain needed (used
+# for the self-hosted Windows/VPS deploy). When the folder is absent (Render), the
+# API keeps its plain JSON root and nothing else changes.
+_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+_FRONTEND_INDEX = os.path.join(_FRONTEND_DIR, "index.html")
+
+if os.path.isfile(_FRONTEND_INDEX):
+    from fastapi.responses import FileResponse
+
+    @app.get("/", include_in_schema=False)
+    async def _spa_root():
+        return FileResponse(_FRONTEND_INDEX)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _spa(full_path: str):
+        # Only unmatched GETs reach here (API routers, /uploads, /docs match first).
+        if full_path.startswith(("api/", "uploads/")):
+            raise HTTPException(status_code=404)
+        candidate = os.path.normpath(os.path.join(_FRONTEND_DIR, full_path))
+        if candidate.startswith(_FRONTEND_DIR) and os.path.isfile(candidate):
+            return FileResponse(candidate)               # real asset (js/css/img)
+        return FileResponse(_FRONTEND_INDEX)             # SPA deep-link fallback
+else:
+    @app.get("/")
+    async def root():
+        return {"name": "Service Tracker API", "version": "1.0.0", "status": "running"}

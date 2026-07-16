@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// VITE_API_URL:
+//   • unset            → default to the local dev backend
+//   • an absolute URL  → Render/Vercel split (e.g. https://…onrender.com)
+//   • empty string ""  → same-origin (single-process deploy where the backend
+//                        serves the built frontend too); axios uses a relative baseURL
+const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 export const API_BASE_URL = BASE_URL;
 
 const api = axios.create({

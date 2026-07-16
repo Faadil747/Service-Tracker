@@ -52,3 +52,6 @@ Thumbs.db
 
 # Uploads
 backend/uploads/*
+
+# Built frontend copied in for single-process (Windows) hosting
+backend/static/

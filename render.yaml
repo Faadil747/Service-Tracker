@@ -12,8 +12,25 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true          # Render generates a strong value
+      # ── Database ──────────────────────────────────────────────────────────
+      # Option A (current): MS SQL Server — set all five DB_* vars and the app uses
+      # MSSQL via the ODBC driver baked into the Docker image (ignores DATABASE_URL).
+      - key: DB_SERVER
+        sync: false                  # e.g. P3NWPLSK12SQL-v08.shr.prod.phx3.secureserver.net
+      - key: DB_DATABASE
+        sync: false                  # e.g. LinkedInTest
+      - key: DB_UID
+        sync: false                  # SQL login user
+      - key: DB_PWD
+        sync: false                  # SQL login password
+      - key: DB_DRIVER
+        value: "ODBC Driver 17 for SQL Server"   # matches msodbcsql17 in the Dockerfile
+      - key: DB_ENCRYPT
+        value: "false"               # TrustServerCertificate handles TLS for this host
+      # Option B (fallback): a managed MySQL/Postgres URL. Only used when the DB_*
+      # vars above are NOT all set. Leave blank when using MS SQL.
       - key: DATABASE_URL
-        sync: false                  # mysql+asyncmy://user:pass@host:3306/db
+        sync: false                  # mysql+asyncmy://user:pass@host:3306/db (optional)
       - key: DB_SSL
         value: "true"                # managed MySQL/Postgres hosts require TLS
       - key: FRONTEND_URL

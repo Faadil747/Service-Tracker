@@ -40,9 +40,13 @@ _MIN_SYNC_SECONDS = 20        # debounce: even a manual sync can't refetch faste
 # and keep serving the cached posts when a re-fetch is throttled.
 _POSTS_CACHE: dict = {}
 _POSTS_FETCH_TS: float = 0.0
-_POSTS_TTL_SECONDS = 60 * 60      # re-fetch posts at most once an hour
-_POSTS_429_UNTIL: float = 0.0     # after a 429, don't re-hit /posts until this epoch
-_POSTS_BACKOFF_SECONDS = 15 * 60  # …for 15 min (frontend polls every 5 min otherwise)
+# LinkedIn enforces a low DAILY limit on the /posts resource ("APPLICATION_AND_MEMBER
+# DAY limit"). Company posts change rarely, so cache for hours (not minutes) to keep
+# well under that cap, and — once throttled — back off for an hour rather than
+# retrying every few minutes (which just wastes the day's allowance).
+_POSTS_TTL_SECONDS = 6 * 60 * 60   # serve cached posts for 6h before a re-fetch
+_POSTS_429_UNTIL: float = 0.0      # after a 429, don't re-hit /posts until this epoch
+_POSTS_BACKOFF_SECONDS = 60 * 60   # …for 60 min (it's a DAY limit — polling won't help)
 
 # Static URN → label maps (small, fixed sets — safe to resolve offline).
 _SENIORITY = {
@@ -186,6 +190,13 @@ async def seed_snapshot_from_db() -> None:
     so the UI never presents old data as a fresh live reading.
     """
     global _SNAPSHOT, _LAST_FETCH_TS
+    # Prefer the on-disk cache first: it holds the FULL last snapshot INCLUDING
+    # demographics (seniority / job-function), which the DB row does not store. If
+    # we seeded from the DB before loading it, the (demographics-less) DB seed would
+    # shadow the richer disk cache and the Audience Insights charts would stay blank
+    # until the next live sync. Only fall back to the DB seed when there's no disk
+    # cache (e.g. a wiped ephemeral filesystem on Render).
+    _load_disk_cache()
     if _SNAPSHOT:  # disk cache or a live fetch already populated it
         return
     try:

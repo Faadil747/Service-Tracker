@@ -125,14 +125,23 @@ if (-not (Test-Path $nssmExe)) {
     Remove-Item (Join-Path $InstallDir "nssm_tmp") -Recurse -Force
 }
 $uvicorn = Join-Path $Backend ".venv\Scripts\uvicorn.exe"
-& $nssmExe stop   SocialTracker         2>$null | Out-Null
-& $nssmExe remove SocialTracker confirm 2>$null | Out-Null
-& $nssmExe install SocialTracker $uvicorn "app.main:app --host 0.0.0.0 --port $Port"
-& $nssmExe set SocialTracker AppDirectory $Backend
-& $nssmExe set SocialTracker Start SERVICE_AUTO_START
-& $nssmExe set SocialTracker AppStdout (Join-Path $Backend "service.log")
-& $nssmExe set SocialTracker AppStderr (Join-Path $Backend "service.err.log")
-& $nssmExe start SocialTracker
+# NSSM prints normal status to stderr; with EAP=Stop that would abort the script,
+# and stop/remove on a not-yet-existing service errors. Relax EAP here and only
+# stop/remove when the service already exists.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+if (Get-Service SocialTracker -ErrorAction SilentlyContinue) {
+    & $nssmExe stop   SocialTracker         | Out-Null
+    & $nssmExe remove SocialTracker confirm | Out-Null
+}
+& $nssmExe install SocialTracker $uvicorn                                              | Out-Null
+& $nssmExe set SocialTracker AppParameters "app.main:app --host 0.0.0.0 --port $Port"  | Out-Null
+& $nssmExe set SocialTracker AppDirectory $Backend                                     | Out-Null
+& $nssmExe set SocialTracker Start SERVICE_AUTO_START                                   | Out-Null
+& $nssmExe set SocialTracker AppStdout (Join-Path $Backend "service.log")               | Out-Null
+& $nssmExe set SocialTracker AppStderr (Join-Path $Backend "service.err.log")           | Out-Null
+& $nssmExe start SocialTracker                                                          | Out-Null
+$ErrorActionPreference = $prevEAP
 Ok "service 'SocialTracker' installed and started (auto-starts on boot)"
 
 # --- 8. Health check + final URL ---

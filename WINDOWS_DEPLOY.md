@@ -1,109 +1,118 @@
-# Windows + MS SQL Server hosting guide
+# Self-hosting SocialTracker on a Windows VPS (single process)
 
-Run the FastAPI backend on a **Windows host** against your **GoDaddy MS SQL Server**
-(`LinkedInTest`). Frontend stays on **Vercel**.
+This runs the **whole app as one process**: the FastAPI backend serves the API
+**and** the built React frontend on a single port, talking to your **MS SQL
+Server**. No separate web server, no CORS, no domain required — you reach it at
+`http://<server-ip>:8000`.
 
-> **The one hard rule:** your SQL Server hostname
-> (`P3NWPLSK12SOL-v08.shr.prod.phx3.secureserver.net`) does **not** resolve on the public
-> internet — it only works from **inside GoDaddy's hosting network**. So the backend must
-> run on a Windows host that can reach it (see "Which host?" at the bottom). You cannot
-> initialize this DB from a laptop or from Render.
-
----
-
-## What's already done (code is MS SQL-ready)
-- `pyodbc` + `aioodbc` drivers in `requirements.txt`.
-- `String`/`Text` render as **NVARCHAR** on MS SQL so emojis/international text are safe.
-- Table creation on startup skips the SQLite-only ALTER patches (MS SQL-safe).
-- Tables + your admin are created **automatically on the app's first run**.
+> This is independent of the Render + Vercel deployment. Both can run at the same
+> time (they point at their own config).
 
 ---
 
-## 1. Prerequisites on the Windows host
-- **Python 3.12** (`python --version`).
-- **Microsoft ODBC Driver 17 for SQL Server** — check with PowerShell:
-  ```powershell
-  Get-OdbcDriver | Where-Object Name -like "*SQL Server*"
-  ```
-  If missing, install "ODBC Driver 17 for SQL Server" from Microsoft.
-- The host must be able to reach the SQL Server (test in PowerShell):
-  ```powershell
-  Test-NetConnection -ComputerName P3NWPLSK12SOL-v08.shr.prod.phx3.secureserver.net -Port 1433
-  ```
-  `TcpTestSucceeded : True` = good. `False` = wrong host (see "Which host?").
+## 1. Install prerequisites (once, over Remote Desktop)
 
-## 2. Get the code + install deps
+Download + install on the server:
+
+| Tool | Link | Notes |
+|------|------|-------|
+| Python 3.11+ | https://www.python.org/downloads/ | ✅ tick **"Add python.exe to PATH"** |
+| Node.js LTS | https://nodejs.org/ | to build the frontend |
+| Git | https://git-scm.com/download/win | to pull the code |
+| ODBC Driver 17 for SQL Server | https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server | already present if SSMS is installed |
+| NSSM (optional, for 24/7) | https://nssm.cc/download | run uvicorn as a Windows service |
+
+Open a **new** PowerShell after installing so PATH is refreshed. Verify:
 ```powershell
+python --version ; node --version ; git --version
+```
+
+## 2. Get the code + configure
+
+```powershell
+cd C:\
 git clone https://github.com/Faadil747/Service-Tracker.git
-cd Service-Tracker\backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+cd Service-Tracker
+copy deploy\env.production.example backend\.env
+notepad backend\.env      # fill DB_PWD, ADMIN_PASSWORD, SECRET_KEY (and LinkedIn if you have it)
 ```
+The DB values are pre-filled for your `LinkedInTest` MS SQL database — you only
+need the **SQL password** (the one that worked in SSMS).
 
-## 3. Configure `backend\.env`
-Create `backend\.env` with:
-```
-DATABASE_URL=mssql+aioodbc://LinkedInTest:8y%40Av54b9@P3NWPLSK12SOL-v08.shr.prod.phx3.secureserver.net:1433/LinkedInTest?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes
-DB_SSL=false
-DEV_MODE=false
-SECRET_KEY=<a long random string>
-ADMIN_EMAIL=admin@gorecruitai.com
-ADMIN_PASSWORD=<a strong password>
-FRONTEND_URL=https://service-tracker-six-smoky.vercel.app
-```
-*(The `@` in the DB password is URL-encoded as `%40`. 🔒 rotate that password since it's been shared.)*
+## 3. Build + install (one command)
 
-## 4. Verify connectivity + create the tables
+Run PowerShell **as Administrator**, then:
 ```powershell
-python -m app.seed.check_db
+cd C:\Service-Tracker
+powershell -ExecutionPolicy Bypass -File deploy\windows-vps-setup.ps1
 ```
-This connects, runs `create_all`, and lists the tables. `🎉 Database is ready` = your
-`LinkedInTest` database is now initialized. (If it can't connect, it tells you why.)
+This creates the Python venv, installs backend deps, builds the frontend into
+`backend\static`, and opens firewall port 8000.
 
-## 5. Run it
-**Quick test:**
+## 4. Run it
+
+Foreground test first:
 ```powershell
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd C:\Service-Tracker\backend
+.\.venv\Scripts\uvicorn.exe app.main:app --host 0.0.0.0 --port 8000
 ```
-Open `http://localhost:8000/health` → `{"status":"healthy"}`. Your admin is auto-created on
-first boot (from `ADMIN_EMAIL`/`ADMIN_PASSWORD`).
+Open **`http://<server-public-ip>:8000`** in a browser. Log in with the
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` from `backend\.env`. `Ctrl+C` to stop.
 
-**Production (keep it running 24/7)** — two common options:
-- **NSSM (simplest):** install [NSSM](https://nssm.cc), then create a service that runs
-  `.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000` with the
-  working dir = `backend`. It auto-starts on boot and restarts on crash.
-- **IIS reverse proxy:** run uvicorn on `127.0.0.1:8000` and put IIS (with URL Rewrite +
-  Application Request Routing, or HttpPlatformHandler) in front on 80/443. Best if you want
-  IIS to handle TLS.
+## 5. Keep it running 24/7 (Windows service via NSSM)
 
-Open the chosen port in **Windows Firewall**.
+```powershell
+# From an elevated PowerShell (adjust the nssm.exe path to where you unzipped it)
+$uvicorn = "C:\Service-Tracker\backend\.venv\Scripts\uvicorn.exe"
+nssm install SocialTracker $uvicorn "app.main:app --host 0.0.0.0 --port 8000"
+nssm set SocialTracker AppDirectory "C:\Service-Tracker\backend"
+nssm set SocialTracker Start SERVICE_AUTO_START
+nssm start SocialTracker
+```
+Now it starts on boot and restarts on crash. Manage with
+`nssm restart SocialTracker` / `nssm stop SocialTracker`.
 
-## 6. Connect the Vercel frontend  ⚠️ must be HTTPS
-Your frontend is served over **HTTPS** (Vercel), so browsers will **block** calls to an
-**HTTP** backend (mixed content). The Windows API therefore needs a **public HTTPS URL**:
-- Point a domain at the server and terminate TLS (IIS + [win-acme](https://www.win-acme.com/)
-  for a free cert), **or** put **Cloudflare** in front (proxied DNS → free HTTPS).
-- Then in **Vercel → Settings → Environment Variables** set:
-  ```
-  VITE_API_URL = https://your-api-domain.com
-  ```
-  and **redeploy** Vercel (Vite bakes it at build time).
-- Set `FRONTEND_URL` in `backend\.env` to your Vercel URL (already above) and restart the service.
+## 6. Updating to a new version
+
+```powershell
+cd C:\Service-Tracker
+git pull
+powershell -ExecutionPolicy Bypass -File deploy\windows-vps-setup.ps1   # rebuild
+nssm restart SocialTracker                                              # if using the service
+```
 
 ---
 
-## Which host? (pick before you start)
-The SQL Server is internal to GoDaddy, so:
+## Notes & troubleshooting
 
-| Your Windows host | Reaches the GoDaddy DB? | Can run FastAPI? | Verdict |
-|---|---|---|---|
-| **GoDaddy Windows VPS / Dedicated** (full RDP) | ✅ if same account/network (verify with `Test-NetConnection`) | ✅ yes | **Best** — follow this guide as-is |
-| **GoDaddy Windows *Shared* (Plesk/IIS)** | ✅ likely | ⚠️ usually **no** — shared Windows plans run ASP.NET/PHP, not Python ASGI | Not recommended for FastAPI |
-| **Separate Windows server** (Azure/AWS/own) | ❌ probably not (internal hostname won't resolve) — needs GoDaddy to expose the DB publicly + IP allow-list | ✅ yes | Only if GoDaddy gives a **public** SQL endpoint |
+- **Clean URL (no `:8000`):** we use **8000** and don't touch IIS. To serve on
+  port 80, either stop IIS's *Default Web Site* in IIS Manager and run uvicorn
+  with `--port 80`, or add an IIS reverse proxy (ARR + URL Rewrite) 80 → 8000.
+- **DB login fails:** re-check `DB_PWD` in `backend\.env`; confirm the same
+  credentials work in SSMS. `DB_DRIVER` must match an installed driver
+  (`ODBC Driver 17 for SQL Server`).
+- **Not reachable from outside:** ensure the cloud provider's network firewall
+  (not just Windows Firewall) allows inbound TCP 8000 to this server.
+- **LinkedIn:** you can leave the LinkedIn fields blank in `.env` and set them
+  later in the app's **Settings → API** page.
+- **Tables:** your `LinkedInTest` DB already has the schema; the app also runs
+  `create_all` on start, so nothing else is needed.
 
-**Recommendation:** a **GoDaddy Windows VPS/Dedicated** tied to this database is the clean
-path — it can reach the internal SQL host and run Python. If you can only get **shared**
-Windows hosting, FastAPI won't run there; in that case either get a VPS, or ask GoDaddy for a
-**publicly reachable** SQL endpoint so you can host the backend elsewhere (or go back to the
-working Aiven MySQL).
+---
+
+## The other deployment (Render + Vercel)
+
+Unchanged and can run alongside this. Backend on Render (Docker image includes
+the ODBC driver) now points at the **same MS SQL Server** — set these on Render →
+Environment, then redeploy:
+
+```
+DB_SERVER   = P3NWPLSK12SQL-v08.shr.prod.phx3.secureserver.net
+DB_DATABASE = LinkedInTest
+DB_UID      = LinkedInTest
+DB_PWD      = <your SQL password>
+DB_DRIVER   = ODBC Driver 17 for SQL Server
+DB_ENCRYPT  = false
+```
+Leave `DATABASE_URL` blank (MS SQL wins when all `DB_*` are set). Frontend on
+Vercel: set `VITE_API_URL = https://social-tracker-api-wntl.onrender.com`.

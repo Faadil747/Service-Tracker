@@ -1,110 +1,111 @@
 # Self-hosting SocialTracker on a Windows VPS (single process)
 
-This runs the **whole app as one process**: the FastAPI backend serves the API
-**and** the built React frontend on a single port, talking to your **MS SQL
-Server**. No separate web server, no CORS, no domain required — you reach it at
+Runs the **whole app as one process**: the FastAPI backend serves the API **and**
+the built React frontend on a single port, talking to your **MS SQL Server**. No
+separate web server, no CORS, no domain required - reach it at
 `http://<server-ip>:8000`.
 
-> This is independent of the Render + Vercel deployment. Both can run at the same
-> time (they point at their own config).
+> Independent of the Render + Vercel deployment; both can run at once.
 
 ---
 
-## 1. Install prerequisites (once, over Remote Desktop)
+## Fastest: one command (recommended)
 
-Download + install on the server:
+1. **Remote Desktop** into the server.
+2. Open **PowerShell as Administrator** (right-click -> Run as administrator).
+3. Paste this one line:
 
-| Tool | Link | Notes |
-|------|------|-------|
-| Python 3.11+ | https://www.python.org/downloads/ | ✅ tick **"Add python.exe to PATH"** |
-| Node.js LTS | https://nodejs.org/ | to build the frontend |
-| Git | https://git-scm.com/download/win | to pull the code |
-| ODBC Driver 17 for SQL Server | https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server | already present if SSMS is installed |
-| NSSM (optional, for 24/7) | https://nssm.cc/download | run uvicorn as a Windows service |
+   ```powershell
+   irm https://raw.githubusercontent.com/Faadil747/Service-Tracker/main/deploy/one-click.ps1 | iex
+   ```
 
-Open a **new** PowerShell after installing so PATH is refreshed. Verify:
+It installs any missing prerequisites (Git, Python, Node) via `winget`, pulls the
+code to `C:\SocialTracker`, builds the frontend into the backend, installs the
+Python deps, **prompts once** for your MS SQL password + an admin password, opens
+firewall port 8000, and registers a 24/7 **NSSM Windows service** that starts on
+boot. It finishes by printing the URL, e.g. `http://<server-ip>:8000`.
+
+- Re-running the same command **updates** the app (pulls latest + rebuilds + restarts).
+- If it says a tool "still not on PATH", close the window, open a **new** admin
+  PowerShell, and paste the command again.
+- If `winget` isn't available (older Windows Server), install Git + Python 3.11 +
+  Node LTS manually first (links below), then re-run.
+
+> ODBC Driver 17 for SQL Server is already present if SSMS is installed.
+
+Prereq download links (only needed if winget is unavailable):
+Python 3.11 (tick "Add to PATH") <https://www.python.org/downloads/> ·
+Node LTS <https://nodejs.org/> · Git <https://git-scm.com/download/win>
+
+---
+
+## Manual steps (if you prefer to run them yourself)
+
 ```powershell
-python --version ; node --version ; git --version
-```
+# 1. get the code
+cd C:\ ; git clone https://github.com/Faadil747/Service-Tracker.git ; cd Service-Tracker
 
-## 2. Get the code + configure
+# 2. backend deps
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\pip.exe install -r requirements.txt
 
-```powershell
-cd C:\
-git clone https://github.com/Faadil747/Service-Tracker.git
-cd Service-Tracker
-copy deploy\env.production.example backend\.env
-notepad backend\.env      # fill DB_PWD, ADMIN_PASSWORD, SECRET_KEY (and LinkedIn if you have it)
-```
-The DB values are pre-filled for your `LinkedInTest` MS SQL database — you only
-need the **SQL password** (the one that worked in SSMS).
+# 3. build frontend into backend\static (same-origin)
+cd ..\frontend
+npm install
+"VITE_API_URL=" | Out-File .env.production -Encoding ascii -Force
+npm run build
+Remove-Item ..\backend\static -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item .\dist ..\backend\static -Recurse
 
-## 3. Build + install (one command)
+# 4. configure
+cd ..\backend
+copy ..\deploy\env.production.example .env
+notepad .env        # fill DB_PWD, ADMIN_PASSWORD, SECRET_KEY
 
-Run PowerShell **as Administrator**, then:
-```powershell
-cd C:\Service-Tracker
-powershell -ExecutionPolicy Bypass -File deploy\windows-vps-setup.ps1
-```
-This creates the Python venv, installs backend deps, builds the frontend into
-`backend\static`, and opens firewall port 8000.
-
-## 4. Run it
-
-Foreground test first:
-```powershell
-cd C:\Service-Tracker\backend
+# 5. firewall + run
+New-NetFirewallRule -DisplayName "SocialTracker 8000" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
 .\.venv\Scripts\uvicorn.exe app.main:app --host 0.0.0.0 --port 8000
 ```
-Open **`http://<server-public-ip>:8000`** in a browser. Log in with the
-`ADMIN_EMAIL` / `ADMIN_PASSWORD` from `backend\.env`. `Ctrl+C` to stop.
 
-## 5. Keep it running 24/7 (Windows service via NSSM)
+Open `http://<server-public-ip>:8000` and log in with your admin credentials.
+
+### Make it permanent (NSSM service)
 
 ```powershell
-# From an elevated PowerShell (adjust the nssm.exe path to where you unzipped it)
+# download nssm.exe from https://nssm.cc/download, then (adjust the path):
 $uvicorn = "C:\Service-Tracker\backend\.venv\Scripts\uvicorn.exe"
 nssm install SocialTracker $uvicorn "app.main:app --host 0.0.0.0 --port 8000"
 nssm set SocialTracker AppDirectory "C:\Service-Tracker\backend"
 nssm set SocialTracker Start SERVICE_AUTO_START
 nssm start SocialTracker
 ```
-Now it starts on boot and restarts on crash. Manage with
-`nssm restart SocialTracker` / `nssm stop SocialTracker`.
-
-## 6. Updating to a new version
-
-```powershell
-cd C:\Service-Tracker
-git pull
-powershell -ExecutionPolicy Bypass -File deploy\windows-vps-setup.ps1   # rebuild
-nssm restart SocialTracker                                              # if using the service
-```
+Manage with `nssm restart|stop|status SocialTracker`.
 
 ---
 
 ## Notes & troubleshooting
 
-- **Clean URL (no `:8000`):** we use **8000** and don't touch IIS. To serve on
-  port 80, either stop IIS's *Default Web Site* in IIS Manager and run uvicorn
-  with `--port 80`, or add an IIS reverse proxy (ARR + URL Rewrite) 80 → 8000.
-- **DB login fails:** re-check `DB_PWD` in `backend\.env`; confirm the same
-  credentials work in SSMS. `DB_DRIVER` must match an installed driver
-  (`ODBC Driver 17 for SQL Server`).
-- **Not reachable from outside:** ensure the cloud provider's network firewall
-  (not just Windows Firewall) allows inbound TCP 8000 to this server.
-- **LinkedIn:** you can leave the LinkedIn fields blank in `.env` and set them
-  later in the app's **Settings → API** page.
+- **Clean URL (no `:8000`):** we use 8000 and don't touch IIS. To serve on port
+  80, stop IIS's *Default Web Site* and run uvicorn with `--port 80`, or add an
+  IIS reverse proxy (ARR + URL Rewrite) 80 -> 8000.
+- **DB login fails:** re-check `DB_PWD` in `backend\.env`; it must match SSMS.
+  `DB_DRIVER` must be an installed driver (`ODBC Driver 17 for SQL Server`).
+- **Not reachable from outside:** allow inbound TCP 8000 in the VPS/cloud network
+  firewall too (not only Windows Firewall).
+- **LinkedIn:** leave the LinkedIn fields blank and set them later in the app's
+  **Settings -> API** page.
 - **Tables:** your `LinkedInTest` DB already has the schema; the app also runs
-  `create_all` on start, so nothing else is needed.
+  `create_all` on start.
+- **Service logs:** `backend\service.log` and `backend\service.err.log`.
 
 ---
 
 ## The other deployment (Render + Vercel)
 
-Unchanged and can run alongside this. Backend on Render (Docker image includes
-the ODBC driver) now points at the **same MS SQL Server** — set these on Render →
-Environment, then redeploy:
+Backend on Render (its Docker image bundles the ODBC driver) points at the **same
+MS SQL Server**. Render -> Environment:
 
 ```
 DB_SERVER   = P3NWPLSK12SQL-v08.shr.prod.phx3.secureserver.net
@@ -114,5 +115,5 @@ DB_PWD      = <your SQL password>
 DB_DRIVER   = ODBC Driver 17 for SQL Server
 DB_ENCRYPT  = false
 ```
-Leave `DATABASE_URL` blank (MS SQL wins when all `DB_*` are set). Frontend on
-Vercel: set `VITE_API_URL = https://social-tracker-api-wntl.onrender.com`.
+Leave `DATABASE_URL` blank (MS SQL wins when all `DB_*` are set). Vercel frontend:
+`VITE_API_URL = https://social-tracker-api-wntl.onrender.com`.

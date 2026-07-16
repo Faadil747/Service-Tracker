@@ -34,6 +34,16 @@ _SNAPSHOT: dict = {}          # last good snapshot (in-memory)
 _LAST_FETCH_TS: float = 0.0   # epoch seconds of last LinkedIn round-trip
 _MIN_SYNC_SECONDS = 20        # debounce: even a manual sync can't refetch faster than this
 
+# Company-posts cache. The /posts endpoint is quota-limited, so calling it on every
+# dashboard/analytics poll exhausts the quota and returns nothing but 429s (the
+# "Posts syncing" state). We cache the last good result, only re-fetch after the TTL,
+# and keep serving the cached posts when a re-fetch is throttled.
+_POSTS_CACHE: dict = {}
+_POSTS_FETCH_TS: float = 0.0
+_POSTS_TTL_SECONDS = 60 * 60      # re-fetch posts at most once an hour
+_POSTS_429_UNTIL: float = 0.0     # after a 429, don't re-hit /posts until this epoch
+_POSTS_BACKOFF_SECONDS = 15 * 60  # …for 15 min (frontend polls every 5 min otherwise)
+
 # Static URN → label maps (small, fixed sets — safe to resolve offline).
 _SENIORITY = {
     "1": "Unpaid", "2": "Training", "3": "Entry", "4": "Senior", "5": "Manager",
@@ -51,23 +61,29 @@ _FUNCTION = {
 
 
 def _load_disk_cache() -> None:
-    global _SNAPSHOT, _LAST_FETCH_TS
-    if _SNAPSHOT:
+    global _SNAPSHOT, _LAST_FETCH_TS, _POSTS_CACHE, _POSTS_FETCH_TS
+    if _SNAPSHOT and _POSTS_CACHE:
         return
     try:
         with open(_CACHE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+        if not _SNAPSHOT:
             _SNAPSHOT = data.get("snapshot", {})
             _LAST_FETCH_TS = data.get("fetched_at", 0.0)
+        if not _POSTS_CACHE:
+            _POSTS_CACHE = data.get("posts", {}) or {}
+            _POSTS_FETCH_TS = data.get("posts_fetched_at", 0.0)
     except Exception:
-        _SNAPSHOT = {}
-        _LAST_FETCH_TS = 0.0
+        pass
 
 
 def _save_disk_cache() -> None:
     try:
         with open(_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump({"snapshot": _SNAPSHOT, "fetched_at": _LAST_FETCH_TS}, f)
+            json.dump({
+                "snapshot": _SNAPSHOT, "fetched_at": _LAST_FETCH_TS,
+                "posts": _POSTS_CACHE, "posts_fetched_at": _POSTS_FETCH_TS,
+            }, f)
     except Exception as e:
         print(f"LinkedIn cache write failed: {e}")
 
@@ -637,9 +653,32 @@ class LinkedInService:
     # ──────────────────────────────────────────────────────────────────────────
     async def get_org_posts(self, count: int = 20) -> dict:
         """Return recent real posts from the company page (content + link only —
-        per-post engagement metrics require Community-Management access we lack)."""
+        per-post engagement metrics require Community-Management access we lack).
+
+        Cached: the /posts endpoint is quota-limited, so we serve the last good list
+        without touching LinkedIn while it's fresh, and — critically — keep serving
+        it (flagged) when a re-fetch is throttled, instead of blanking to
+        "Posts syncing". Only a genuinely empty first fetch shows the empty state.
+        """
+        global _POSTS_CACHE, _POSTS_FETCH_TS, _POSTS_429_UNTIL
         if not self._has_credentials():
             return {"available": False, "posts": []}
+        _load_disk_cache()
+
+        now = time.time()
+        cached = _POSTS_CACHE.get("posts") if _POSTS_CACHE else None
+        # Fresh cache → no LinkedIn call at all (protects the daily quota).
+        if cached and (now - _POSTS_FETCH_TS) < _POSTS_TTL_SECONDS:
+            return {**_POSTS_CACHE, "served_from_cache": True}
+
+        # Recently throttled → don't keep hitting /posts on every poll while LinkedIn
+        # is rate-limiting (that only delays quota recovery). Serve last-good if we
+        # have it; otherwise report syncing, both without a network round-trip.
+        if now < _POSTS_429_UNTIL:
+            if cached:
+                return {**_POSTS_CACHE, "rate_limited": True, "served_from_cache": True}
+            return {"available": False, "rate_limited": True, "posts": []}
+
         token = self._access_token()
         org = settings.LINKEDIN_ORG_ID
         org_urn = f"urn:li:organization:{org}"
@@ -651,6 +690,11 @@ class LinkedInService:
                     params={"q": "author", "author": org_urn, "count": count},
                 )
                 if resp.status_code == 429:
+                    # Throttled: back off, and keep showing the last real posts
+                    # rather than blanking.
+                    _POSTS_429_UNTIL = now + _POSTS_BACKOFF_SECONDS
+                    if cached:
+                        return {**_POSTS_CACHE, "rate_limited": True, "served_from_cache": True}
                     return {"available": False, "rate_limited": True, "posts": []}
                 resp.raise_for_status()
                 data = resp.json()
@@ -664,9 +708,17 @@ class LinkedInService:
                         "url": f"https://www.linkedin.com/feed/update/{urn}" if urn else None,
                         "has_media": bool(el.get("content", {}).get("media")),
                     })
-                return {"available": True, "total": data.get("paging", {}).get("total", len(posts)), "posts": posts}
+                result = {"available": True, "total": data.get("paging", {}).get("total", len(posts)), "posts": posts}
+                if posts:  # only cache a non-empty result as "last good"
+                    _POSTS_CACHE = result
+                    _POSTS_FETCH_TS = now
+                    _save_disk_cache()
+                return result
         except Exception as e:
             print(f"LinkedIn posts fetch error: {e}")
+            # Transient error → keep the last good posts if we have them.
+            if cached:
+                return {**_POSTS_CACHE, "served_from_cache": True, "stale": True}
             return {"available": False, "posts": []}
 
     # ──────────────────────────────────────────────────────────────────────────

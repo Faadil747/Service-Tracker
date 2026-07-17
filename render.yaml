@@ -6,7 +6,7 @@ services:
     name: social-tracker-api
     runtime: docker          # Docker image installs the Microsoft ODBC driver for MS SQL
     rootDir: backend
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: backend/Dockerfile
     plan: free
     healthCheckPath: /health
     envVars:
